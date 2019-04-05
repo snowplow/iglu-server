@@ -12,4 +12,4 @@ ENTRYPOINT=/opt/docker/bin/iglu-server
 chmod +x $ENTRYPOINT
 
 # Make sure we run the app as the snowplow user
-exec gosu snowplow:snowplow $ENTRYPOINT "$@"
+exec gosu snowplow:snowplow $ENTRYPOINT "$@" -XX:+ExitOnOutOfMemoryError
