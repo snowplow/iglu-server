@@ -132,6 +132,9 @@ object Postgres {
     def getSchema(schemaMap: SchemaMap) =
       (fr"SELECT" ++ schemaColumns ++ fr"FROM" ++ SchemasTable ++ fr"WHERE" ++ schemaMapFr(schemaMap) ++ fr"LIMIT 1").query[Schema]
 
+    def deleteSchema(schemaMap: SchemaMap) =
+      (fr"DELETE FROM" ++ SchemasTable ++ fr"WHERE" ++ schemaMapFr(schemaMap)).update
+
     def getSchemas =
       (fr"SELECT" ++ schemaColumns ++ fr"FROM" ++ SchemasTable ++ Ordering).query[Schema]
 
