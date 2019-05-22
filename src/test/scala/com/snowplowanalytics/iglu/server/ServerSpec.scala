@@ -14,8 +14,6 @@
  */
 package com.snowplowanalytics.iglu.server
 
-//import scala.concurrent.duration._
-
 import cats.implicits._
 import cats.effect.{ IO, ContextShift, Timer, Resource }
 
@@ -28,6 +26,9 @@ import org.http4s.client.blaze.BlazeClientBuilder
 
 import org.specs2.Specification
 
+import com.snowplowanalytics.iglu.core.{SelfDescribingSchema, SchemaMap, SchemaVer }
+import com.snowplowanalytics.iglu.core.circe.implicits._
+
 import com.snowplowanalytics.iglu.server.storage.{ Storage, Postgres }
 import com.snowplowanalytics.iglu.server.model.{ IgluResponse, Permission }
 import com.snowplowanalytics.iglu.server.storage.InMemory
@@ -38,8 +39,9 @@ import com.snowplowanalytics.iglu.server.codecs.JsonCodecs._
 class ServerSpec extends Specification  { def is = sequential ^ s2"""
   ${action(System.setProperty("org.slf4j.simpleLogger.defaultLogLevel", "off"))}
   Return 404 for non-existing schema $e1
-  Return 404 for unkown endpoint $e2
+  Return 404 for unknown endpoint $e2
   Create a new private schema via PUT, return it with proper apikey, hide for no apikey $e3
+  Create a new public schema via POST, get it from /schemas, delete it $e4
   ${action(System.clearProperty("org.slf4j.simpleLogger.defaultLogLevel"))}
   """
   import ServerSpec._
@@ -88,6 +90,32 @@ class ServerSpec extends Specification  { def is = sequential ^ s2"""
         "self": {"vendor": "com.acme", "name": "first", "format": "jsonschema", "version": "1-0-0"},
         "properties" : {}}"""),
       TestResponse(404, json"""{"message" : "The schema is not found"}""")
+    )
+
+    val action = for {
+      responses <- ServerSpec.executeRequests(reqs)
+      results <- responses.traverse(res => TestResponse.build[Json](res))
+    } yield results
+
+    execute(action) must beEqualTo(expected)
+  }
+
+  def e4 = {
+    val schema = SelfDescribingSchema[Json](SchemaMap("com.acme", "first", "jsonschema", SchemaVer.Full(1,0,0)), json"""{"properties": {}}""").normalize
+
+    val reqs = List(
+      Request[IO](Method.POST, uri"http://localhost:8080/api/schemas".withQueryParam("isPublic", "true"))
+        .withEntity(schema)
+        .withHeaders(Header("apikey", InMemory.DummyMasterKey.toString)),
+      Request[IO](Method.DELETE, uri"http://localhost:8080/api/schemas/com.acme/first/jsonschema/1-0-0")
+        .withHeaders(Header("apikey", InMemory.DummyMasterKey.toString)),
+      Request[IO](Method.GET, uri"http://localhost:8080/api/schemas/"),
+    )
+
+    val expected = List(
+      TestResponse(201, json"""{"message": "Schema created", "updated": false, "location": "iglu:com.acme/first/jsonschema/1-0-0", "status": 201}"""),
+      TestResponse(200, json"""{"message":"Schema deleted"}"""),
+      TestResponse(200, json"""[]""")
     )
 
     val action = for {
