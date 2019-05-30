@@ -1,0 +1,22 @@
+language: scala
+dist: trusty
+scala:
+- 2.12.9
+jdk:
+- oraclejdk11
+script:
+- "./scripts/create-test-user.bash"
+- sbt test
+before_deploy:
+- pip install --user release-manager==0.4.1
+deploy:
+- provider: script
+  skip_cleanup: true
+  script: "./.travis/deploy.sh $TRAVIS_TAG"
+  on:
+    tags: true
+- provider: script
+  skip_cleanup: true
+  script: "./.travis/deploy_docker.sh $TRAVIS_TAG"
+  on:
+    tags: true
