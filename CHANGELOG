@@ -1,0 +1,62 @@
+Version 0.5.0 (2019-01-16)
+--------------------------
+Bump SBT to 1.2.8 (snowplow/iglu#468)
+Add read-only keys (snowplow/iglu#429)
+Change datetime format to ISO 8601 (snowplow/iglu#460)
+Bump to 0.5.0 (snowplow/iglu#459)
+Dockerize (snowplow/iglu#399)
+Harmonise returned data struct for GET schemas (snowplow/iglu#407)
+Delete public/schema endpoints (snowplow/iglu#398)
+Add Schema DDL as validation backend (snowplow/iglu#406)
+
+Version 0.4.0 (2018-08-24)
+--------------------------
+Bump to 0.4.0 (snowplow/iglu#379)
+Change method of validation endpoints (snowplow/iglu#405)
+Add possibility to mark schemas as draft (snowplow/iglu#403)
+Remove mandatory authorization for public schemas (snowplow/iglu#378)
+Exit in case of db connection failure (snowplow/iglu#400)
+
+Version 0.3.0 (2018-04-19)
+--------------------------
+Add HTTPS scheme to Swagger UI (snowplow/iglu#363)
+Add baseURL to configuration (snowplow/iglu#362)
+Rename from Scala Repo Server (snowplow/iglu#131)
+Use scopt for CLI parameters (snowplow/iglu#356)
+Migrate CI/CD to release-manager (snowplow/iglu#355)
+Extend copyright notice to 2018 (snowplow/iglu#352)
+Only add metadata to schema JSON if ?metadata=1 (snowplow/iglu#86)
+Port to Akka HTTP (snowplow/iglu#318)
+Allow super user to upload schemas (snowplow/iglu#83)
+Bump SBT to 1.1.1 (snowplow/iglu#322)
+Bump Scala to 2.11.12 (snowplow/iglu#321)
+Bump to 0.3.0 (snowplow/iglu#338)
+
+Version 0.2.0 (2016-03-04)
+--------------------------
+Added ability to delete schemas (snowplow/iglu#87)
+Added ability to load configuration from environment variables (snowplow/iglu#95)
+Added startup and teardown scripts to run before and after tests (snowplow/iglu#119)
+Added support for CORS (snowplow/iglu#117)
+Bootstrapped with embedded schemas (snowplow/iglu#80)
+Bumped version to 0.2.0
+Bump SBT to 0.13.9 (snowplow/iglu#114)
+Changed header name from api_key to apikey so it survives ELB (snowplow/iglu#94)
+Ensured that createdat and updatedat are the same when a schema is first uploaded (snowplow/iglu#92)
+Ensured that the self-describing schema gets created on startup (snowplow/iglu#65)
+Fixed schema vendor/name/format/version regexen (snowplow/iglu#81)
+Fix setup process for test suite (snowplow/iglu#79)
+Made attributes of self-describing schema consistent with Iglu Central (snowplow/iglu#98)
+Made it possible to read public schemas without an API key (snowplow/iglu#100)
+Make app crash instead of hanging when run with no arguments (snowplow/iglu#106)
+Make it possible to create * auth keys (snowplow/iglu#72)
+Removed quadruple quotes in SchemaSpec (snowplow/iglu#120)
+Removed .test from test class packages (snowplow/iglu#89)
+Started returning 200 when multiple schemas are deleted (snowplow/iglu#99)
+Stopped throwing exception when attempting to delete a nonexistent schema (snowplow/iglu#90)
+Updated json4s dependency to 3.2.11 (snowplow/iglu#78)
+Reverted to non-executable jarfile (snowplow/iglu#129)
+
+Version 0.1.0 (2014-08-28)
+----------------------
+Initial release
