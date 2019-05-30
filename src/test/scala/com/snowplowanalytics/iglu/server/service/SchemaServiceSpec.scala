@@ -37,7 +37,6 @@ class SchemaServiceSpec extends org.specs2.Specification { def is = s2"""
   PUT
     Prohibits adding new schema if it already exists $e11
     Prohibits adding new schema if previous version does not exist $e12
-    Prohibits adding new schema if previous version belongs to different apikey
     PUT request adds schema $e2
     PUT request updates existing schema if patches are allowed $e13
   """
@@ -359,7 +358,7 @@ class SchemaServiceSpec extends org.specs2.Specification { def is = s2"""
 
     // Text body transformed to JSON later in HttpApp
     val (status, body) = result.unsafeRunSync()
-    (status must beEqualTo(Status.BadRequest)) and (body must beEqualTo("Cannot parse 'boom' as SchemaVer, INVALID_SCHEMAVER"))
+    (status must beEqualTo(Status.BadRequest)) and (body must beEqualTo("Cannot parse version part 'boom' as SchemaVer, INVALID_SCHEMAVER"))
   }
 
   def e15 = {

@@ -31,6 +31,7 @@ class ValidationServiceSpec extends org.specs2.Specification { def is = s2"""
   POST /validate/instance pretends a private schema does not exist if apikey is inappropriate $e10
   """
 
+
   def e1 = {
     val selfDescribingSchema = json"""
         {
@@ -47,7 +48,8 @@ class ValidationServiceSpec extends org.specs2.Specification { def is = s2"""
       "report":[
         {"message":"The following keywords are unknown and will be ignored: [self]", "level":"WARNING", "pointer":"/"},
         {"message":"The schema is missing the \"description\" property","level":"INFO","pointer":"/"},
-        {"message":"At the root level, the schema should have a \"type\" property set to \"object\" and have a \"properties\" property","level":"WARNING","pointer":"/"}
+        {"message":"At the root level, the schema should have a \"type\" property set to \"object\" and have a \"properties\" property","level":"WARNING","pointer":"/"},
+        {"message":"No $$schema field in top-level of schema","level":"ERROR","pointer":"/"}
       ]
     }"""
 
@@ -101,7 +103,8 @@ class ValidationServiceSpec extends org.specs2.Specification { def is = s2"""
     val expected = json"""{
       "message":"The schema does not conform to a JSON Schema v4 specification",
       "report":[
-        {"message":"The following keywords are unknown and will be ignored: [self]", "level":"WARNING", "pointer":"/"}
+        {"message":"The following keywords are unknown and will be ignored: [self]", "level":"WARNING", "pointer":"/"},
+        {"message":"No $$schema field in top-level of schema","level":"ERROR","pointer":"/"}
       ]
     }"""
 
@@ -118,7 +121,10 @@ class ValidationServiceSpec extends org.specs2.Specification { def is = s2"""
     val selfDescribingSchema = json"""{"type": "object", "description": "non-self-describing schema", "properties": {}}"""
     val expected = json"""{
         "message" : "The schema does not conform to a JSON Schema v4 specification",
-        "report" : [{ "message" : "JSON Schema is not self-describing", "level" : "ERROR", "pointer" : "/" } ]
+        "report" : [
+          {"message":"No $$schema field in top-level of schema","level":"ERROR","pointer":"/"},
+          {"message":"JSON Schema is not self-describing","level":"ERROR","pointer":"/"}
+        ]
       }"""
 
     val request = Request[IO](Method.POST, Uri.uri("/validate/schema/jsonschema"))
