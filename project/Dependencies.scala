@@ -22,17 +22,14 @@ object Dependencies {
   )
 
   object V {
-    val IgluCore   = "0.5.0"
-    val SchemaDdl  = "0.10.0-M2"
-    val IgluClient = "0.6.0-M7"
+    val IgluCore   = "0.5.1"
+    val SchemaDdl  = "0.10.0-M7"
+    val IgluClient = "0.6.1-M1"
 
-    val Fs2        = "1.0.4"
-    val Http4s     = "0.20.1"
-    val Rho        = "0.19.0-M8"
+    val Http4s     = "0.20.11"
+    val Rho        = "0.19.0"
     val Doobie     = "0.7.0"
     val Decline    = "0.6.2"
-    val Cats       = "1.6.0"
-    val CatsEffect = "1.3.1"
     val Log4Cats   = "0.3.0"
     val Circe      = "0.11.1"
     val CirceFs2   = "0.11.0"
@@ -40,8 +37,9 @@ object Dependencies {
     val PureConfig = "0.10.2"
     val SwaggerUi  = "3.22.0"
     val Slf4j      = "1.7.26"
+    val ScalaCache = "0.27.0"
 
-    val Specs2     = "4.3.6"
+    val Specs2     = "4.5.1"
     val Logback    = "1.2.3"
   }
 
@@ -50,9 +48,7 @@ object Dependencies {
     "com.snowplowanalytics" %% "schema-ddl"            % V.SchemaDdl,
     "com.snowplowanalytics" %% "iglu-scala-client"     % V.IgluClient,
 
-    "co.fs2"                %% "fs2-core"              % V.Fs2,
     "com.monovore"          %% "decline"               % V.Decline,
-    "org.typelevel"         %% "cats-core"             % V.Cats,
     "io.chrisdavenport"     %% "log4cats-slf4j"        % V.Log4Cats,
     "org.http4s"            %% "http4s-blaze-server"   % V.Http4s,
     "org.http4s"            %% "http4s-blaze-client"   % V.Http4s,
@@ -72,10 +68,13 @@ object Dependencies {
     "org.tpolecat"          %% "doobie-postgres"       % V.Doobie,
     "org.tpolecat"          %% "doobie-postgres-circe" % V.Doobie,
     "org.tpolecat"          %% "doobie-hikari"         % V.Doobie,
+    "com.github.cb372"      %% "scalacache-cats-effect" % V.ScalaCache,
+    "com.github.cb372"      %% "scalacache-caffeine"    % V.ScalaCache,
 
     "org.webjars"           %  "swagger-ui"            % V.SwaggerUi,
-    "org.slf4j"             % "slf4j-simple"           % V.Slf4j,
-    "org.tpolecat"          %% "doobie-specs2"         % V.Doobie     % "test",
-    "org.specs2"            %% "specs2-core"           % V.Specs2     % "test"
+    "org.slf4j"             %  "slf4j-simple"          % V.Slf4j,
+    "org.tpolecat"          %% "doobie-specs2"         % V.Doobie     % Test,
+    "org.specs2"            %% "specs2-core"           % V.Specs2     % Test,
+    "org.specs2"            %% "specs2-cats"           % V.Specs2     % Test
   )
 }

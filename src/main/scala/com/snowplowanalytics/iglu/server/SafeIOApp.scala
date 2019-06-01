@@ -14,6 +14,9 @@
  */
 package com.snowplowanalytics.iglu.server
 
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.{Executors, ThreadFactory}
+
 import cats.effect.{IOApp, Resource, SyncIO}
 import org.slf4j.{Logger, LoggerFactory}
 
@@ -21,12 +24,13 @@ import scala.concurrent.ExecutionContext
 
 trait SafeIOApp extends IOApp.WithContext {
 
-  implicit val ec: ExecutionContext =
-    scala.concurrent.ExecutionContext.Implicits.global
+  private lazy val ec: ExecutionContext =
+    ExecutionContext.fromExecutorService(Executors.newFixedThreadPool(List(2, Runtime.getRuntime.availableProcessors()).max, DaemonThreadFactory))
 
-  private val log: Logger = LoggerFactory.getLogger(Main.getClass)
+  private final val log: Logger = LoggerFactory.getLogger(Main.getClass)
 
-  final val exitingEC: ExecutionContext = new ExecutionContext {
+  // To overcome https://github.com/typelevel/cats-effect/issues/515
+  private final val exitingEC: ExecutionContext = new ExecutionContext {
     def execute(r: Runnable): Unit =
       ec.execute { () =>
         try r.run()
@@ -37,10 +41,25 @@ trait SafeIOApp extends IOApp.WithContext {
         }
       }
 
-    def reportFailure(cause: Throwable): Unit =
-      ec.reportFailure(cause)
+    def reportFailure(cause: Throwable): Unit = ec.reportFailure(cause)
   }
 
   val executionContextResource: Resource[SyncIO, ExecutionContext] =
     Resource.liftF(SyncIO(exitingEC))
+
+  private object DaemonThreadFactory extends ThreadFactory {
+    private val s: SecurityManager  = System.getSecurityManager
+    private val poolNumber: AtomicInteger = new AtomicInteger(1)
+    private val group: ThreadGroup  = if (s == null) Thread.currentThread().getThreadGroup else s.getThreadGroup
+    private val threadNumber: AtomicInteger  = new AtomicInteger(1)
+    private val namePrefix: String  = "ioapp-pool-" + poolNumber.getAndIncrement() + "-thread-"
+
+    def newThread(r: Runnable): Thread = {
+      val t: Thread  = new Thread(group, r, namePrefix + threadNumber.getAndIncrement(), 0)
+      t.setDaemon(true)
+      if (t.getPriority != Thread.NORM_PRIORITY) t.setPriority(Thread.NORM_PRIORITY)
+      t
+    }
+  }
+
 }
