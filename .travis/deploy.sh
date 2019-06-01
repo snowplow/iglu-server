@@ -4,28 +4,19 @@ set -e
 
 tag=$1
 
-project="iglu-server/"
-project_len=${#project}
-
-cicd=${tag:0:${project_len}}
-release=${tag:${project_len}}
-
-if [ "${cicd}" == "${project}" ]; then
-    if [ "${release}" == "" ]; then
-        echo "WARNING! No release specified! Ignoring."
-        exit 2
-    fi
-else
-    echo "This can't be deployed - there's no ${project} tag! (Is the travis condition set?)"
-    exit 1
-fi
+project_version=$(sbt version -Dsbt.log.noformat=true | tail -n 1 | perl -ne 'print $1 if /(\d+\.\d+[^\r\n]*)/')
 
 cd "${TRAVIS_BUILD_DIR}"
 
-export TRAVIS_BUILD_RELEASE_TAG="${release}"
-release-manager \
-    --config "./.travis/release.yml" \
-    --check-version \
-    --make-version \
-    --make-artifact \
-    --upload-artifact
+if [ "${project_version}" == "${tag}" ]; then
+    export TRAVIS_BUILD_RELEASE_TAG="${release}"
+    release-manager \
+        --config "./.travis/release.yml" \
+        --check-version \
+        --make-version \
+        --make-artifact \
+        --upload-artifact
+else
+    echo "Tag version '${tag}' doesn't match version in scala project ('${project_version}'). Aborting!"
+    exit 1
+fi
