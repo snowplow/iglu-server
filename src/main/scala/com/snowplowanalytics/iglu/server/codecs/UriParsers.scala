@@ -25,7 +25,7 @@ import eu.timepit.refined.types.numeric.NonNegInt
 import org.http4s.{ Response, Status, Query }
 import org.http4s.rho.bits._
 
-import com.snowplowanalytics.iglu.core.SchemaVer
+import com.snowplowanalytics.iglu.core.{ SchemaVer, ParseError }
 import com.snowplowanalytics.iglu.server.model.{DraftVersion, Schema}
 
 trait UriParsers {
@@ -80,7 +80,8 @@ trait UriParsers {
       override def parse(s: String)(implicit F: Monad[F]): ResultResponse[F, SchemaVer.Full] =
         SchemaVer.parseFull(s) match {
           case Right(v) => SuccessResponse(v)
-          case Left(e) => FailureResponse.pure[F](BadRequest.pure(s"Cannot parse '$s' as SchemaVer, ${e.code}"))
+          case Left(ParseError.InvalidSchemaVer) if s.isEmpty => FailureResponse.pure[F](NotFound.pure(s"Version cannot be empty, should be model to get SchemaList or full SchemaVer"))
+          case Left(e) => FailureResponse.pure[F](BadRequest.pure(s"Cannot parse version part '$s' as SchemaVer, ${e.code}"))
         }
     }
 
