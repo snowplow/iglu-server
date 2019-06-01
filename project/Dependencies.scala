@@ -26,9 +26,10 @@ object Dependencies {
     val SchemaDdl  = "0.10.0-M2"
     val IgluClient = "0.6.0-M7"
 
-    val Fs2        = "1.0.4"
-    val Http4s     = "0.20.1"
-    val Rho        = "0.19.0-M8"
+    val Fs2        = "1.0.5"
+    val Http4s     = "0.20.2"
+    val Rho        = "0.19.0"
+    val Monix      = "3.0.0-RC2"
     val Doobie     = "0.7.0"
     val Decline    = "0.6.2"
     val Cats       = "1.6.0"
@@ -40,6 +41,7 @@ object Dependencies {
     val PureConfig = "0.10.2"
     val SwaggerUi  = "3.22.0"
     val Slf4j      = "1.7.26"
+    val ScalaCache = "0.27.0"
 
     val Specs2     = "4.3.6"
     val Logback    = "1.2.3"
@@ -59,6 +61,7 @@ object Dependencies {
     "org.http4s"            %% "http4s-circe"          % V.Http4s,
     "org.http4s"            %% "http4s-dsl"            % V.Http4s,
     "org.http4s"            %% "rho-swagger"           % V.Rho,
+    "io.monix"              %% "monix"                 % V.Monix,
     "io.circe"              %% "circe-generic"         % V.Circe,
     "io.circe"              %% "circe-java8"           % V.Circe,
     "io.circe"              %% "circe-jawn"            % V.Circe,
@@ -72,6 +75,8 @@ object Dependencies {
     "org.tpolecat"          %% "doobie-postgres"       % V.Doobie,
     "org.tpolecat"          %% "doobie-postgres-circe" % V.Doobie,
     "org.tpolecat"          %% "doobie-hikari"         % V.Doobie,
+    "com.github.cb372"      %% "scalacache-cats-effect" % V.ScalaCache,
+    "com.github.cb372"      %% "scalacache-caffeine"    % V.ScalaCache,
 
     "org.webjars"           %  "swagger-ui"            % V.SwaggerUi,
     "org.slf4j"             % "slf4j-simple"           % V.Slf4j,

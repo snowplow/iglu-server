@@ -60,10 +60,11 @@ case class InMemory[F[_]](ref: Ref[F, InMemory.State]) extends Storage[F] {
   def updateSchema(schemaMap: SchemaMap, body: Json, isPublic: Boolean)(implicit C: Clock[F], M: Bracket[F, Throwable]): F[Unit] =
     addSchema(schemaMap, body, isPublic)
 
-  def getSchemas(implicit F: Monad[F]): Stream[F, Schema] = {
-    val schemas = ref.get.map(state => Stream.emits[F, Schema](state.schemas.values.toList.sortBy(_.metadata.createdAt)))
-    Stream.eval(schemas).flatten
-  }
+  def getSchemas(implicit F: Bracket[F, Throwable]): F[List[Schema]] =
+    ref.get.map(state => state.schemas.values.toList.sortBy(_.metadata.createdAt))
+
+  def getSchemasKeyOnly(implicit F: Bracket[F, Throwable]): F[List[(SchemaMap, Schema.Metadata)]] =
+    ref.get.map(state => state.schemas.values.toList.sortBy(_.metadata.createdAt).map(s => (s.schemaMap, s.metadata)))
 
   def getDraft(draftId: DraftId)(implicit B: Bracket[F, Throwable]): F[Option[SchemaDraft]] =
     for { db <- ref.get } yield db.drafts.get(draftId)

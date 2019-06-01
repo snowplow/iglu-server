@@ -22,6 +22,7 @@ import cats.effect.IO
 import com.monovore.decline._
 
 import io.circe.{Encoder, Json, JsonObject}
+import io.circe.syntax._
 import io.circe.generic.semiauto._
 
 import pureconfig._
@@ -51,8 +52,96 @@ case class Config(database: Config.StorageConfig,
 
 object Config {
 
+  sealed trait ThreadPool extends Product with Serializable
+  object ThreadPool {
+    case object Global extends ThreadPool
+    case object Cached extends ThreadPool
+    case class Fixed(size: Int) extends ThreadPool
+
+    implicit val threadPoolReader: ConfigReader[ThreadPool] =
+      ConfigReader.fromCursor { cur =>
+        cur.asString match {
+          case Right(s) if s.toLowerCase == "global" => Right(Global)
+          case Right(s) if s.toLowerCase == "cached" => Right(Cached)
+          case Left(err) =>
+            for {
+              obj <- cur.asObjectCursor
+              typeCur <- obj.atKey("type")
+              typeStr <- typeCur.asString
+              pool <- typeStr.toLowerCase match {
+                case "fixed" =>
+                  for {
+                    sizeCur <- obj.atKey("size")
+                    sizeInt <- sizeCur.asInt
+                  } yield Fixed(sizeInt)
+                case "global" => Right(Global)
+                case "cached" => Right(Cached)
+                case _ => Left(err)
+              }
+            } yield pool
+        }
+      }
+
+    implicit val threadPoolCirceEncoder: Encoder[ThreadPool] =
+      Encoder.instance {
+        case Global =>
+          Json.fromString("global")
+        case Cached =>
+          Json.fromString("cached")
+        case Fixed(size) =>
+          Json.fromFields(List(("size", Json.fromInt(size)), ("type", Json.fromString("fixed"))))
+      }
+  }
+
   sealed trait StorageConfig
   object StorageConfig {
+
+    /** Frequently used HikariCP settings */
+    sealed trait ConnectionPool extends Product with Serializable
+    object ConnectionPool {
+      case class NoPool(threadPool: ThreadPool = ThreadPool.Cached) extends ConnectionPool
+      case class Hikari(connectionTimeout: Option[Int],
+                        maxLifetime: Option[Int],
+                        minimumIdle: Option[Int],
+                        maximumPoolSize: Option[Int],
+                        // Provided by doobie
+                        connectionPool: ThreadPool = ThreadPool.Fixed(2),
+                        transactionPool: ThreadPool = ThreadPool.Cached) extends ConnectionPool
+
+      implicit val circePoolEncoder: Encoder[ConnectionPool] =
+        Encoder.instance {
+          case NoPool(threadPool) =>
+            Json.fromFields(List(
+              ("type", Json.fromString("NoPool")),
+              ("threadPool", threadPool.asJson(ThreadPool.threadPoolCirceEncoder))
+            ))
+          case h: Hikari =>
+            deriveEncoder[Hikari].apply(h)
+        }
+
+      implicit val nopoolHint = ProductHint[NoPool](ConfigFieldMapping(CamelCase, CamelCase))
+      implicit val hikariHint = ProductHint[Hikari](ConfigFieldMapping(CamelCase, CamelCase))
+      implicit val noPoolReader = deriveReader[NoPool]
+      implicit val hikariReader = deriveReader[Hikari]
+
+      implicit val poolRead: ConfigReader[ConnectionPool] =
+        ConfigReader.fromCursor { cur =>
+          for {
+            objCur <- cur.asObjectCursor
+            typeCur = objCur.atKeyOrUndefined("type")
+            pool <- if (typeCur.isUndefined) Right(ConfigReader[NoPool].from(cur).getOrElse(ConnectionPool.NoPool()))
+            else for {
+              typeStr <- typeCur.asString
+              result <- typeStr.toLowerCase match {
+                case "hikari" =>
+                  ConfigReader[Hikari].from(cur)
+                case "nopool" =>
+                  ConfigReader[NoPool].from(cur)
+              }
+            } yield result
+          } yield pool
+        }
+    }
 
     /**
       * Dummy in-memory configuration.
@@ -69,10 +158,19 @@ object Config {
                         password: String,
                         driver: String,
                         connectThreads: Option[Int],
-                        maxPoolSize: Option[Int]) extends StorageConfig
+                        maxPoolSize: Option[Int], // deprecated
+                        pool: ConnectionPool = ConnectionPool.NoPool(ThreadPool.Cached)) extends StorageConfig {
 
-    val postgresReader = ConfigReader.forProduct8("host", "port","dbname", "username",
-      "password", "driver", "connectThreads", "maxPoolSize")(StorageConfig.Postgres.apply)
+      /** Backward-compatibility */
+      val maximumPoolSize: Int = pool match {
+        case ConnectionPool.NoPool(_) => 0
+        case h: ConnectionPool.Hikari => h.maximumPoolSize.orElse(maxPoolSize).getOrElse(5)
+      }
+    }
+
+    val postgresReader: ConfigReader[Postgres] =
+      ConfigReader.forProduct9("host", "port","dbname", "username",
+        "password", "driver", "connectThreads", "maxPoolSize", "pool")(StorageConfig.Postgres.apply)
 
     implicit val storageConfigCirceEncoder: Encoder[StorageConfig] =
       deriveEncoder[StorageConfig].mapJson { json =>
@@ -93,7 +191,7 @@ object Config {
     * @param interface The server's host.
     * @param port The server's port.
     */
-  case class Http(interface: String, port: Int)
+  case class Http(interface: String, port: Int, idleTimeout: Option[Int], threadPool: ThreadPool = ThreadPool.Fixed(4))
 
   implicit def httpConfigHint =
     ProductHint[Http](ConfigFieldMapping(CamelCase, CamelCase))

@@ -14,13 +14,15 @@
  */
 package com.snowplowanalytics.iglu.server
 
+import java.util.concurrent.{ Executors, ExecutorService }
+
 import scala.concurrent.duration._
 import scala.concurrent.ExecutionContext
 
 import cats.data.Kleisli
 import cats.syntax.functor._
 import cats.syntax.apply._
-import cats.effect.{ContextShift, ExitCode, IO, Timer }
+import cats.effect.{ContextShift, Sync, ExitCode, IO, Timer, Resource}
 
 import io.circe.syntax._
 
@@ -28,25 +30,26 @@ import io.chrisdavenport.log4cats.slf4j.Slf4jLogger
 
 import fs2.Stream
 
-import org.http4s.{ HttpApp, Response, Status, HttpRoutes, MediaType, Request, Headers }
+import org.http4s.{Headers, HttpApp, HttpRoutes, MediaType, Request, Response, Status}
 import org.http4s.headers.`Content-Type`
 import org.http4s.client.blaze.BlazeClientBuilder
 import org.http4s.server.Router
 import org.http4s.server.blaze.BlazeServerBuilder
-import org.http4s.server.middleware.{ AutoSlash, CORS, CORSConfig, Logger, Timeout }
+import org.http4s.server.middleware.{AutoSlash, CORS, CORSConfig, Logger}
 import org.http4s.syntax.string._
 
-import org.http4s.rho.{ AuthedContext, RhoMiddleware }
+import org.http4s.rho.{AuthedContext, RhoMiddleware}
 import org.http4s.rho.bits.PathAST.{PathMatch, TypedPath}
 import org.http4s.rho.swagger.syntax.{io => ioSwagger}
-import org.http4s.rho.swagger.models.{ ApiKeyAuthDefinition, In, Info }
+import org.http4s.rho.swagger.models.{ApiKeyAuthDefinition, In, Info}
 
 import doobie.implicits._
 import doobie.util.transactor.Transactor
 
-import com.snowplowanalytics.iglu.server.migrations.{ MigrateFrom, Bootstrap }
+import com.snowplowanalytics.iglu.server.migrations.{Bootstrap, MigrateFrom}
 import com.snowplowanalytics.iglu.server.codecs.Swagger
-import com.snowplowanalytics.iglu.server.model.{ Permission, IgluResponse }
+import com.snowplowanalytics.iglu.server.middleware.{BadRequestHandler, CachingMiddleware}
+import com.snowplowanalytics.iglu.server.model.{IgluResponse, Permission}
 import com.snowplowanalytics.iglu.server.storage.Storage
 import com.snowplowanalytics.iglu.server.service._
 
@@ -55,8 +58,6 @@ import generated.BuildInfo.version
 object Server {
 
   private val logger = Slf4jLogger.getLogger[IO]
-
-  val ConnectionTimeout: FiniteDuration = 5.seconds
 
   type RoutesConstructor = (Storage[IO], AuthedContext[IO, Permission], RhoMiddleware[IO]) => HttpRoutes[IO]
 
@@ -87,9 +88,20 @@ object Server {
               debug: Boolean,
               patchesAllowed: Boolean,
               webhook: Webhook.WebhookClient[IO],
+              cache: CachingMiddleware.ResponseCache[IO],
               ec: ExecutionContext)
-             (implicit cs: ContextShift[IO], timer: Timer[IO]): HttpApp[IO] = {
+             (implicit cs: ContextShift[IO]): HttpApp[IO] = {
+    val serverRoutes = httpRoutes(storage, debug, patchesAllowed, webhook, cache, ec)
+    Kleisli[IO, Request[IO], Response[IO]](req => Router(serverRoutes: _*).run(req).getOrElse(NotFound))
+  }
 
+  def httpRoutes(storage: Storage[IO],
+                 debug: Boolean,
+                 patchesAllowed: Boolean,
+                 webhook: Webhook.WebhookClient[IO],
+                 cache: CachingMiddleware.ResponseCache[IO],
+                 ec: ExecutionContext)
+                (implicit cs: ContextShift[IO]): List[(String, HttpRoutes[IO])] = {
     val services: List[(String, RoutesConstructor)] = List(
       "/api/meta"       -> MetaService.asRoutes(debug, patchesAllowed),
       "/api/schemas"    -> SchemaService.asRoutes(patchesAllowed, webhook),
@@ -109,35 +121,53 @@ object Server {
       allowCredentials = true,
       maxAge = 1.day.toSeconds)
 
-    val serverRoutes = (if (debug) debugRoute :: routes else routes).map {
+    (if (debug) debugRoute :: routes else routes).map {
       case (endpoint, route) =>
         // Apply middleware
-        val httpRoutes = BadRequestHandler(Timeout(ConnectionTimeout)(CORS(AutoSlash(route), corsConfig)))
+        val httpRoutes = CachingMiddleware(cache)(BadRequestHandler(CORS(AutoSlash(route), corsConfig)))
         val redactHeadersWhen = (Headers.SensitiveHeaders + "apikey".ci).contains _
         (endpoint, Logger.httpRoutes[IO](true, true, redactHeadersWhen, Some(logger.debug(_)))(httpRoutes))
     }
-    Kleisli[IO, Request[IO], Response[IO]](req => Router(serverRoutes: _*).run(req).getOrElse(NotFound))
   }
 
+  def createThreadPool[F[_]: Sync](pool: Config.ThreadPool): Resource[F, ExecutionContext] =
+    pool match {
+      case Config.ThreadPool.Global =>  // Assuming we already have shutdown hook thanks to IOApp
+        Resource.pure[F, ExecutionContext](scala.concurrent.ExecutionContext.global)
+      case Config.ThreadPool.Cached =>
+        val alloc = Sync[F].delay(Executors.newCachedThreadPool)
+        val free  = (es: ExecutorService) => Sync[F].delay(es.shutdown())
+        Resource.make(alloc)(free).map(ExecutionContext.fromExecutor)
+      case Config.ThreadPool.Fixed(size) =>
+        val alloc = Sync[F].delay(Executors.newFixedThreadPool(size))
+        val free  = (es: ExecutorService) => Sync[F].delay(es.shutdown())
+        Resource.make(alloc)(free).map(ExecutionContext.fromExecutor)
+    }
 
-  def run(config: Config)(implicit ec: ExecutionContext, cs: ContextShift[IO], timer: Timer[IO]): Stream[IO, ExitCode] = {
+  def run(config: Config)(implicit cs: ContextShift[IO], timer: Timer[IO]): Stream[IO, ExitCode] = {
     for {
-      _ <- Stream.eval(logger.info(s"Initializing server with following configuration: ${config.asJson.noSpaces}"))
-      client <- BlazeClientBuilder[IO](ec).stream
+      _            <- Stream.eval(logger.info(s"Initializing server with following configuration: ${config.asJson.noSpaces}"))
+      httpPool     <- Stream.resource[IO, ExecutionContext](createThreadPool(config.repoServer.threadPool))
+      client       <- BlazeClientBuilder[IO](httpPool).stream
       webhookClient = Webhook.WebhookClient(config.webhooks.getOrElse(Nil), client)
-      storage <- Stream.resource(Storage.initialize[IO](ec)(config.database))
-      builder = BlazeServerBuilder[IO]
+      storage      <- Stream.resource(Storage.initialize[IO](config.database))
+      cache        <- Stream.resource(CachingMiddleware.initResponseCache[IO](500, 5.minutes))
+      builder       = BlazeServerBuilder[IO]
         .bindHttp(config.repoServer.port, config.repoServer.interface)
-        .withHttpApp(httpApp(storage, config.debug.getOrElse(false), config.patchesAllowed.getOrElse(false), webhookClient, ec))
-        .withIdleTimeout(ConnectionTimeout)
-      exit <- builder.serve
+        .withHttpApp(httpApp(storage, config.debug.getOrElse(false), config.patchesAllowed.getOrElse(false), webhookClient, cache, httpPool))
+        .withExecutionContext(httpPool)
+      builderWithIdle = config.repoServer.idleTimeout match {
+        case Some(t) => builder.withIdleTimeout(t.seconds)
+        case None    => builder
+      }
+      exit         <- builderWithIdle.serve
     } yield exit
   }
 
 
-  def setup(config: Config, migrate: Option[MigrateFrom])(implicit cs: ContextShift[IO]) = {
+  def setup(config: Config, migrate: Option[MigrateFrom])(implicit cs: ContextShift[IO]): IO[ExitCode] = {
     config.database match {
-      case Config.StorageConfig.Postgres(host, port, dbname, username, password, driver, _, _) =>
+      case Config.StorageConfig.Postgres(host, port, dbname, username, password, driver, _, _, _) =>
         val url = s"jdbc:postgresql://$host:$port/$dbname"
         val xa = Transactor.fromDriverManager[IO](driver, url, username, password)
         val action = migrate match {

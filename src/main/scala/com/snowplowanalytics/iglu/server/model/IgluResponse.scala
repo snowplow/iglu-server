@@ -18,6 +18,7 @@ import java.util.UUID
 
 import cats.data.NonEmptyList
 import cats.syntax.either._
+import cats.syntax.show._
 
 import io.circe.{Decoder, Encoder, Json}
 import io.circe.syntax._
@@ -112,10 +113,9 @@ object IgluResponse {
         uriSchemaKey <- cur.downField("uriSchemaKey").as[SchemaKey]
         payloadSchemaKey <- cur.downField("payloadSchemaKey").as[SchemaKey]
       } yield SchemaMismatch(uriSchemaKey, payloadSchemaKey)
-      case Right(DecodeError) => InvalidSchema.asRight
-      // TODO
-      case Right(_) => InvalidSchema.asRight
-      case Left(_) =>  InvalidSchema.asRight
+      case Right(DecodeError) => Message(DecodeError).asRight
+      case Right(message) => Message(message).asRight
+      case Left(e) =>  Message(e.show).asRight
     }
   }
 }

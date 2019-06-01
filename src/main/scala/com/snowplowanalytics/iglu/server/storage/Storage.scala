@@ -27,14 +27,14 @@ import cats.effect.{Sync, Resource}
 import io.circe.Json
 
 import doobie.hikari._
-import doobie.util.ExecutionContexts
+import doobie.util.transactor.{ Strategy, Transactor }
+
+import io.chrisdavenport.log4cats.slf4j.Slf4jLogger
 
 import com.snowplowanalytics.iglu.core.SchemaMap
 import com.snowplowanalytics.iglu.server.Config.StorageConfig
 import com.snowplowanalytics.iglu.server.model.{Permission, Schema, SchemaDraft}
 import com.snowplowanalytics.iglu.server.model.SchemaDraft.DraftId
-
-import scala.concurrent.ExecutionContext
 
 /**
   * Common interface for supported backend storages
@@ -43,14 +43,17 @@ import scala.concurrent.ExecutionContext
 trait Storage[F[_]] {
 
   def getSchema(schemaMap: SchemaMap)(implicit F: Bracket[F, Throwable]): F[Option[Schema]]
-  def getSchemasByVendor(vendor: String, wildcard: Boolean)(implicit F: Monad[F]): Stream[F, Schema] = {
-    if (wildcard) getSchemas.filter(_.schemaMap.schemaKey.vendor.startsWith(vendor))
-    else getSchemas.filter(_.schemaMap.schemaKey.vendor === vendor )
+  def getSchemasByVendor(vendor: String, wildcard: Boolean)(implicit F: Bracket[F, Throwable]): Stream[F, Schema] = {
+    val all = Stream.eval(getSchemas).flatMap(list => Stream.emits(list))
+    if (wildcard) all.filter(_.schemaMap.schemaKey.vendor.startsWith(vendor))
+    else all.filter(_.schemaMap.schemaKey.vendor === vendor )
   }
   def deleteSchema(schemaMap: SchemaMap)(implicit F: Bracket[F, Throwable]): F[Unit]
-  def getSchemasByVendorName(vendor: String, name: String)(implicit F: Monad[F]): Stream[F, Schema] =
+  def getSchemasByVendorName(vendor: String, name: String)(implicit F: Bracket[F, Throwable]): Stream[F, Schema] =
     getSchemasByVendor(vendor, false).filter(_.schemaMap.schemaKey.name === name)
-  def getSchemas(implicit F: Monad[F]): Stream[F, Schema]
+  def getSchemas(implicit F: Bracket[F, Throwable]): F[List[Schema]]
+  /** Optimization for `getSchemas` */
+  def getSchemasKeyOnly(implicit F: Bracket[F, Throwable]): F[List[(SchemaMap, Schema.Metadata)]]
   def getSchemaBody(schemaMap: SchemaMap)(implicit F: Bracket[F, Throwable]): F[Option[Json]] =
     getSchema(schemaMap).nested.map(_.body).value
   def addSchema(schemaMap: SchemaMap, body: Json, isPublic: Boolean)(implicit C: Clock[F], M: Bracket[F, Throwable]): F[Unit]
@@ -77,26 +80,39 @@ object Storage {
     override def getMessage: String = message
   }
 
-  def initialize[F[_]: Effect: ContextShift](transactEC: ExecutionContext)
-                                            (config: StorageConfig): Resource[F, Storage[F]] = {
+
+  def initialize[F[_]: Effect: ContextShift](config: StorageConfig): Resource[F, Storage[F]] = {
+    val logger = Slf4jLogger.getLoggerFromName("Storage")
     config match {
       case StorageConfig.Dummy =>
         Resource.liftF(storage.InMemory.empty)
-      case StorageConfig.Postgres(host, port, name, username, password, driver, threads, maxPoolSize) =>
+      case StorageConfig.Postgres(host, port, name, username, password, driver, _, _, Config.StorageConfig.ConnectionPool.NoPool(ec)) =>
         val url = s"jdbc:postgresql://$host:$port/$name"
         for {
-          connectEC <- ExecutionContexts.fixedThreadPool(threads.getOrElse(32))
+          blockingContext <- Server.createThreadPool(ec)
+          xa: Transactor[F] = Transactor.fromDriverManager[F](driver, url, username, password, blockingContext)
+        } yield Postgres[F](xa, logger)
+      case p @ StorageConfig.Postgres(host, port, name, username, password, driver, _, _, pool: Config.StorageConfig.ConnectionPool.Hikari) =>
+        val url = s"jdbc:postgresql://$host:$port/$name"
+        for {
+          connectEC  <- Server.createThreadPool(pool.connectionPool)
+          transactEC <- Server.createThreadPool(pool.transactionPool)
           xa <- HikariTransactor.newHikariTransactor[F](driver, url, username, password, connectEC, transactEC)
           _ <- Resource.liftF {
             xa.configure { ds =>
               Sync[F].delay {
-                ds.setMaximumPoolSize(maxPoolSize.getOrElse(10))
+                ds.setPoolName("iglu-hikaricp-pool")
                 ds.setAutoCommit(false)
-                ds.setConnectionTimeout(6000)
+
+                ds.setMaximumPoolSize(p.maximumPoolSize)
+                pool.connectionTimeout.foreach(t => ds.setConnectionTimeout(t.toLong))
+                pool.maxLifetime.foreach(t => ds.setMaxLifetime(t.toLong))
+                pool.minimumIdle.foreach(t => ds.setMinimumIdle(t))
               }
             }
           }
-          storage <- Resource.liftF(Postgres(xa).ping)
+          transactionless = Transactor.strategy.set(xa, Strategy.void)  // No point for read-heavy workload
+          storage <- Resource.liftF(Postgres(transactionless, logger).ping)
         } yield storage
     }
   }
