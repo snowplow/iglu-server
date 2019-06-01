@@ -15,8 +15,7 @@ curl -X GET \
 project_version=$(sbt version -Dsbt.log.noformat=true | perl -ne 'print "$1\n" if /info.*(\d+\.\d+\.\d+[^\r\n]*)/' | tail -n 1 | tr -d '\n')
 if [[ "${tag}" = *"${project_version}" ]]; then
     sbt docker:publishLocal
-    formatted_tag="${tag////:}"
-    docker push "${docker_repo}/snowplow/${formatted_tag//_/-}"
+    docker push "${docker_repo}/snowplow/iglu-server:${tag}"
 else
     echo "Tag version '${tag}' doesn't match version in scala project ('${project_version}'). Aborting!"
     exit 1
