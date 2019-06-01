@@ -69,10 +69,29 @@ object Config {
                         password: String,
                         driver: String,
                         connectThreads: Option[Int],
-                        maxPoolSize: Option[Int]) extends StorageConfig
+                        maxPoolSize: Option[Int], // deprecated
+                        pool: Option[DbPoolConfig]) extends StorageConfig {
 
-    val postgresReader = ConfigReader.forProduct8("host", "port","dbname", "username",
-      "password", "driver", "connectThreads", "maxPoolSize")(StorageConfig.Postgres.apply)
+      /** Backward-compatibility */
+      val maximumPoolSize: Int = pool.flatMap(_.maximumPoolSize).orElse(maxPoolSize).getOrElse(5)
+    }
+
+    /** Frequently used HikariCP settings */
+    case class DbPoolConfig(connectionTimeout: Option[Int],
+                            maxLifetime: Option[Int],
+                            minimumIdle: Option[Int],
+                            maximumPoolSize: Option[Int])
+
+    object DbPoolConfig {
+      implicit val poolHint = ProductHint[DbPoolConfig](ConfigFieldMapping(CamelCase, CamelCase))
+      implicit val poolReader: ConfigReader[DbPoolConfig] = deriveReader[DbPoolConfig]
+    }
+
+    val postgresReader = ConfigReader.forProduct9("host", "port","dbname", "username",
+      "password", "driver", "connectThreads", "maxPoolSize", "pool")(StorageConfig.Postgres.apply)
+
+    implicit val connectionPoolConfig: Encoder[DbPoolConfig] =
+      deriveEncoder[DbPoolConfig]
 
     implicit val storageConfigCirceEncoder: Encoder[StorageConfig] =
       deriveEncoder[StorageConfig].mapJson { json =>

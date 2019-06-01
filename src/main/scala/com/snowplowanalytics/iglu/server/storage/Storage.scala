@@ -82,7 +82,7 @@ object Storage {
     config match {
       case StorageConfig.Dummy =>
         Resource.liftF(storage.InMemory.empty)
-      case StorageConfig.Postgres(host, port, name, username, password, driver, threads, maxPoolSize) =>
+      case p @ StorageConfig.Postgres(host, port, name, username, password, driver, threads, _, _) =>
         val url = s"jdbc:postgresql://$host:$port/$name"
         for {
           connectEC <- ExecutionContexts.fixedThreadPool(threads.getOrElse(32))
@@ -90,7 +90,7 @@ object Storage {
           _ <- Resource.liftF {
             xa.configure { ds =>
               Sync[F].delay {
-                ds.setMaximumPoolSize(maxPoolSize.getOrElse(10))
+                ds.setMaximumPoolSize(p.maximumPoolSize)
                 ds.setAutoCommit(false)
                 ds.setConnectionTimeout(6000)
               }
