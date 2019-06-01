@@ -44,7 +44,7 @@ class SchemaServiceSpec extends org.specs2.Specification { def is = s2"""
 
   def e1 = {
     val req: Request[IO] =
-      Request(Method.GET, Uri.uri("/com.acme/nonexistent/jsonschema/1-0-0"))
+      Request(Method.GET, uri"/com.acme/nonexistent/jsonschema/1-0-0")
 
     val response = SchemaServiceSpec.request(List(req), false)
     response.unsafeRunSync().status must beEqualTo(Status.NotFound)
@@ -52,7 +52,7 @@ class SchemaServiceSpec extends org.specs2.Specification { def is = s2"""
 
   def e3 = {
     val req: Request[IO] =
-      Request(Method.GET, Uri.uri("/com.acme/event/jsonschema/1-0-0"))
+      Request(Method.GET, uri"/com.acme/event/jsonschema/1-0-0")
 
     val result = for {
       response <- SchemaServiceSpec.request(List(req), false)

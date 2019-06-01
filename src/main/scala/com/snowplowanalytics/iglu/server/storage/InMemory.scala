@@ -60,10 +60,11 @@ case class InMemory[F[_]](ref: Ref[F, InMemory.State]) extends Storage[F] {
   def updateSchema(schemaMap: SchemaMap, body: Json, isPublic: Boolean)(implicit C: Clock[F], M: Bracket[F, Throwable]): F[Unit] =
     addSchema(schemaMap, body, isPublic)
 
-  def getSchemas(implicit F: Monad[F]): Stream[F, Schema] = {
-    val schemas = ref.get.map(state => Stream.emits[F, Schema](state.schemas.values.toList.sortBy(_.metadata.createdAt)))
-    Stream.eval(schemas).flatten
-  }
+  def getSchemas(implicit F: Bracket[F, Throwable]): F[List[Schema]] =
+    ref.get.map(state => state.schemas.values.toList.sortBy(_.metadata.createdAt))
+
+  def getSchemasKeyOnly(implicit F: Bracket[F, Throwable]): F[List[(SchemaMap, Schema.Metadata)]] =
+    ref.get.map(state => state.schemas.values.toList.sortBy(_.metadata.createdAt).map(s => (s.schemaMap, s.metadata)))
 
   def getDraft(draftId: DraftId)(implicit B: Bracket[F, Throwable]): F[Option[SchemaDraft]] =
     for { db <- ref.get } yield db.drafts.get(draftId)
@@ -97,6 +98,9 @@ case class InMemory[F[_]](ref: Ref[F, InMemory.State]) extends Storage[F] {
 }
 
 object InMemory {
+
+  val DummyMasterKey: UUID = UUID.fromString("48b267d7-cd2b-4f22-bae4-0f002008b5ad")
+
   case class State(schemas: Map[SchemaMap, Schema],
                    permission: Map[UUID, Permission],
                    drafts: Map[DraftId, SchemaDraft])
@@ -108,7 +112,7 @@ object InMemory {
     val withMasterKey: State =
       State(
         Map.empty[SchemaMap, Schema],
-        Map(UUID.fromString("48b267d7-cd2b-4f22-bae4-0f002008b5ad") -> Permission.Master),
+        Map(DummyMasterKey -> Permission.Master),
         Map.empty[DraftId, SchemaDraft]
       )
   }

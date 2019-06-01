@@ -30,28 +30,40 @@ import doobie.implicits._
 import doobie.postgres.implicits._
 import doobie.postgres.circe.json.implicits._
 
+import io.chrisdavenport.log4cats.Logger
+
 import com.snowplowanalytics.iglu.core.{ SchemaMap, SchemaVer }
 import com.snowplowanalytics.iglu.server.model.{ Permission, Schema, SchemaDraft }
 import com.snowplowanalytics.iglu.server.model.SchemaDraft.DraftId
 
-class Postgres[F[_]](xa: Transactor[F]) extends Storage[F] { self =>
+class Postgres[F[_]](xa: Transactor[F], logger: Logger[F]) extends Storage[F] { self =>
+
   def getSchema(schemaMap: SchemaMap)(implicit F: Bracket[F, Throwable]): F[Option[Schema]] =
-    Postgres.Sql.getSchema(schemaMap).option.transact(xa)
+    logger.debug(s"getSchemas ${schemaMap.schemaKey.toSchemaUri}") *>
+      Postgres.Sql.getSchema(schemaMap).option.transact(xa)
 
   def deleteSchema(schemaMap: SchemaMap)(implicit F: Bracket[F, Throwable]): F[Unit] =
     Postgres.Sql.deleteSchema(schemaMap).run.void.transact(xa)
 
   def getPermission(apikey: UUID)(implicit F: Bracket[F, Throwable]): F[Option[Permission]] =
-    Postgres.Sql.getPermission(apikey).option.transact(xa)
+    logger.debug(s"getPermission") *>
+      Postgres.Sql.getPermission(apikey).option.transact(xa)
 
   def addSchema(schemaMap: SchemaMap, body: Json, isPublic: Boolean)(implicit C: Clock[F], M: Bracket[F, Throwable]): F[Unit] =
-    Postgres.Sql.addSchema(schemaMap, body, isPublic).run.void.transact(xa)
+    logger.debug(s"addSchema ${schemaMap.schemaKey.toSchemaUri}") *>
+      Postgres.Sql.addSchema(schemaMap, body, isPublic).run.void.transact(xa)
 
   def updateSchema(schemaMap: SchemaMap, body: Json, isPublic: Boolean)(implicit C: Clock[F], M: Bracket[F, Throwable]): F[Unit] =
-    Postgres.Sql.updateSchema(schemaMap, body, isPublic).run.void.transact(xa)
+    logger.debug(s"updateSchema ${schemaMap.schemaKey.toSchemaUri}") *>
+      Postgres.Sql.updateSchema(schemaMap, body, isPublic).run.void.transact(xa)
 
-  def getSchemas(implicit F: Monad[F]): Stream[F, Schema] =
-    Postgres.Sql.getSchemas.stream.transact(xa)
+  def getSchemas(implicit F: Bracket[F, Throwable]): F[List[Schema]] =
+    logger.debug("getSchemas") *>
+      Postgres.Sql.getSchemas.to[List].transact(xa)
+
+  def getSchemasKeyOnly(implicit F: Bracket[F, Throwable]): F[List[(SchemaMap, Schema.Metadata)]] =
+    logger.debug("getSchemasKeyOnly") *>
+      Postgres.Sql.getSchemasKeyOnly.to[List].transact(xa)
 
   def getDraft(draftId: DraftId)(implicit B: Bracket[F, Throwable]): F[Option[SchemaDraft]] =
     Postgres.Sql.getDraft(draftId).option.transact(xa)
@@ -63,17 +75,28 @@ class Postgres[F[_]](xa: Transactor[F]) extends Storage[F] { self =>
     Postgres.Sql.getDrafts.stream.transact(xa)
 
   def addPermission(uuid: UUID, permission: Permission)(implicit F: Bracket[F, Throwable]): F[Unit] =
-    Postgres.Sql.addPermission(uuid, permission).run.void.transact(xa)
+    logger.debug(s"addPermission $permission") *>
+      Postgres.Sql.addPermission(uuid, permission).run.void.transact(xa)
 
   def deletePermission(id: UUID)(implicit F: Bracket[F, Throwable]): F[Unit] =
-    Postgres.Sql.deletePermission(id)
+    logger.debug(s"deletePermission") *>
+      Postgres.Sql.deletePermission(id)
       .run
       .void
       .transact(xa)
 
   def ping(implicit F: Bracket[F, Throwable]): F[Storage[F]] =
-    sql"SELECT 42".query[Int].unique.transact(xa).as(self)
+    logger.debug(s"ping") *>
+      sql"SELECT 42".query[Int].unique.transact(xa).as(self)
 
+  def drop(implicit F: Bracket[F, Throwable]): F[Unit] =
+    logger.warn("Dropping database entities") *>
+      (Postgres.Sql.dropSchemas.run.void *>
+        Postgres.Sql.dropDrafts.run.void *>
+        Postgres.Sql.dropPermissions.run.void *>
+        Postgres.Sql.dropSchemaAction.run.void *>
+        Postgres.Sql.dropKeyAction.run.void).transact(xa) *>
+      logger.warn("Database entities were dropped")
 }
 
 object Postgres {
@@ -83,11 +106,12 @@ object Postgres {
   val PermissionsTable = Fragment.const("iglu_permissions")
 
   val schemaColumns = Fragment.const("vendor, name, format, model, revision, addition, created_at, updated_at, is_public, body")
+  val schemaKeyColumns = Fragment.const("vendor, name, format, model, revision, addition, created_at, updated_at, is_public")
   val draftColumns = Fragment.const("vendor, name, format, version, created_at, updated_at, is_public, body")
 
   val Ordering = Fragment.const("ORDER BY created_at")
 
-  def apply[F[_]](xa: Transactor[F]): Postgres[F] = new Postgres(xa)
+  def apply[F[_]](xa: Transactor[F], logger: Logger[F]): Postgres[F] = new Postgres(xa, logger)
 
   def draftFr(id: DraftId): Fragment =
     fr"name = ${id.name}" ++
@@ -110,6 +134,9 @@ object Postgres {
 
     def getSchemas =
       (fr"SELECT" ++ schemaColumns ++ fr"FROM" ++ SchemasTable ++ Ordering).query[Schema]
+
+    def getSchemasKeyOnly =
+      (fr"SELECT" ++ schemaKeyColumns ++ fr"FROM" ++ SchemasTable ++ Ordering).query[(SchemaMap, Schema.Metadata)]
 
     def addSchema(schemaMap: SchemaMap, schema: Json, isPublic: Boolean): Update0 = {
       val key = schemaMap.schemaKey
@@ -148,5 +175,22 @@ object Postgres {
 
     def deletePermission(id: UUID) =
       (fr"DELETE FROM" ++ PermissionsTable ++ fr"WHERE apikey = $id").update
+
+    // Non-production statements
+
+    def dropSchemas: Update0 =
+      (fr"DROP TABLE IF EXISTS" ++ SchemasTable).update
+
+    def dropDrafts: Update0 =
+      (fr"DROP TABLE IF EXISTS" ++ DraftsTable).update
+
+    def dropPermissions: Update0 =
+      (fr"DROP TABLE IF EXISTS" ++ PermissionsTable).update
+
+    def dropSchemaAction: Update0 =
+      sql"DROP TYPE IF EXISTS schema_action".update
+
+    def dropKeyAction: Update0 =
+      sql"DROP TYPE IF EXISTS key_action".update
   }
 }

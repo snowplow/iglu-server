@@ -87,7 +87,6 @@ class SchemaService[F[+_]: Sync](swagger: SwaggerSyntax[F],
       validationService.validateSchema(Schema.Format.Jsonschema, json)
   }
 
-
   def getSchema(vendor: String, name: String, format: String, version: SchemaVer.Full,
                 schemaFormat: SchemaFormat, permission: Permission) = {
     db.getSchema(SchemaMap(vendor, name, format, version)).flatMap {
@@ -138,8 +137,15 @@ class SchemaService[F[+_]: Sync](swagger: SwaggerSyntax[F],
   }
 
   def listSchemas(format: SchemaFormat, permission: Permission) = {
-    val response = db.getSchemas.filter(isReadable(permission)).map(_.withFormat(format))
-    Ok(JsonArrayStream(response))
+    val result = format match {
+      case SchemaFormat.Uri =>
+        db.getSchemasKeyOnly
+          .map(_.filter(isReadablePair(permission)).map { case (map, meta) => Schema(map, meta, Json.Null).withFormat(SchemaFormat.Uri) })
+      case _ =>
+        db.getSchemas
+          .map(_.filter(isReadable(permission)).map(_.withFormat(format)))
+    }
+    result.flatMap(response => Ok(response))
   }
 
   private def addSchema(permission: Permission, schema: SelfDescribingSchema[Json], isPublic: Boolean) =
@@ -192,5 +198,11 @@ object SchemaService {
 
   /** Extract schemas from database, available for particular permission */
   def isReadable(permission: Permission)(schema: Schema): Boolean =
-    permission.canRead(schema.schemaMap.schemaKey.vendor) || schema.metadata.isPublic
+    isReadablePair(permission)((schema.schemaMap, schema.metadata))
+
+  def isReadablePair(permission: Permission)(meta: (SchemaMap, Schema.Metadata)): Boolean =
+    meta match {
+      case (schemaMap, metadata) =>
+        permission.canRead(schemaMap.schemaKey.vendor) || metadata.isPublic
+    }
 }
