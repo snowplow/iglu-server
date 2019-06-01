@@ -9,11 +9,11 @@ script:
 before_deploy:
 - pip install --user release-manager==0.4.1
 deploy:
-- provider: script
-  skip_cleanup: true
-  script: "./.travis/deploy.sh $TRAVIS_TAG"
-  on:
-    tags: true
+    # - provider: script
+    #   skip_cleanup: true
+    #   script: "./.travis/deploy.sh $TRAVIS_TAG"
+    #   on:
+    #     tags: true
 - provider: script
   skip_cleanup: true
   script: "./.travis/deploy_docker.sh $TRAVIS_TAG"
