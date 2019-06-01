@@ -3,7 +3,7 @@ lazy val root = (project in file("."))
     organization := "com.snowplowanalytics",
     name := "iglu-server",
     version := "0.5.0",
-    scalaVersion := "2.12.8",
+    scalaVersion := "2.12.9",
     libraryDependencies ++= Dependencies.all,
     scalacOptions ++= Seq(
       "-deprecation",                      // Emit warning and location for usages of deprecated APIs.

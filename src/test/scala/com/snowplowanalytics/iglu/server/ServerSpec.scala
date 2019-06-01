@@ -14,43 +14,122 @@
  */
 package com.snowplowanalytics.iglu.server
 
+//import scala.concurrent.duration._
+
 import cats.implicits._
-import cats.effect.IO
+import cats.effect.{ IO, ContextShift, Timer, Resource }
 
 import io.circe.Json
+import io.circe.literal._
 
 import org.http4s._
 import org.http4s.circe._
-import org.http4s.client.Client
-import org.http4s.rho.swagger.syntax.io.createRhoMiddleware
+import org.http4s.client.blaze.BlazeClientBuilder
 
-import com.snowplowanalytics.iglu.server.service.SchemaService
+import org.specs2.Specification
 
-class ServerSpec extends org.specs2.Specification { def is = s2"""
-  Return 200 for public schema $e1
-  Return empty JSON object for public schema $e2
+import com.snowplowanalytics.iglu.server.storage.{ Storage, Postgres }
+import com.snowplowanalytics.iglu.server.model.{ IgluResponse, Permission }
+import com.snowplowanalytics.iglu.server.storage.InMemory
+import com.snowplowanalytics.iglu.server.codecs.JsonCodecs._
+
+// Integration test requiring a database
+// docker run --name igludb -e POSTGRES_PASSWORD=iglusecret -e POSTGRES_DB=testdb -p 5432:5432 -d postgres
+class ServerSpec extends Specification  { def is = sequential ^ s2"""
+  ${action(System.setProperty("org.slf4j.simpleLogger.defaultLogLevel", "off"))}
+  Return 404 for non-existing schema $e1
+  Return 404 for unkown endpoint $e2
+  Create a new private schema via PUT, return it with proper apikey, hide for no apikey $e3
+  ${action(System.clearProperty("org.slf4j.simpleLogger.defaultLogLevel"))}
   """
+  import ServerSpec._
 
   def e1 = {
-    val response = ServerSpec.request(Request(Method.GET, Uri.uri("/com.acme/event/jsonschema/1-0-0")))
-    response.unsafeRunSync().status must beEqualTo(Status.Ok)
+    val req = Request[IO](Method.GET, uri"http://localhost:8080/api/schemas/com.acme/event/jsonschema/1-0-0")
+    val expected = TestResponse(404, IgluResponse.SchemaNotFound)
+
+    val action = for {
+      responses <- ServerSpec.executeRequests(List(req))
+      results <- responses.traverse(res => TestResponse.build[IgluResponse](res))
+    } yield results
+
+    execute(action) must beEqualTo(List(expected))
   }
 
   def e2 = {
-    val response = ServerSpec.request(Request(Method.GET, Uri.uri("/com.acme/event/jsonschema/1-0-0")))
-    response.flatMap(_.as[Json]).unsafeRunSync() must beEqualTo(SpecHelpers.selfSchemaZero)
+    val req = Request[IO](Method.GET, uri"http://localhost:8080/boom")
+    val expected = TestResponse(404, IgluResponse.Message("The endpoint does not exist"))
+
+    val action = for {
+      responses <- ServerSpec.executeRequests(List(req))
+      results <- responses.traverse(res => TestResponse.build[IgluResponse](res))
+    } yield results
+
+    execute(action) must beEqualTo(List(expected))
+  }
+
+  def e3 = {
+    val reqs = List(
+      Request[IO](Method.PUT, uri"http://localhost:8080/api/schemas/com.acme/first/jsonschema/1-0-0")
+        .withEntity(json"""{"properties": {}}""")
+        .withHeaders(Header("apikey", InMemory.DummyMasterKey.toString)),
+      Request[IO](Method.GET, uri"http://localhost:8080/api/schemas/")
+        .withHeaders(Header("apikey", InMemory.DummyMasterKey.toString)),
+      Request[IO](Method.GET, uri"http://localhost:8080/api/schemas/com.acme/first/jsonschema/1-0-0")
+        .withHeaders(Header("apikey", InMemory.DummyMasterKey.toString)),
+      Request[IO](Method.GET, uri"http://localhost:8080/api/schemas/com.acme/first/jsonschema/1-0-0")
+    )
+
+    val expected = List(
+      TestResponse(201, json"""{"message": "Schema created", "updated": false, "location": "iglu:com.acme/first/jsonschema/1-0-0", "status": 201}"""),
+      TestResponse(200, json"""["iglu:com.acme/first/jsonschema/1-0-0"]"""),
+      TestResponse(200, json"""{
+        "$$schema" : "http://iglucentral.com/schemas/com.snowplowanalytics.self-desc/schema/jsonschema/1-0-0#",
+        "self": {"vendor": "com.acme", "name": "first", "format": "jsonschema", "version": "1-0-0"},
+        "properties" : {}}"""),
+      TestResponse(404, json"""{"message" : "The schema is not found"}""")
+    )
+
+    val action = for {
+      responses <- ServerSpec.executeRequests(reqs)
+      results <- responses.traverse(res => TestResponse.build[Json](res))
+    } yield results
+
+    execute(action) must beEqualTo(expected)
   }
 }
 
 object ServerSpec {
-  val middleware = createRhoMiddleware()
+  import scala.concurrent.ExecutionContext.global
+  implicit val cs: ContextShift[IO] = IO.contextShift(global)
+  implicit val timer: Timer[IO] = IO.timer(global)
 
-  val client: Client[IO] = Client.fromHttpApp(HttpApp[IO](r => Response[IO]().withEntity(r.body).pure[IO]))
+  val dbPoolConfig = Config.StorageConfig.ConnectionPool.Hikari(None, None, None, None)
+  val httpConfig = Config.Http("0.0.0.0", 8080, None, Config.ThreadPool.Cached)
+  val storageConfig = Config.StorageConfig.Postgres("localhost", 5432, "testdb", "postgres", "iglusecret", "org.postgresql.Driver", None, None, dbPoolConfig)
+  val config = Config(storageConfig, httpConfig, Some(false), Some(true), None)
 
-  def request(req: Request[IO]): IO[Response[IO]] = {
-    for {
-      storage <- storage.InMemory.get[IO](SpecHelpers.exampleState)
-      service <- SchemaService.asRoutes(false, Webhook.WebhookClient(List(), client))(storage, SpecHelpers.ctx, middleware).run(req).value
-    } yield service.getOrElse(Response(Status.NotFound))
+  private val runServer = Server.buildServer(config).flatMap(_.resource)
+  private val client = BlazeClientBuilder[IO](global).resource
+  private val env = client <* runServer
+
+  /** Execute requests against fresh server (only one execution per test is allowed) */
+  def executeRequests(requests: List[Request[IO]]): IO[List[Response[IO]]] =
+    env.use { client => requests.traverse(client.fetch(_)(IO.pure)) }
+
+  val specification = Resource.make {
+    Storage.initialize[IO](storageConfig).use(s => s.asInstanceOf[Postgres[IO]].drop) *>
+      Server.setup(ServerSpec.config, None).void *>
+      Storage.initialize[IO](storageConfig).use(_.addPermission(InMemory.DummyMasterKey, Permission.Master))
+  } { _ => Storage.initialize[IO](storageConfig).use(s => s.asInstanceOf[Postgres[IO]].drop) }
+
+  def execute[A](action: IO[A]): A =
+    specification.use(_ => action).unsafeRunSync()
+
+  case class TestResponse[E](status: Int, body: E)
+
+  object TestResponse {
+    def build[E](actual: Response[IO])(implicit decoder: EntityDecoder[IO, E]): IO[TestResponse[E]] =
+      actual.as[E].map { body => TestResponse(actual.status.code, body) }
   }
 }
