@@ -14,6 +14,8 @@
  */
 package com.snowplowanalytics.iglu.server
 
+import java.util.concurrent.Executors
+
 import cats.effect.{IOApp, Resource, SyncIO}
 import org.slf4j.{Logger, LoggerFactory}
 
@@ -21,8 +23,8 @@ import scala.concurrent.ExecutionContext
 
 trait SafeIOApp extends IOApp.WithContext {
 
-  implicit val ec: ExecutionContext =
-    scala.concurrent.ExecutionContext.Implicits.global
+  private lazy val ec: ExecutionContext =
+    ExecutionContext.fromExecutorService(Executors.newFixedThreadPool(List(2, Runtime.getRuntime.availableProcessors()).max))
 
   private val log: Logger = LoggerFactory.getLogger(Main.getClass)
 

@@ -27,8 +27,8 @@ object BuildSettings {
   lazy val dockerPgInstallCmds = Seq(
     ExecCmd("RUN", "cp", "/opt/docker/docker-entrypoint.sh", "/usr/local/bin/"),
     Cmd("RUN", "apt update"),
-    Cmd("RUN", "mkdir -p /usr/share/man/man7"),
-    Cmd("RUN", "apt install -y postgresql-client-9.6")
+    Cmd("RUN", "mkdir -p /usr/share/man/man1 && mkdir -p /usr/share/man/man7"),
+    Cmd("RUN", "apt install -y postgresql-client-9.6"),
   )
 
   lazy val dockerSettings = Seq(

@@ -15,7 +15,7 @@
 package com.snowplowanalytics.iglu.server.service
 
 import cats.effect.{IO, Sync}
-import cats.instances.int._
+import cats.instances.list._
 import cats.syntax.functor._
 import cats.syntax.flatMap._
 
@@ -65,7 +65,8 @@ class MetaService[F[+_]: Sync](debug: Boolean,
       case _ => "unknown"
     }
     for {
-      count <- db.getSchemas.filter(s => authInfo.canRead(s.schemaMap.schemaKey.vendor)).as(1).compile.foldMonoid
+      schemas <- db.getSchemasKeyOnly
+      count = schemas.filter(s => authInfo.canRead(s._1.schemaKey.vendor)).as(()).length
       response <- Ok(MetaService.ServerInfo(BuildInfo.version, authInfo, database, count, debug, patchesAllowed))
     } yield response
   }

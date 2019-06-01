@@ -32,7 +32,6 @@ import org.http4s.rho.AuthedContext
 import com.snowplowanalytics.iglu.server.model.{ Permission, IgluResponse }
 import com.snowplowanalytics.iglu.server.storage.Storage
 
-
 /**
   * Used only in HTTP Services, where all endpoints require authentication
   *
@@ -57,15 +56,16 @@ object PermissionMiddleware {
   def wrapService[F[_]: Sync](db: Storage[F], ctx: AuthedContext[F, Permission], service: HttpRoutes[F]): HttpRoutes[F] =
     PermissionMiddleware[F](db).apply(ctx.toService(service))
 
-  private val notFoundBody = Utils.toBytes(IgluResponse.SchemaNotFound: IgluResponse)
+  private val SchemaNotFoundBody = Utils.toBytes(IgluResponse.SchemaNotFound: IgluResponse)
+  private val PermissionsIssue = Utils.toBytes(IgluResponse.Message("Not enough permissions"): IgluResponse)
 
   /** Authenticate request against storage */
   private def auth[F[_]: Sync](storage: Storage[F])(request: Request[F]): OptionT[F, Permission] = {
     getApiKey(request) match {
-      case Some(Right(apiKey)) =>
-        OptionT(apiKey.pure[F].flatMap(storage.getPermission))
       case None =>
         OptionT.pure(Permission.Noop)
+      case Some(Right(apiKey)) =>
+        OptionT(apiKey.pure[F].flatMap(storage.getPermission))
       case Some(_) =>
         OptionT.none
     }
@@ -73,13 +73,16 @@ object PermissionMiddleware {
 
   /** Handle invalid apikey as BadRequest, everything else as NotFound
     * (because we don't reveal presence of private resources)
+    * Function is called only on Some(_)
     */
   private def badRequestHandler[F[_]](implicit F: Applicative[F]): Request[F] => F[Response[F]] =
     s => getApiKey(s) match {
       case Some(Left(error)) =>
         val body = Utils.toBytes[F, IgluResponse](IgluResponse.Message(s"Error parsing apikey HTTP header. ${error.getMessage}"))
         F.pure(Response[F](Status.BadRequest, body = body))
-      case _ =>
-        F.pure(Response[F](Status.NotFound, body = notFoundBody))
+      case _ if s.uri.renderString.contains("keygen") =>  // Horrible way to check if we're not using SchemaService
+        F.pure(Response[F](Status.Forbidden, body = PermissionsIssue))
+      case Some(Right(_)) =>
+        F.pure(Response[F](Status.NotFound, body = SchemaNotFoundBody))
     }
 }

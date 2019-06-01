@@ -12,17 +12,18 @@
  * See the Apache License Version 2.0 for the specific language governing permissions and
  * limitations there under.
  */
-package com.snowplowanalytics.iglu.server
+package com.snowplowanalytics.iglu.server.middleware
 
 import cats.data.{Kleisli, OptionT}
-import cats.implicits._
 import cats.effect.Effect
+import cats.implicits._
 
-import org.http4s.{HttpRoutes, Request, Response, Status}
+import com.snowplowanalytics.iglu.server.Utils
+import com.snowplowanalytics.iglu.server.model.IgluResponse
 
 import io.circe.parser.parse
 
-import com.snowplowanalytics.iglu.server.model.IgluResponse
+import org.http4s.{HttpRoutes, Request, Response, Status}
 
 /** Wrap any non-JSON message into `{"message": original}` payload */
 object BadRequestHandler {
