@@ -4,8 +4,8 @@ scala:
 jdk:
 - oraclejdk11
 script:
-- sbt test
 - "./scripts/create-test-user.bash"
+- sbt test
 before_deploy:
 - pip install --user release-manager==0.4.1
 deploy:
