@@ -1,2 +1,2 @@
-ALTER USER postgres SET PASSWORD 'iglusecret';
-CREATE DATABASE igludb OWNER sp_user;
+ALTER USER postgres WITH PASSWORD 'iglusecret';
+CREATE DATABASE igludb OWNER postgres;
