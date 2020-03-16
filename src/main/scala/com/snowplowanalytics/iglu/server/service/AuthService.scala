@@ -52,10 +52,7 @@ class AuthService[F[+_]: Sync](swagger: SwaggerSyntax[F], ctx: AuthedContext[F, 
     POST / "keygen" >>> ctx.auth |>> { (req: Request[F], authInfo: Permission) =>
     if (authInfo.key.contains(Permission.KeyAction.Create))
       for {
-        vendorE  <- req.attemptAs[UrlForm]
-          .subflatMap(vendorFromForm)
-          .recoverWith { case MalformedMessageBodyFailure(_, None) => vendorFromBody(req) }
-          .value
+        vendorE  <- vendorFromBody(req).value
         response <- vendorE match {
           case Right(vendor) if authInfo.canCreatePermission(vendor.asString) =>
             for {
@@ -97,13 +94,7 @@ object AuthService {
     PermissionMiddleware.wrapService(db, ctx, service)
   }
 
-  def vendorFromForm(urlForm: UrlForm): Either[DecodeFailure, Permission.Vendor] =
-    urlForm
-      .getFirst("vendor_prefix")
-      .map(Permission.Vendor.parse)
-      .toRight(InvalidMessageBodyFailure(s"Cannot extract vendor_prefix from ${UrlForm.encodeString(Charset.`UTF-8`)(urlForm)}"))
-
-  def vendorFromBody[F[_]: Sync](request: Request[F]) = {
+  def vendorFromBody[F[_]: Sync](request: Request[F]): EitherT[F, DecodeFailure, Permission.Vendor] = {
     request.attemptAs[Json].flatMap { json =>
       EitherT.fromEither[F](json.as[GenerateKey].fold(
         e => InvalidMessageBodyFailure(e.show).asLeft[Permission.Vendor],

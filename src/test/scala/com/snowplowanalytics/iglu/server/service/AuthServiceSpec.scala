@@ -8,7 +8,7 @@ import org.http4s.rho.swagger.syntax.io.createRhoMiddleware
 
 class AuthServiceSpec extends org.specs2.Specification { def is = s2"""
   /keygen generates read-only API key pair for master key and JSON payload $e1
-  /keygen generates read-only API key pair for master key and form payload (deprecated) $e2
+  /keygen does not work with deprecated form API $e2
   /keygen doesn't authorize without apikey header $e3
   /keygen deletes key $e4
   """
@@ -49,7 +49,7 @@ class AuthServiceSpec extends org.specs2.Specification { def is = s2"""
 
     val response = AuthServiceSpec.state(List(req))
     val (_, state) = response.unsafeRunSync()
-    state.permission must haveValues(expected)
+    state.permission must not haveValues(expected)
   }
 
   def e3 = {
