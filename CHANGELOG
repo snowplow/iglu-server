@@ -1,3 +1,8 @@
+Version 0.6.1 (2020-03-20)
+--------------------------
+Bump http4s to 0.20.19 (#39)
+Deprecate query param support for API key generation (#40)
+
 Version 0.6.0 (2019-10-09)
 --------------------------
 Add DELETE endpoints for schemas (snowplow/iglu#366)
