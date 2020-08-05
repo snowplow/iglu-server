@@ -176,14 +176,14 @@ object Server {
         val action = migrate match {
           case Some(migration) =>
             migration.perform.transact(xa) *>
-              IO(logger.warn(s"All tables were migrated in $dbname from $migration"))
+              logger.warn(s"All tables were migrated in $dbname from $migration")
           case None =>
             Bootstrap.initialize[IO](xa) *>
-              IO(logger.warn(s"Tables were initialized in $dbname"))
+              logger.warn(s"Tables were initialized in $dbname")
         }
         action.as(ExitCode.Success)
       case Config.StorageConfig.Dummy =>
-        IO(logger.error(s"Nothing to setup with dummy storage")).as(ExitCode.Error)
+        logger.error(s"Nothing to setup with dummy storage").as(ExitCode.Error)
     }
   }
 
