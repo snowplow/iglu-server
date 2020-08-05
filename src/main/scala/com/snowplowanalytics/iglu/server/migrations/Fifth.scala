@@ -57,7 +57,9 @@ object Fifth {
       _ <- checkContent(querySchemas)
       schemas <- checkConsistency(querySchemas)
       _ <- checkContent(queryDrafts)
-      _ <- Bootstrap.allStatements.sequence[ConnectionIO, Int].map(_.combineAll)
+      _ <- Bootstrap.allStatements
+        .traverse[ConnectionIO, Int](_.updateWithLogHandler(LogHandler.jdkLogHandler).run)
+        .map(_.combineAll)
       _ <- (migrateKeys ++ migrateSchemas(schemas) ++ migrateDrafts).compile.drain
     } yield ()
 
@@ -110,7 +112,6 @@ object Fifth {
         s"Schemas not allowed: ${errors.toList.mkString(", ")}\n" +
           "Make sure that older schemas exist and can be properly ordered by createdat"
       }
-
   }
 
   def isSchemaAllowed(previous: List[SchemaFifth], current: SchemaMap, isPublic: Boolean): Either[Inconsistency, Unit] = {
@@ -125,7 +126,7 @@ object Fifth {
 
   def querySchemas =
     (fr"SELECT vendor, name, format, version, schema, createdat, updatedat, ispublic FROM" ++ OldSchemasTable ++ fr"WHERE draftnumber = '0' ORDER BY createdat")
-      .query[(String, String, String, String, String, Instant, Instant, Boolean)]
+      .queryWithLogHandler[(String, String, String, String, String, Instant, Instant, Boolean)](LogHandler.jdkLogHandler)
       .map { case (vendor, name, format, version, body, createdAt, updatedAt, isPublic) =>
         val schemaMap = for {
           ver <- SchemaVer.parse(version)
@@ -155,7 +156,7 @@ object Fifth {
 
   def queryDrafts =
     (fr"SELECT vendor, name, format, draftnumber, schema, createdat, updatedat, ispublic FROM" ++ OldSchemasTable ++ fr"WHERE draftnumber != '0'")
-      .query[(String, String, String, String, String, Instant, Instant, Boolean)]
+      .queryWithLogHandler[(String, String, String, String, String, Instant, Instant, Boolean)](LogHandler.jdkLogHandler)
       .map { case (vendor, name, format, draftId, body, createdAt, updatedAt, isPublic) =>
         for {
           verInt   <- Either.catchOnly[NumberFormatException](draftId.toInt).leftMap(_.getMessage)
@@ -203,7 +204,7 @@ object Fifth {
     val ver = key.version
     (fr"INSERT INTO" ++ Postgres.SchemasTable ++ fr"(vendor, name, format, model, revision, addition, created_at, updated_at, is_public, body)" ++
       fr"VALUES (${key.vendor}, ${key.name}, ${key.format}, ${ver.model}, ${ver.revision}, ${ver.addition}, $createdAt, $updatedAt, $isPublic, $schema)")
-      .update
+      .updateWithLogHandler(LogHandler.jdkLogHandler)
   }
 
   def addDraft(draft: SchemaDraft) =
@@ -211,5 +212,5 @@ object Fifth {
       fr"""VALUES (${draft.schemaMap.vendor}, ${draft.schemaMap.name}, ${draft.schemaMap.format},
         ${draft.schemaMap.version.value}, ${draft.metadata.createdAt}, ${draft.metadata.updatedAt},
         ${draft.metadata.isPublic}, ${draft.body})""")
-      .update
+      .updateWithLogHandler(LogHandler.jdkLogHandler)
 }

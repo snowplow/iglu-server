@@ -26,13 +26,9 @@ import com.snowplowanalytics.iglu.server.storage.Postgres
 object Bootstrap {
   val keyActionCreate =
     sql"""CREATE TYPE key_action AS ENUM ('CREATE', 'DELETE')"""
-      .update
-      .run
 
   val schemaActionCreate =
     sql"""CREATE TYPE schema_action AS ENUM ('READ', 'BUMP', 'CREATE', 'CREATE_VENDOR')"""
-      .update
-      .run
 
   val permissionsCreate = (
     fr"CREATE TABLE" ++ Postgres.PermissionsTable ++ fr"""(
@@ -43,8 +39,6 @@ object Bootstrap {
         key_action          key_action[]    NOT NULL,
         PRIMARY KEY (apikey)
       );""")
-    .update
-    .run
 
   val schemasCreate = (
     fr"CREATE TABLE" ++ Postgres.SchemasTable ++ fr"""(
@@ -61,8 +55,6 @@ object Bootstrap {
 
         body        JSON          NOT NULL
       )""")
-    .update
-    .run
 
   val draftsCreate = (
     fr"CREATE TABLE" ++ Postgres.DraftsTable ++ fr"""(
@@ -77,15 +69,14 @@ object Bootstrap {
 
         body        JSON         NOT NULL
       )""")
-    .update
-    .run
 
   val allStatements =
     List(keyActionCreate, schemaActionCreate, permissionsCreate, schemasCreate, draftsCreate)
 
-  def initialize[F[_]](xa: Transactor[F])(implicit F: Bracket[F, Throwable]) =
+  def initialize[F[_]](xa: Transactor[F])(implicit F: Bracket[F, Throwable]) = {
     allStatements
-      .sequence[ConnectionIO, Int]
+      .traverse[ConnectionIO, Int](sql => sql.updateWithLogHandler(LogHandler.jdkLogHandler).run)
       .map(_.combineAll)
       .transact(xa)
+  }
 }
