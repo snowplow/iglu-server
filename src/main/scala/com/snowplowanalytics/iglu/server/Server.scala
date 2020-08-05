@@ -155,7 +155,7 @@ object Server {
       webhookClient = Webhook.WebhookClient(config.webhooks.getOrElse(Nil), client)
       storage      <- Storage.initialize[IO](config.database)
       cache        <- CachingMiddleware.initResponseCache[IO](1000, CacheTtl)
-      builder       = BlazeServerBuilder[IO]
+      builder       = BlazeServerBuilder.apply[IO](ExecutionContext.global)
         .bindHttp(config.repoServer.port, config.repoServer.interface)
         .withHttpApp(httpApp(storage, config.debug.getOrElse(false), config.patchesAllowed.getOrElse(false), webhookClient, cache, httpPool))
         .withExecutionContext(httpPool)
