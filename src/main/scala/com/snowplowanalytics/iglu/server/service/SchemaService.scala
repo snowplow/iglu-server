@@ -121,17 +121,23 @@ class SchemaService[F[+_]: Sync](
     schemasOrNotFound(query)
   }
 
-  def getSchemasByVendor(vendor: String, format: SchemaFormat, permission: Permission) = {
-    val query = db.getSchemasByVendor(vendor, false).filter(isReadable(permission)).map(_.withFormat(format))
+  def getSchemasByVendor(
+    vendor: String,
+    format: SchemaFormat,
+    permission: Permission
+  ) = {
+    val query = db.getSchemasByVendor(vendor).filter(isReadable(permission)).map(_.withFormat(format))
     schemasOrNotFound(query)
   }
 
-  def getSchemasByModel(vendor: String, name: String, model: Int, format: SchemaFormat, permission: Permission) = {
-    val query = db
-      .getSchemasByVendorName(vendor, name)
-      .filter(isReadable(permission))
-      .filter(_.schemaMap.schemaKey.version.model == model)
-      .map(_.withFormat(format))
+  def getSchemasByModel(
+    vendor: String,
+    name: String,
+    model: Int,
+    format: SchemaFormat,
+    permission: Permission
+  ) = {
+    val query = db.getSchemasByModel(vendor, name, model).filter(isReadable(permission)).map(_.withFormat(format))
     schemasOrNotFound(query)
   }
 
