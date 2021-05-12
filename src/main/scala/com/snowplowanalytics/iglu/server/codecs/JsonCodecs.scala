@@ -25,11 +25,10 @@ import io.circe.fs2.byteStreamParser
 import org.http4s.circe._
 import org.http4s.{Entity, EntityEncoder, Headers}
 
-import com.snowplowanalytics.iglu.core.{ SelfDescribingSchema, SchemaKey }
+import com.snowplowanalytics.iglu.core.{SchemaKey, SelfDescribingSchema}
 import com.snowplowanalytics.iglu.core.circe.CirceIgluCodecs._
 import com.snowplowanalytics.iglu.server.model.{IgluResponse, Schema, SchemaDraft}
 import com.snowplowanalytics.iglu.server.service.MetaService.ServerInfo
-
 
 trait JsonCodecs {
 
@@ -39,7 +38,8 @@ trait JsonCodecs {
     val W = implicitly[EntityEncoder[F, A]]
     new EntityEncoder[F, JsonArrayStream[F, A]] {
       override def toEntity(stream: JsonArrayStream[F, A]): Entity[F] = {
-        val commaSeparated = stream.nonArray.flatMap(W.toEntity(_).body).through(byteStreamParser[F]).map(_.noSpaces).intersperse(",")
+        val commaSeparated =
+          stream.nonArray.flatMap(W.toEntity(_).body).through(byteStreamParser[F]).map(_.noSpaces).intersperse(",")
         val wrapped = Stream.emit("[") ++ commaSeparated ++ Stream.emit("]")
         Entity(wrapped.through(utf8Encode))
       }

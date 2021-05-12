@@ -15,7 +15,7 @@
 package com.snowplowanalytics.iglu.server.middleware
 
 import cats.Applicative
-import cats.data.{ Kleisli, OptionT }
+import cats.data.{Kleisli, OptionT}
 import cats.implicits._
 import cats.effect.{Resource, Sync, Async => CatsAsync}
 
@@ -27,14 +27,13 @@ import org.http4s.{HttpRoutes, Method, Request, Response}
 import org.http4s.syntax.string._
 
 import scalacache.caffeine.CaffeineCache
-import scalacache.{Entry, Mode, removeAll, Flags}
+import scalacache.{Entry, Flags, Mode, removeAll}
 import scalacache.CatsEffect.modes._
 
 import scala.concurrent.duration.Duration
 
-object CachingMiddleware  {
-  def apply[F[_]](cache: ResponseCache[F])(service: HttpRoutes[F])
-                 (implicit F: CatsAsync[F]): HttpRoutes[F] = {
+object CachingMiddleware {
+  def apply[F[_]](cache: ResponseCache[F])(service: HttpRoutes[F])(implicit F: CatsAsync[F]): HttpRoutes[F] = {
     val logger = Slf4jLogger.getLogger[F]
     Kleisli { req =>
       val result = keyer(req) match {
@@ -55,15 +54,14 @@ object CachingMiddleware  {
   }
 
   def initResponseCache[F[_]: CatsAsync](size: Long, duration: Duration): Resource[F, ResponseCache[F]] =
-    Resource.make(
-      Sync[F].delay {
-        val underlyingCaffeineCache =
-          Caffeine.newBuilder().maximumSize(size).build[String, Entry[Option[Response[F]]]]
-        val cache = CaffeineCache(underlyingCaffeineCache)
-        ResponseCache[F](duration, cache)
-      })(_.destroy)
+    Resource.make(Sync[F].delay {
+      val underlyingCaffeineCache =
+        Caffeine.newBuilder().maximumSize(size).build[String, Entry[Option[Response[F]]]]
+      val cache = CaffeineCache(underlyingCaffeineCache)
+      ResponseCache[F](duration, cache)
+    })(_.destroy)
 
-  case class ResponseCache[F[_]] private(duration: Duration, schemas: CaffeineCache[Option[Response[F]]]) {
+  case class ResponseCache[F[_]] private (duration: Duration, schemas: CaffeineCache[Option[Response[F]]]) {
 
     def removeSchemas(implicit F: CatsAsync[F]): F[Unit] =
       removeAll[Option[Response[F]]]()(schemas, implicitly[Mode[F]]).void
@@ -85,14 +83,16 @@ object CachingMiddleware  {
         }
       } yield response
 
-
     def destroy(implicit F: CatsAsync[F]): F[Unit] =
       schemas.close()(implicitly[Mode[F]]).void
 
     /** Lower duration for `/schemas/` endpoint */
     def getDuration(key: String) = {
-      val path = key.split(":").toList.headOption
-        .flatMap { s => Either.catchNonFatal(java.net.URI.create(s)).toOption }
+      val path = key
+        .split(":")
+        .toList
+        .headOption
+        .flatMap(s => Either.catchNonFatal(java.net.URI.create(s)).toOption)
         .map(_.getPath)
         .map(_.stripSuffix("/"))
       val isSchemas = path.contains("/api/schemas")
@@ -100,11 +100,11 @@ object CachingMiddleware  {
     }
   }
 
-  private sealed trait CacheAction
+  sealed private trait CacheAction
   private object CacheAction {
     case class Get(key: String) extends CacheAction
-    case object DoNothing extends CacheAction
-    case object Clean extends CacheAction
+    case object DoNothing       extends CacheAction
+    case object Clean           extends CacheAction
   }
 
   /** Make sure that cache works only for GET requests of SchemaService */
@@ -117,5 +117,5 @@ object CachingMiddleware  {
         CacheAction.Clean
       case _ =>
         CacheAction.DoNothing
-  }
+    }
 }

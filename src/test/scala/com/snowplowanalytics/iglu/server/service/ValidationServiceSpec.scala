@@ -17,7 +17,8 @@ import org.http4s.rho.swagger.syntax.io.createRhoMiddleware
 import SpecHelpers.toBytes
 import ValidationServiceSpec._
 
-class ValidationServiceSpec extends org.specs2.Specification { def is = s2"""
+class ValidationServiceSpec extends org.specs2.Specification {
+  def is = s2"""
   POST /validate/schema/jsonschema returns linting errors for self-describing schema $e1
   POST /validate/schema/jsonschema returns success message for valid self-describing schema $e2
   POST /validate/schema/jsonschema reports about unknown self keyword without metaschema $e3
@@ -32,7 +33,6 @@ class ValidationServiceSpec extends org.specs2.Specification { def is = s2"""
   POST /validate/instance pretends a private schema does not exist if apikey is inappropriate $e10
   """
 
-
   def e1 = {
     val selfDescribingSchema = json"""
         {
@@ -44,7 +44,7 @@ class ValidationServiceSpec extends org.specs2.Specification { def is = s2"""
           },
           "type": "object"
         }"""
-    val expected = json"""{
+    val expected             = json"""{
       "message":"The schema does not conform to a JSON Schema v4 specification",
       "report":[
         {"message":"self is unknown keyword for vanilla $$schema, use http://iglucentral.com/schemas/com.snowplowanalytics.self-desc/schema/jsonschema/1-0-0#", "level":"ERROR", "pointer":"/"},
@@ -78,7 +78,8 @@ class ValidationServiceSpec extends org.specs2.Specification { def is = s2"""
           "description": "schema with no issues",
           "properties": { }
         }"""
-    val expected = json"""{"message" : "The schema provided is a valid self-describing iglu:com.acme/nonexistent/jsonschema/1-0-0 schema"}"""
+    val expected =
+      json"""{"message" : "The schema provided is a valid self-describing iglu:com.acme/nonexistent/jsonschema/1-0-0 schema"}"""
 
     val request = Request[IO](Method.POST, uri"/validate/schema/jsonschema")
       .withContentType(headers.`Content-Type`(MediaType.application.json))
@@ -102,7 +103,7 @@ class ValidationServiceSpec extends org.specs2.Specification { def is = s2"""
         "description": "schema with no issues",
         "properties": { }
       }"""
-    val expected = json"""{
+    val expected             = json"""{
       "message":"The schema does not conform to a JSON Schema v4 specification",
       "report":[
         {"message":"self is unknown keyword for vanilla $$schema, use http://iglucentral.com/schemas/com.snowplowanalytics.self-desc/schema/jsonschema/1-0-0#", "level":"ERROR", "pointer":"/"},
@@ -121,7 +122,8 @@ class ValidationServiceSpec extends org.specs2.Specification { def is = s2"""
   }
 
   def e4 = {
-    val selfDescribingSchema = json"""{"type": "object", "description": "non-self-describing schema", "properties": {}}"""
+    val selfDescribingSchema =
+      json"""{"type": "object", "description": "non-self-describing schema", "properties": {}}"""
     val expected = json"""{
         "message" : "The schema does not conform to a JSON Schema v4 specification",
         "report" : [
@@ -141,8 +143,8 @@ class ValidationServiceSpec extends org.specs2.Specification { def is = s2"""
 
   def e5 = {
     val expected = "The request body was malformed."
-    val request = Request[IO](Method.POST, Uri.uri("/validate/schema/jsonschema"))
-      .withBodyStream(Stream.emits("non-json".getBytes))
+    val request =
+      Request[IO](Method.POST, Uri.uri("/validate/schema/jsonschema")).withBodyStream(Stream.emits("non-json".getBytes))
 
     val response = sendRequestGetText(request)
 
@@ -164,8 +166,7 @@ class ValidationServiceSpec extends org.specs2.Specification { def is = s2"""
         ]
       }"""
 
-    val request = Request[IO](Method.POST, Uri.uri("/validate/instance"))
-      .withBodyStream(toBytes(instance))
+    val request  = Request[IO](Method.POST, Uri.uri("/validate/instance")).withBodyStream(toBytes(instance))
     val response = sendRequest(request)
 
     response must beEqualTo(expected)
@@ -176,8 +177,7 @@ class ValidationServiceSpec extends org.specs2.Specification { def is = s2"""
       json"""{"schema" : "iglu:com.acme/event/jsonschema/1-0-0", "data" : {"one": null} } """
     val expected = json"""{"message" : "Instance is valid iglu:com.acme/event/jsonschema/1-0-0"}"""
 
-    val request = Request[IO](Method.POST, Uri.uri("/validate/instance"))
-      .withBodyStream(toBytes(instance))
+    val request  = Request[IO](Method.POST, Uri.uri("/validate/instance")).withBodyStream(toBytes(instance))
     val response = sendRequest(request)
 
     response must beEqualTo(expected)
@@ -189,15 +189,14 @@ class ValidationServiceSpec extends org.specs2.Specification { def is = s2"""
     val expected =
       json"""{"message" : "The schema is not found"}"""
 
-    val request = Request[IO](Method.POST, Uri.uri("/validate/instance"))
-      .withBodyStream(toBytes(instance))
+    val request = Request[IO](Method.POST, Uri.uri("/validate/instance")).withBodyStream(toBytes(instance))
 
     val (responses, _) = ValidationServiceSpec.request(List(request)).unsafeRunSync()
-    val response = responses.last
+    val response       = responses.last
 
-    val bodyExpectation = response.as[Json].unsafeRunSync() must beEqualTo(expected)
+    val bodyExpectation   = response.as[Json].unsafeRunSync() must beEqualTo(expected)
     val statusExpectation = response.status.code must beEqualTo(404)
-    bodyExpectation and statusExpectation
+    bodyExpectation.and(statusExpectation)
   }
 
   def e9 = {
@@ -221,11 +220,11 @@ class ValidationServiceSpec extends org.specs2.Specification { def is = s2"""
       .withBodyStream(toBytes(instance))
 
     val (responses, _) = ValidationServiceSpec.request(List(request)).unsafeRunSync()
-    val response = responses.last
+    val response       = responses.last
 
-    val bodyExpectation = response.as[Json].unsafeRunSync() must beEqualTo(expected)
+    val bodyExpectation   = response.as[Json].unsafeRunSync() must beEqualTo(expected)
     val statusExpectation = response.status.code must beEqualTo(404)
-    bodyExpectation and statusExpectation
+    bodyExpectation.and(statusExpectation)
   }
 
   def e11 = {
@@ -272,16 +271,11 @@ class ValidationServiceSpec extends org.specs2.Specification { def is = s2"""
 object ValidationServiceSpec {
 
   def request(reqs: List[Request[IO]]) =
-    SpecHelpers
-      .state(storage => ValidationService.asRoutes(storage, SpecHelpers.ctx, createRhoMiddleware()))(reqs)
+    SpecHelpers.state(storage => ValidationService.asRoutes(storage, SpecHelpers.ctx, createRhoMiddleware()))(reqs)
 
   def sendRequest(req: Request[IO]) =
-    request(List(req))
-      .flatMap { case (responses, _) => responses.last.as[Json] }
-      .unsafeRunSync()
+    request(List(req)).flatMap { case (responses, _) => responses.last.as[Json] }.unsafeRunSync()
 
   def sendRequestGetText(req: Request[IO]) =
-    request(List(req))
-      .flatMap { case (responses, _) => responses.last.bodyText.compile.foldMonoid }
-      .unsafeRunSync()
+    request(List(req)).flatMap { case (responses, _) => responses.last.bodyText.compile.foldMonoid }.unsafeRunSync()
 }

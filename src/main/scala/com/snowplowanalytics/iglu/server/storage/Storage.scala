@@ -20,7 +20,7 @@ import java.util.UUID
 import fs2.Stream
 
 import cats.Monad
-import cats.effect.{Bracket, Blocker, Clock, ContextShift, Effect, Resource, Sync}
+import cats.effect.{Blocker, Bracket, Clock, ContextShift, Effect, Resource, Sync}
 import cats.implicits._
 
 import io.circe.Json
@@ -45,18 +45,25 @@ trait Storage[F[_]] {
   def getSchemasByVendor(vendor: String, wildcard: Boolean)(implicit F: Bracket[F, Throwable]): Stream[F, Schema] = {
     val all = Stream.eval(getSchemas).flatMap(list => Stream.emits(list))
     if (wildcard) all.filter(_.schemaMap.schemaKey.vendor.startsWith(vendor))
-    else all.filter(_.schemaMap.schemaKey.vendor === vendor )
+    else all.filter(_.schemaMap.schemaKey.vendor === vendor)
   }
   def deleteSchema(schemaMap: SchemaMap)(implicit F: Bracket[F, Throwable]): F[Unit]
   def getSchemasByVendorName(vendor: String, name: String)(implicit F: Bracket[F, Throwable]): Stream[F, Schema] =
     getSchemasByVendor(vendor, false).filter(_.schemaMap.schemaKey.name === name)
   def getSchemas(implicit F: Bracket[F, Throwable]): F[List[Schema]]
+
   /** Optimization for `getSchemas` */
   def getSchemasKeyOnly(implicit F: Bracket[F, Throwable]): F[List[(SchemaMap, Schema.Metadata)]]
   def getSchemaBody(schemaMap: SchemaMap)(implicit F: Bracket[F, Throwable]): F[Option[Json]] =
     getSchema(schemaMap).nested.map(_.body).value
-  def addSchema(schemaMap: SchemaMap, body: Json, isPublic: Boolean)(implicit C: Clock[F], M: Bracket[F, Throwable]): F[Unit]
-  def updateSchema(schemaMap: SchemaMap, body: Json, isPublic: Boolean)(implicit C: Clock[F], M: Bracket[F, Throwable]): F[Unit]
+  def addSchema(schemaMap: SchemaMap, body: Json, isPublic: Boolean)(
+    implicit C: Clock[F],
+    M: Bracket[F, Throwable]
+  ): F[Unit]
+  def updateSchema(schemaMap: SchemaMap, body: Json, isPublic: Boolean)(
+    implicit C: Clock[F],
+    M: Bracket[F, Throwable]
+  ): F[Unit]
 
   def addDraft(draftId: DraftId, body: Json, isPublic: Boolean)(implicit C: Clock[F], M: Bracket[F, Throwable]): F[Unit]
   def getDraft(draftId: DraftId)(implicit B: Bracket[F, Throwable]): F[Option[SchemaDraft]]
@@ -84,18 +91,38 @@ object Storage {
     config match {
       case StorageConfig.Dummy =>
         Resource.eval(storage.InMemory.empty)
-      case StorageConfig.Postgres(host, port, name, username, password, driver, _, _, Config.StorageConfig.ConnectionPool.NoPool(ec)) =>
+      case StorageConfig.Postgres(
+          host,
+          port,
+          name,
+          username,
+          password,
+          driver,
+          _,
+          _,
+          Config.StorageConfig.ConnectionPool.NoPool(ec)
+          ) =>
         val url = s"jdbc:postgresql://$host:$port/$name"
         for {
           blocker <- Server.createThreadPool(ec).map(Blocker.liftExecutionContext)
           xa: Transactor[F] = Transactor.fromDriverManager[F](driver, url, username, password, blocker)
         } yield Postgres[F](xa, logger)
-      case p @ StorageConfig.Postgres(host, port, name, username, password, driver, _, _, pool: Config.StorageConfig.ConnectionPool.Hikari) =>
+      case p @ StorageConfig.Postgres(
+            host,
+            port,
+            name,
+            username,
+            password,
+            driver,
+            _,
+            _,
+            pool: Config.StorageConfig.ConnectionPool.Hikari
+          ) =>
         val url = s"jdbc:postgresql://$host:$port/$name"
         for {
           connectEC  <- Server.createThreadPool(pool.connectionPool)
           transactEC <- Server.createThreadPool(pool.transactionPool).map(Blocker.liftExecutionContext)
-          xa <- HikariTransactor.newHikariTransactor[F](driver, url, username, password, connectEC, transactEC)
+          xa         <- HikariTransactor.newHikariTransactor[F](driver, url, username, password, connectEC, transactEC)
           _ <- Resource.eval {
             xa.configure { ds =>
               Sync[F].delay {

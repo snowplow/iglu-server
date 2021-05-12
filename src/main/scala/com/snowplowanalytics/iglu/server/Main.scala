@@ -24,16 +24,16 @@ object Main extends SafeIOApp {
     val cli = for {
       command <- EitherT.fromEither[IO](Config.serverCommand.parse(args).leftMap(_.toString))
       config  <- EitherT.fromEither[IO](command.read)
-      result  <- command match {
+      result <- command match {
         case _: Config.ServerCommand.Run =>
-          EitherT.liftF[IO, String, ExitCode](Server.run(config).compile.lastOrError )
+          EitherT.liftF[IO, String, ExitCode](Server.run(config).compile.lastOrError)
         case Config.ServerCommand.Setup(_, migration) =>
           EitherT.liftF[IO, String, ExitCode](Server.setup(config, migration))
       }
     } yield result
 
     cli.value.flatMap {
-      case Right(code) => IO.pure(code)
+      case Right(code)    => IO.pure(code)
       case Left(cliError) => IO(System.err.println(cliError)).as(ExitCode.Error)
     }
   }
