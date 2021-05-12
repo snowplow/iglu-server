@@ -42,6 +42,22 @@ class Postgres[F[_]](xa: Transactor[F], logger: Logger[F]) extends Storage[F] { 
     logger.debug(s"getSchemas ${schemaMap.schemaKey.toSchemaUri}") *>
       Postgres.Sql.getSchema(schemaMap).option.transact(xa)
 
+  override def getSchemasByVendor(vendor: String)(implicit F: Bracket[F, Throwable]): Stream[F, Schema] =
+    Stream.eval(logger.debug(s"getSchemasByVendor $vendor")) *>
+      Postgres.Sql.getSchemasByVendor(vendor).stream.transact(xa)
+
+  override def getSchemasByVendorName(vendor: String, name: String)(
+    implicit F: Bracket[F, Throwable]
+  ): Stream[F, Schema] =
+    Stream.eval(logger.debug(s"getSchemasByVendorName $vendor/$name")) *>
+      Postgres.Sql.getSchemasByVendorName(vendor, name).stream.transact(xa)
+
+  override def getSchemasByModel(vendor: String, name: String, model: Int)(
+    implicit F: Bracket[F, Throwable]
+  ): Stream[F, Schema] =
+    Stream.eval(logger.debug(s"getSchemasByModel $vendor/$name/$model")) *>
+      Postgres.Sql.getSchemasByModel(vendor, name, model).stream.transact(xa)
+
   def deleteSchema(schemaMap: SchemaMap)(implicit F: Bracket[F, Throwable]): F[Unit] =
     Postgres.Sql.deleteSchema(schemaMap).run.void.transact(xa)
 
@@ -136,33 +152,52 @@ object Postgres {
 
   def apply[F[_]](xa: Transactor[F], logger: Logger[F]): Postgres[F] = new Postgres(xa, logger)
 
+  def vendorFr(vendor: String): Fragment =
+    fr"vendor = $vendor"
+
+  def vendorNameFr(vendor: String, name: String): Fragment =
+    vendorFr(vendor) ++ fr"AND name = $name"
+
+  def vendorNameModelFr(vendor: String, name: String, model: Int): Fragment =
+    vendorNameFr(vendor, name) ++ fr"AND model = $model"
+
   def draftFr(id: DraftId): Fragment =
-    fr"name = ${id.name}" ++
-      fr"AND vendor = ${id.vendor}" ++
+    vendorNameFr(id.vendor, id.name) ++
       fr"AND format = ${id.format}" ++
       fr"AND version = ${id.version.value}"
 
   def schemaMapFr(schemaMap: SchemaMap): Fragment =
-    fr"name = ${schemaMap.schemaKey.name}" ++
-      fr"AND vendor = ${schemaMap.schemaKey.vendor}" ++
+    vendorNameFr(schemaMap.schemaKey.vendor, schemaMap.schemaKey.name) ++
       fr"AND format = ${schemaMap.schemaKey.format}" ++
-      fr"AND " ++ schemaVerFr(schemaMap.schemaKey.version)
+      fr"AND" ++ schemaVerFr(schemaMap.schemaKey.version)
 
   def schemaVerFr(version: SchemaVer.Full): Fragment =
     fr"model = ${version.model} AND revision = ${version.revision} AND addition = ${version.addition}"
 
   object Sql {
-    def getSchema(schemaMap: SchemaMap) =
+    def getSchema(schemaMap: SchemaMap): Query0[Schema] =
       (fr"SELECT" ++ schemaColumns ++ fr"FROM" ++ SchemasTable ++ fr"WHERE" ++ schemaMapFr(schemaMap) ++ fr"LIMIT 1")
         .query[Schema]
 
-    def deleteSchema(schemaMap: SchemaMap) =
+    def getSchemasByVendorName(vendor: String, name: String): Query0[Schema] =
+      (fr"SELECT" ++ schemaColumns ++ fr"FROM" ++ SchemasTable ++ fr"WHERE" ++ vendorNameFr(vendor, name) ++ Ordering)
+        .query[Schema]
+
+    def getSchemasByVendor(vendor: String): Query0[Schema] =
+      (fr"SELECT" ++ schemaColumns ++ fr"FROM" ++ SchemasTable ++ fr"WHERE" ++ vendorFr(vendor) ++ Ordering)
+        .query[Schema]
+
+    def getSchemasByModel(vendor: String, name: String, model: Int): Query0[Schema] =
+      (fr"SELECT" ++ schemaColumns ++ fr"FROM" ++ SchemasTable ++ fr"WHERE" ++ vendorNameModelFr(vendor, name, model) ++ Ordering)
+        .query[Schema]
+
+    def deleteSchema(schemaMap: SchemaMap): Update0 =
       (fr"DELETE FROM" ++ SchemasTable ++ fr"WHERE" ++ schemaMapFr(schemaMap)).update
 
-    def getSchemas =
+    def getSchemas: Query0[Schema] =
       (fr"SELECT" ++ schemaColumns ++ fr"FROM" ++ SchemasTable ++ Ordering).query[Schema]
 
-    def getSchemasKeyOnly =
+    def getSchemasKeyOnly: Query0[(SchemaMap, Schema.Metadata)] =
       (fr"SELECT" ++ schemaKeyColumns ++ fr"FROM" ++ SchemasTable ++ Ordering).query[(SchemaMap, Schema.Metadata)]
 
     def addSchema(
@@ -184,7 +219,7 @@ object Postgres {
       (fr"UPDATE" ++ SchemasTable ++ fr"SET created_at = current_timestamp, updated_at = current_timestamp, is_public = $isPublic, body = $schema"
         ++ fr"WHERE" ++ schemaMapFr(schemaMap)).update
 
-    def getDraft(draftId: DraftId) =
+    def getDraft(draftId: DraftId): Query0[SchemaDraft] =
       (fr"SELECT" ++ draftColumns ++ fr"FROM" ++ DraftsTable ++ fr"WHERE " ++ draftFr(draftId)).query[SchemaDraft]
 
     def addDraft(
@@ -195,20 +230,20 @@ object Postgres {
       (fr"INSERT INTO" ++ DraftsTable ++ fr"(" ++ draftColumns ++ fr")" ++
         fr"VALUES (${id.vendor}, ${id.name}, ${id.format}, ${id.version.value}, current_timestamp, current_timestamp, $isPublic, $body)").update
 
-    def getDrafts =
+    def getDrafts: Query0[SchemaDraft] =
       (fr"SELECT * FROM" ++ DraftsTable ++ Ordering).query[SchemaDraft]
 
     def getPermission(id: UUID): Query0[Permission] =
       (fr"SELECT vendor, wildcard, schema_action::schema_action, key_action::key_action[] FROM" ++ PermissionsTable ++ fr"WHERE apikey = $id")
         .query[Permission]
 
-    def addPermission(uuid: UUID, permission: Permission) = {
+    def addPermission(uuid: UUID, permission: Permission): Update0 = {
       val vendor     = permission.vendor.parts.mkString(".")
       val keyActions = permission.key.toList.map(_.show)
       (fr"INSERT INTO" ++ PermissionsTable ++ sql"VALUES ($uuid, $vendor, ${permission.vendor.wildcard}, ${permission.schema}::schema_action, $keyActions::key_action[])").update
     }
 
-    def deletePermission(id: UUID) =
+    def deletePermission(id: UUID): Update0 =
       (fr"DELETE FROM" ++ PermissionsTable ++ fr"WHERE apikey = $id").update
 
     // Non-production statements
