@@ -10,6 +10,7 @@ import io.circe.literal._
 import fs2.Stream
 
 import org.http4s.{Service => _, _}
+import org.http4s.implicits._
 import org.http4s.circe._
 import org.http4s.rho.swagger.syntax.io.createRhoMiddleware
 
@@ -281,6 +282,6 @@ object ValidationServiceSpec {
 
   def sendRequestGetText(req: Request[IO]) =
     request(List(req))
-      .flatMap { case (responses, _) => responses.last.bodyAsText.compile.foldMonoid }
+      .flatMap { case (responses, _) => responses.last.bodyText.compile.foldMonoid }
       .unsafeRunSync()
 }

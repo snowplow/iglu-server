@@ -14,9 +14,7 @@
  */
 package com.snowplowanalytics.iglu.server.service
 
-import scala.concurrent.ExecutionContext
-
-import cats.effect.{ContextShift, IO}
+import cats.effect.{Blocker, ContextShift, IO}
 
 import org.http4s.{HttpRoutes, Request, Response, StaticFile}
 import org.http4s.dsl.io._
@@ -31,14 +29,14 @@ object StaticService {
     * Routes for getting static resources. These might be served more efficiently by apache2 or nginx,
     * but its nice to keep it self contained
     */
-  def routes(ec: ExecutionContext)(implicit cs: ContextShift[IO]): HttpRoutes[IO] =
+  def routes(blocker: Blocker)(implicit cs: ContextShift[IO]): HttpRoutes[IO] =
     HttpRoutes.of[IO] {
       // Swagger User Interface
-      case req @ GET -> Root / "swagger-ui" / "index.html" => fetchResource(localUi + "/index.html", ec, req)
-      case req @ GET -> Root / "swagger-ui" / path         => fetchResource(swaggerUiDir + "/" + path, ec, req)
+      case req @ GET -> Root / "swagger-ui" / "index.html" => fetchResource(localUi + "/index.html", blocker, req)
+      case req @ GET -> Root / "swagger-ui" / path         => fetchResource(swaggerUiDir + "/" + path, blocker, req)
     }
 
-  def fetchResource(path: String, blockingEc: ExecutionContext, req: Request[IO])(implicit cs: ContextShift[IO]): IO[Response[IO]] = {
-    StaticFile.fromResource(path, blockingEc, Some(req)).getOrElseF(NotFound())
+  def fetchResource(path: String, blocker: Blocker, req: Request[IO])(implicit cs: ContextShift[IO]): IO[Response[IO]] = {
+    StaticFile.fromResource(path, blocker, Some(req)).getOrElseF(NotFound())
   }
 }
