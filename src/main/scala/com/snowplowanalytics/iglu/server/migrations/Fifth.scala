@@ -20,7 +20,7 @@ import java.util.UUID
 
 import fs2.Stream
 
-import cats.{ Applicative, MonadError }
+import cats.{Applicative, MonadError}
 import cats.implicits._
 
 import io.circe.Json
@@ -34,30 +34,36 @@ import doobie.postgres.circe.json.implicits._
 
 import eu.timepit.refined.types.numeric.NonNegInt
 
-import com.snowplowanalytics.iglu.core.{ ParseError, SchemaKey, SchemaMap, SchemaVer, SelfDescribingSchema }
+import com.snowplowanalytics.iglu.core.{ParseError, SchemaKey, SchemaMap, SchemaVer, SelfDescribingSchema}
 import com.snowplowanalytics.iglu.core.circe.implicits._
 import com.snowplowanalytics.iglu.server.model.VersionCursor
 import com.snowplowanalytics.iglu.server.model.VersionCursor.Inconsistency
 
-import model.{ Permission, Schema, SchemaDraft }
+import model.{Permission, Schema, SchemaDraft}
 import storage.Postgres
 import storage.Storage.IncompatibleStorage
-
 
 /** Steps required to migrate the DB from pre-0.6.0 structure to current one */
 object Fifth {
 
-  val OldSchemasTable = Fragment.const("schemas")
+  val OldSchemasTable     = Fragment.const("schemas")
   val OldPermissionsTable = Fragment.const("apikeys")
 
-  case class SchemaFifth(map: SchemaMap, schema: Json, isPublic: Boolean, createdAt: Instant, updatedAt: Instant)
+  case class SchemaFifth(
+    map: SchemaMap,
+    schema: Json,
+    isPublic: Boolean,
+    createdAt: Instant,
+    updatedAt: Instant
+  )
 
   def perform: ConnectionIO[Unit] =
     for {
-      _ <- checkContent(querySchemas)
+      _       <- checkContent(querySchemas)
       schemas <- checkConsistency(querySchemas)
-      _ <- checkContent(queryDrafts)
-      _ <- Bootstrap.allStatements
+      _       <- checkContent(queryDrafts)
+      _ <- Bootstrap
+        .allStatements
         .traverse[ConnectionIO, Int](_.updateWithLogHandler(LogHandler.jdkLogHandler).run)
         .map(_.combineAll)
       _ <- (migrateKeys ++ migrateSchemas(schemas) ++ migrateDrafts).compile.drain
@@ -66,7 +72,7 @@ object Fifth {
   /** Perform query and check if entities are valid against current model, throw an exception otherwise */
   def checkContent[A](query: Query0[Either[String, A]]): ConnectionIO[Unit] = {
     val errors = query.stream.flatMap {
-      case Right(_) => Stream.empty
+      case Right(_)    => Stream.empty
       case Left(error) => Stream.emit(error)
     }
     errors.compile.toList.flatMap {
@@ -78,46 +84,45 @@ object Fifth {
   }
 
   def checkConsistency(query: Query0[Either[String, SchemaFifth]]): ConnectionIO[List[SchemaFifth]] =
-    query.stream.compile
-      .toList
-      .map { schemas => schemas.parTraverse(_.toEitherNel) }
-      .flatMap { result =>
-        result
-          .leftMap(errors => s"Inconsistent entries found: ${errors.toList.mkString(", ")}")
-          .flatTap(checkAllowance) match {
-          case Right(schemas) =>
-            Applicative[ConnectionIO].pure(schemas)
-          case Left(errors) =>
-            val exception = IncompatibleStorage(s"Inconsistent entities found: ${errors.toList.mkString(", ")}")
-            MonadError[ConnectionIO, Throwable].raiseError(exception)
-        }
+    query.stream.compile.toList.map(schemas => schemas.parTraverse(_.toEitherNel)).flatMap { result =>
+      result
+        .leftMap(errors => s"Inconsistent entries found: ${errors.toList.mkString(", ")}")
+        .flatTap(checkAllowance) match {
+        case Right(schemas) =>
+          Applicative[ConnectionIO].pure(schemas)
+        case Left(errors) =>
+          val exception = IncompatibleStorage(s"Inconsistent entities found: ${errors.toList.mkString(", ")}")
+          MonadError[ConnectionIO, Throwable].raiseError(exception)
       }
+    }
 
   /** Traverse all schemas to find if any of them cannot be added */
   def checkAllowance(schemas: List[SchemaFifth]) = {
-    val result = schemas
-      .foldLeft(List.empty[Either[String, SchemaFifth]]) { (accumulator, current) =>
-        val SchemaFifth(map, schema, isPublic, createdAt, updatedAt) = current
-        val successful = accumulator.map(_.toOption).unite
-        isSchemaAllowed(successful, map, isPublic) match {
-          case Right(_) => accumulator :+ Right(SchemaFifth(map, schema, isPublic, createdAt, updatedAt))
-          case Left(error) => accumulator :+ Left(s"${map.schemaKey.toPath}: ${error.show}")
-        }
+    val result = schemas.foldLeft(List.empty[Either[String, SchemaFifth]]) { (accumulator, current) =>
+      val SchemaFifth(map, schema, isPublic, createdAt, updatedAt) = current
+      val successful                                               = accumulator.map(_.toOption).unite
+      isSchemaAllowed(successful, map, isPublic) match {
+        case Right(_)    => accumulator :+ Right(SchemaFifth(map, schema, isPublic, createdAt, updatedAt))
+        case Left(error) => accumulator :+ Left(s"${map.schemaKey.toPath}: ${error.show}")
       }
+    }
 
-    result
-      .parTraverse(_.toEitherNel)
-      .void
-      .leftMap { errors =>
-        s"Schemas not allowed: ${errors.toList.mkString(", ")}\n" +
-          "Make sure that older schemas exist and can be properly ordered by createdat"
-      }
+    result.parTraverse(_.toEitherNel).void.leftMap { errors =>
+      s"Schemas not allowed: ${errors.toList.mkString(", ")}\n" +
+        "Make sure that older schemas exist and can be properly ordered by createdat"
+    }
   }
 
-  def isSchemaAllowed(previous: List[SchemaFifth], current: SchemaMap, isPublic: Boolean): Either[Inconsistency, Unit] = {
-    val schemas = previous.filter(x => x.map.schemaKey.vendor == current.schemaKey.vendor && x.map.schemaKey.name == current.schemaKey.name)
+  def isSchemaAllowed(
+    previous: List[SchemaFifth],
+    current: SchemaMap,
+    isPublic: Boolean
+  ): Either[Inconsistency, Unit] = {
+    val schemas = previous.filter(x =>
+      x.map.schemaKey.vendor == current.schemaKey.vendor && x.map.schemaKey.name == current.schemaKey.name
+    )
     val previousPublic = schemas.forall(_.isPublic)
-    val versions = schemas.map(_.map.schemaKey.version)
+    val versions       = schemas.map(_.map.schemaKey.version)
     if ((previousPublic && isPublic) || (!previousPublic && !isPublic) || schemas.isEmpty)
       VersionCursor.isAllowed(current.schemaKey.version, versions, patchesAllowed = false)
     else
@@ -126,26 +131,29 @@ object Fifth {
 
   def querySchemas =
     (fr"SELECT vendor, name, format, version, schema, createdat, updatedat, ispublic FROM" ++ OldSchemasTable ++ fr"WHERE draftnumber = '0' ORDER BY createdat")
-      .queryWithLogHandler[(String, String, String, String, String, Instant, Instant, Boolean)](LogHandler.jdkLogHandler)
-      .map { case (vendor, name, format, version, body, createdAt, updatedAt, isPublic) =>
-        val schemaMap = for {
-          ver <- SchemaVer.parse(version)
-          key <- SchemaKey.fromUri(s"iglu:$vendor/$name/$format/${ver.asString}")
-        } yield SchemaMap(key)
-        for {
-          jsonBody <- parse(body).leftMap(_.show)
-          map <- schemaMap.leftMap(_.code)
-          schema <- SelfDescribingSchema.parse(jsonBody) match {
-            case Left(ParseError.InvalidSchema) =>
-              jsonBody.asRight  // Non self-describing JSON schema
-            case Left(e) =>
-              s"Invalid self-describing payload for [${map.schemaKey.toSchemaUri}], ${e.code}".asLeft
-            case Right(schema) if schema.self == map =>
-              schema.schema.asRight
-            case Right(schema) =>
-              s"Self-describing payload [${schema.self.schemaKey.toSchemaUri}] does not match its DB reference [${map.schemaKey.toSchemaUri}]".asLeft
-          }
-        } yield SchemaFifth(map, schema, isPublic, createdAt, updatedAt)
+      .queryWithLogHandler[(String, String, String, String, String, Instant, Instant, Boolean)](
+        LogHandler.jdkLogHandler
+      )
+      .map {
+        case (vendor, name, format, version, body, createdAt, updatedAt, isPublic) =>
+          val schemaMap = for {
+            ver <- SchemaVer.parse(version)
+            key <- SchemaKey.fromUri(s"iglu:$vendor/$name/$format/${ver.asString}")
+          } yield SchemaMap(key)
+          for {
+            jsonBody <- parse(body).leftMap(_.show)
+            map      <- schemaMap.leftMap(_.code)
+            schema <- SelfDescribingSchema.parse(jsonBody) match {
+              case Left(ParseError.InvalidSchema) =>
+                jsonBody.asRight // Non self-describing JSON schema
+              case Left(e) =>
+                s"Invalid self-describing payload for [${map.schemaKey.toSchemaUri}], ${e.code}".asLeft
+              case Right(schema) if schema.self == map =>
+                schema.schema.asRight
+              case Right(schema) =>
+                s"Self-describing payload [${schema.self.schemaKey.toSchemaUri}] does not match its DB reference [${map.schemaKey.toSchemaUri}]".asLeft
+            }
+          } yield SchemaFifth(map, schema, isPublic, createdAt, updatedAt)
       }
 
   def migrateSchemas(schemas: List[SchemaFifth]) =
@@ -156,21 +164,24 @@ object Fifth {
 
   def queryDrafts =
     (fr"SELECT vendor, name, format, draftnumber, schema, createdat, updatedat, ispublic FROM" ++ OldSchemasTable ++ fr"WHERE draftnumber != '0'")
-      .queryWithLogHandler[(String, String, String, String, String, Instant, Instant, Boolean)](LogHandler.jdkLogHandler)
-      .map { case (vendor, name, format, draftId, body, createdAt, updatedAt, isPublic) =>
-        for {
-          verInt   <- Either.catchOnly[NumberFormatException](draftId.toInt).leftMap(_.getMessage)
-          number   <- NonNegInt.from(verInt)
-          jsonBody <- parse(body).leftMap(_.show)
-          draftId   = SchemaDraft.DraftId(vendor, name, format, number)
-          meta      = Schema.Metadata(createdAt, updatedAt, isPublic)
-        } yield SchemaDraft(draftId, meta, jsonBody)
+      .queryWithLogHandler[(String, String, String, String, String, Instant, Instant, Boolean)](
+        LogHandler.jdkLogHandler
+      )
+      .map {
+        case (vendor, name, format, draftId, body, createdAt, updatedAt, isPublic) =>
+          for {
+            verInt   <- Either.catchOnly[NumberFormatException](draftId.toInt).leftMap(_.getMessage)
+            number   <- NonNegInt.from(verInt)
+            jsonBody <- parse(body).leftMap(_.show)
+            draftId = SchemaDraft.DraftId(vendor, name, format, number)
+            meta    = Schema.Metadata(createdAt, updatedAt, isPublic)
+          } yield SchemaDraft(draftId, meta, jsonBody)
       }
 
   def migrateDrafts =
     for {
       row <- queryDrafts.stream
-      _   <- row match {
+      _ <- row match {
         case Right(draft) =>
           Stream.eval_(addDraft(draft).run).void
         case Left(error) =>
@@ -179,27 +190,30 @@ object Fifth {
     } yield ()
 
   def migrateKeys = {
-    val query = (fr"SELECT uid, vendor_prefix, permission FROM" ++ OldPermissionsTable)
-      .query[(UUID, String, String)]
-      .map { case (id, prefix, perm) =>
-        val vendor = Permission.Vendor.parse(prefix)
-        val (schemaAction, keyAction) = perm match {
-          case "super" => (Permission.Master.schema, Permission.Master.key)
-          case "read" => (Some(Permission.SchemaAction.Read), Set.empty[Permission.KeyAction])
-          case "write" => (Some(Permission.SchemaAction.CreateVendor), Set.empty[Permission.KeyAction])
-          case _ => (Some(Permission.SchemaAction.Read), Set.empty[Permission.KeyAction]) // Should not happen
-        }
+    val query =
+      (fr"SELECT uid, vendor_prefix, permission FROM" ++ OldPermissionsTable).query[(UUID, String, String)].map {
+        case (id, prefix, perm) =>
+          val vendor = Permission.Vendor.parse(prefix)
+          val (schemaAction, keyAction) = perm match {
+            case "super" => (Permission.Master.schema, Permission.Master.key)
+            case "read"  => (Some(Permission.SchemaAction.Read), Set.empty[Permission.KeyAction])
+            case "write" => (Some(Permission.SchemaAction.CreateVendor), Set.empty[Permission.KeyAction])
+            case _       => (Some(Permission.SchemaAction.Read), Set.empty[Permission.KeyAction]) // Should not happen
+          }
 
-        (id, Permission(vendor, schemaAction, keyAction))
+          (id, Permission(vendor, schemaAction, keyAction))
       }
 
-    query
-      .stream
-      .evalMap { case (id, permission) => Postgres.Sql.addPermission(id, permission).run }
-      .void
+    query.stream.evalMap { case (id, permission) => Postgres.Sql.addPermission(id, permission).run }.void
   }
 
-  def addSchema(schemaMap: SchemaMap, schema: Json, isPublic: Boolean, createdAt: Instant, updatedAt: Instant) = {
+  def addSchema(
+    schemaMap: SchemaMap,
+    schema: Json,
+    isPublic: Boolean,
+    createdAt: Instant,
+    updatedAt: Instant
+  ) = {
     val key = schemaMap.schemaKey
     val ver = key.version
     (fr"INSERT INTO" ++ Postgres.SchemasTable ++ fr"(vendor, name, format, model, revision, addition, created_at, updated_at, is_public, body)" ++
@@ -211,6 +225,5 @@ object Fifth {
     (fr"INSERT INTO" ++ Postgres.DraftsTable ++ fr"(vendor, name, format, version, created_at, updated_at, is_public, body)" ++
       fr"""VALUES (${draft.schemaMap.vendor}, ${draft.schemaMap.name}, ${draft.schemaMap.format},
         ${draft.schemaMap.version.value}, ${draft.metadata.createdAt}, ${draft.metadata.updatedAt},
-        ${draft.metadata.isPublic}, ${draft.body})""")
-      .updateWithLogHandler(LogHandler.jdkLogHandler)
+        ${draft.metadata.isPublic}, ${draft.body})""").updateWithLogHandler(LogHandler.jdkLogHandler)
 }

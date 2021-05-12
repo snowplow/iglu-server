@@ -19,7 +19,7 @@ import java.util.UUID
 
 import cats.implicits._
 import cats.data.EitherT
-import cats.effect.{ IO, Sync }
+import cats.effect.{IO, Sync}
 
 import io.circe._
 import io.circe.syntax._
@@ -37,9 +37,11 @@ import com.snowplowanalytics.iglu.server.model.Permission
 import com.snowplowanalytics.iglu.server.model.IgluResponse
 import com.snowplowanalytics.iglu.server.storage.Storage
 
-
-class AuthService[F[+_]: Sync](swagger: SwaggerSyntax[F], ctx: AuthedContext[F, Permission], db: Storage[F])
-  extends RhoRoutes[F] {
+class AuthService[F[+_]: Sync](
+  swagger: SwaggerSyntax[F],
+  ctx: AuthedContext[F, Permission],
+  db: Storage[F]
+) extends RhoRoutes[F] {
   import swagger._
   import AuthService._
 
@@ -52,7 +54,7 @@ class AuthService[F[+_]: Sync](swagger: SwaggerSyntax[F], ctx: AuthedContext[F, 
     POST / "keygen" >>> ctx.auth |>> { (req: Request[F], authInfo: Permission) =>
     if (authInfo.key.contains(Permission.KeyAction.Create))
       for {
-        vendorE  <- vendorFromBody(req).value
+        vendorE <- vendorFromBody(req).value
         response <- vendorE match {
           case Right(vendor) if authInfo.canCreatePermission(vendor.asString) =>
             for {
@@ -69,11 +71,10 @@ class AuthService[F[+_]: Sync](swagger: SwaggerSyntax[F], ctx: AuthedContext[F, 
     else Forbidden(IgluResponse.Message("Not sufficient privileges to create keys"): IgluResponse)
   }
 
-
   def deleteKey(key: UUID, permission: Permission) =
-    if (permission.key.contains(Permission.KeyAction.Delete)) {
+    if (permission.key.contains(Permission.KeyAction.Delete))
       db.deletePermission(key) *> Ok(IgluResponse.Message(s"Keys have been deleted"): IgluResponse)
-    } else Forbidden("Not sufficient privileges to delete key")
+    else Forbidden("Not sufficient privileges to delete key")
 }
 
 object AuthService {
@@ -82,24 +83,27 @@ object AuthService {
 
   implicit val schemaGenerateReq: Decoder[GenerateKey] =
     Decoder.instance { cursor =>
-      cursor
-        .downField("vendorPrefix")
-        .as[String]
-        .map(Permission.Vendor.parse)
-        .map(GenerateKey.apply)
+      cursor.downField("vendorPrefix").as[String].map(Permission.Vendor.parse).map(GenerateKey.apply)
     }
 
-  def asRoutes(db: Storage[IO], ctx: AuthedContext[IO, Permission], rhoMiddleware: RhoMiddleware[IO]): HttpRoutes[IO] = {
+  def asRoutes(
+    db: Storage[IO],
+    ctx: AuthedContext[IO, Permission],
+    rhoMiddleware: RhoMiddleware[IO]
+  ): HttpRoutes[IO] = {
     val service = new AuthService(swaggerSyntax, ctx, db).toRoutes(rhoMiddleware)
     PermissionMiddleware.wrapService(db, ctx, service)
   }
 
-  def vendorFromBody[F[_]: Sync](request: Request[F]): EitherT[F, DecodeFailure, Permission.Vendor] = {
+  def vendorFromBody[F[_]: Sync](request: Request[F]): EitherT[F, DecodeFailure, Permission.Vendor] =
     request.attemptAs[Json].flatMap { json =>
-      EitherT.fromEither[F](json.as[GenerateKey].fold(
-        e => InvalidMessageBodyFailure(e.show).asLeft[Permission.Vendor],
-        p => p.vendorPrefix.asRight[DecodeFailure])
+      EitherT.fromEither[F](
+        json
+          .as[GenerateKey]
+          .fold(
+            e => InvalidMessageBodyFailure(e.show).asLeft[Permission.Vendor],
+            p => p.vendorPrefix.asRight[DecodeFailure]
+          )
       )
     }
-  }
 }

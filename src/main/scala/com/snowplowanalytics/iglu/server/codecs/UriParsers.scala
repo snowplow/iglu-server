@@ -22,10 +22,10 @@ import cats.syntax.either._
 
 import eu.timepit.refined.types.numeric.NonNegInt
 
-import org.http4s.{ Response, Status, Query }
+import org.http4s.{Query, Response, Status}
 import org.http4s.rho.bits._
 
-import com.snowplowanalytics.iglu.core.{ SchemaVer, ParseError }
+import com.snowplowanalytics.iglu.core.{ParseError, SchemaVer}
 import com.snowplowanalytics.iglu.server.model.{DraftVersion, Schema}
 
 trait UriParsers {
@@ -38,7 +38,13 @@ trait UriParsers {
   def parseRepresentationCanonical[F[_]](query: Query)(implicit F: Monad[F]): ResultResponse[F, Schema.Repr.Format] =
     parseRepresentation(query, Schema.Repr.Format.Canonical)
 
-  private def parseRepresentation[F[_]](query: Query, default: Schema.Repr.Format)(implicit F: Monad[F]): ResultResponse[F, Schema.Repr.Format] = {
+  private def parseRepresentation[F[_]](
+    query: Query,
+    default: Schema.Repr.Format
+  )(
+    implicit
+    F: Monad[F]
+  ): ResultResponse[F, Schema.Repr.Format] = {
     val result = query.params.get("repr") match {
       case Some(s) =>
         Schema.Repr.Format.parse(s).toRight(s"Cannot recognize schema representation in query: $s")
@@ -48,7 +54,7 @@ trait UriParsers {
           case ("0", "1") => Schema.Repr.Format.Canonical.asRight
           case ("1", "0") => Schema.Repr.Format.Meta.asRight
           case ("0", "0") => default.asRight
-          case (m, b) => s"Inconsistent metadata/body query parameters: $m/$b".asLeft
+          case (m, b)     => s"Inconsistent metadata/body query parameters: $m/$b".asLeft
         }
     }
 
@@ -56,9 +62,7 @@ trait UriParsers {
       case Right(format) =>
         SuccessResponse[F, Schema.Repr.Format](format)
       case Left(error) =>
-        val response = Response[F]()
-          .withStatus(Status.BadRequest)
-          .withBodyStream(Utils.toBytes(error))
+        val response = Response[F]().withStatus(Status.BadRequest).withBodyStream(Utils.toBytes(error))
         FailureResponse.pure[F](Monad[F].pure(response))
     }
   }
@@ -69,7 +73,7 @@ trait UriParsers {
       override def parse(s: String)(implicit F: Monad[F]): ResultResponse[F, Schema.Format] =
         Schema.Format.parse(s) match {
           case Some(format) => SuccessResponse(format)
-          case None => FailureResponse.pure[F](BadRequest.pure(s"Unknown schema format: '$s'"))
+          case None         => FailureResponse.pure[F](BadRequest.pure(s"Unknown schema format: '$s'"))
         }
     }
 
@@ -80,8 +84,12 @@ trait UriParsers {
       override def parse(s: String)(implicit F: Monad[F]): ResultResponse[F, SchemaVer.Full] =
         SchemaVer.parseFull(s) match {
           case Right(v) => SuccessResponse(v)
-          case Left(ParseError.InvalidSchemaVer) if s.isEmpty => FailureResponse.pure[F](NotFound.pure(s"Version cannot be empty, should be model to get SchemaList or full SchemaVer"))
-          case Left(e) => FailureResponse.pure[F](BadRequest.pure(s"Cannot parse version part '$s' as SchemaVer, ${e.code}"))
+          case Left(ParseError.InvalidSchemaVer) if s.isEmpty =>
+            FailureResponse.pure[F](
+              NotFound.pure(s"Version cannot be empty, should be model to get SchemaList or full SchemaVer")
+            )
+          case Left(e) =>
+            FailureResponse.pure[F](BadRequest.pure(s"Cannot parse version part '$s' as SchemaVer, ${e.code}"))
         }
     }
 
@@ -90,7 +98,9 @@ trait UriParsers {
       override val typeTag: Some[TypeTag[DraftVersion]] = Some(implicitly[TypeTag[DraftVersion]])
 
       override def parse(s: String)(implicit F: Monad[F]): ResultResponse[F, DraftVersion] = {
-        val int = try { Right(s.toInt) } catch { case _: NumberFormatException => Left(s"$s is not an integer") }
+        val int =
+          try Right(s.toInt)
+          catch { case _: NumberFormatException => Left(s"$s is not an integer") }
         int.flatMap(NonNegInt.from).fold(err => FailureResponse.pure[F](BadRequest.pure(err)), SuccessResponse.apply)
       }
     }

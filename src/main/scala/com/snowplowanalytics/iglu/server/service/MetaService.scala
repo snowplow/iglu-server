@@ -22,7 +22,7 @@ import cats.syntax.flatMap._
 import io.circe._
 import io.circe.generic.semiauto.deriveEncoder
 
-import org.http4s.{ HttpRoutes, MediaType, Charset }
+import org.http4s.{Charset, HttpRoutes, MediaType}
 import org.http4s.headers.`Content-Type`
 import org.http4s.rho.{AuthedContext, RhoMiddleware, RhoRoutes}
 import org.http4s.rho.swagger.SwaggerSyntax
@@ -31,14 +31,16 @@ import org.http4s.rho.swagger.syntax.{io => swaggerSyntax}
 import com.snowplowanalytics.iglu.server.codecs.JsonCodecs._
 import com.snowplowanalytics.iglu.server.generated.BuildInfo
 import com.snowplowanalytics.iglu.server.model.Permission
-import com.snowplowanalytics.iglu.server.storage.{ Storage, Postgres, InMemory }
+import com.snowplowanalytics.iglu.server.storage.{InMemory, Postgres, Storage}
 import com.snowplowanalytics.iglu.server.middleware.PermissionMiddleware
 
-class MetaService[F[+_]: Sync](debug: Boolean,
-                               patchesAllowed: Boolean,
-                               swagger: SwaggerSyntax[F],
-                               ctx: AuthedContext[F, Permission],
-                               db: Storage[F]) extends RhoRoutes[F] {
+class MetaService[F[+_]: Sync](
+  debug: Boolean,
+  patchesAllowed: Boolean,
+  swagger: SwaggerSyntax[F],
+  ctx: AuthedContext[F, Permission],
+  db: Storage[F]
+) extends RhoRoutes[F] {
   import swagger._
 
   private val ok = Ok("OK").map(_.withContentType(`Content-Type`(MediaType.text.plain, Charset.`UTF-8`)))
@@ -51,7 +53,7 @@ class MetaService[F[+_]: Sync](debug: Boolean,
     for {
       _ <- db match {
         case pg: Postgres[F] => pg.ping.void
-        case _ => Sync[F].unit
+        case _               => Sync[F].unit
       }
       response <- ok
     } yield response
@@ -62,7 +64,7 @@ class MetaService[F[+_]: Sync](debug: Boolean,
     val database = db match {
       case _: Postgres[F] => "postgres"
       case _: InMemory[F] => "inmemory"
-      case _ => "unknown"
+      case _              => "unknown"
     }
     for {
       schemas <- db.getSchemasKeyOnly
@@ -73,16 +75,25 @@ class MetaService[F[+_]: Sync](debug: Boolean,
 }
 
 object MetaService {
-  case class ServerInfo(version: String,
-                        authInfo: Permission,
-                        database: String,
-                        schemaCount: Int,
-                        debug: Boolean,
-                        patchesAllowed: Boolean)
+  case class ServerInfo(
+    version: String,
+    authInfo: Permission,
+    database: String,
+    schemaCount: Int,
+    debug: Boolean,
+    patchesAllowed: Boolean
+  )
 
   implicit val serverInfoEncoderInstance: Encoder[ServerInfo] = deriveEncoder[ServerInfo]
 
-  def asRoutes(debug: Boolean, patchesAllowed: Boolean)(db: Storage[IO], ctx: AuthedContext[IO, Permission], rhoMiddleware: RhoMiddleware[IO]): HttpRoutes[IO] = {
+  def asRoutes(
+    debug: Boolean,
+    patchesAllowed: Boolean
+  )(
+    db: Storage[IO],
+    ctx: AuthedContext[IO, Permission],
+    rhoMiddleware: RhoMiddleware[IO]
+  ): HttpRoutes[IO] = {
     val service = new MetaService(debug, patchesAllowed, swaggerSyntax, ctx, db).toRoutes(rhoMiddleware)
     PermissionMiddleware.wrapService(db, ctx, service)
   }
