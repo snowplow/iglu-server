@@ -28,7 +28,7 @@ import io.circe.Json
 import doobie.hikari._
 import doobie.util.transactor.Transactor
 
-import io.chrisdavenport.log4cats.slf4j.Slf4jLogger
+import org.typelevel.log4cats.slf4j.Slf4jLogger
 
 import com.snowplowanalytics.iglu.core.SchemaMap
 import com.snowplowanalytics.iglu.server.Config.StorageConfig
