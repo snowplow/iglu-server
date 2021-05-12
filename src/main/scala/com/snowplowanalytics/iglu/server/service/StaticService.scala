@@ -22,7 +22,7 @@ import org.http4s.dsl.io._
 import com.snowplowanalytics.iglu.server.generated.BuildInfo
 
 object StaticService {
-  private val localUi = "/swagger-ui-dist"
+  private val localUi      = "/swagger-ui-dist"
   private val swaggerUiDir = s"/META-INF/resources/webjars/swagger-ui/${BuildInfo.SwaggerUI}"
 
   /**
@@ -36,7 +36,6 @@ object StaticService {
       case req @ GET -> Root / "swagger-ui" / path         => fetchResource(swaggerUiDir + "/" + path, blocker, req)
     }
 
-  def fetchResource(path: String, blocker: Blocker, req: Request[IO])(implicit cs: ContextShift[IO]): IO[Response[IO]] = {
+  def fetchResource(path: String, blocker: Blocker, req: Request[IO])(implicit cs: ContextShift[IO]): IO[Response[IO]] =
     StaticFile.fromResource(path, blocker, Some(req)).getOrElseF(NotFound())
-  }
 }

@@ -14,15 +14,14 @@
  */
 package com.snowplowanalytics.iglu.server.service
 
-import cats.effect.{ IO, Sync }
+import cats.effect.{IO, Sync}
 import cats.implicits._
 
-import org.http4s.rho.{ RhoRoutes, RhoMiddleware }
+import org.http4s.rho.{RhoMiddleware, RhoRoutes}
 import org.http4s.rho.swagger.SwaggerSyntax
 import org.http4s.rho.swagger.syntax.{io => swaggerSyntax}
 
-
-import com.snowplowanalytics.iglu.server.storage.{ Storage, InMemory }
+import com.snowplowanalytics.iglu.server.storage.{InMemory, Storage}
 
 /** Service showing whole in-memory state. Use for development only */
 class DebugService[F[_]: Sync](swagger: SwaggerSyntax[F], db: Storage[F]) extends RhoRoutes[F] {
@@ -33,7 +32,7 @@ class DebugService[F[_]: Sync](swagger: SwaggerSyntax[F], db: Storage[F]) extend
     db match {
       case InMemory(ref) =>
         for {
-          db <- ref.get
+          db       <- ref.get
           response <- Ok(db.toString)
         } yield response
       case other => NotImplemented(s"Cannot show $other")

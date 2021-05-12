@@ -22,7 +22,6 @@ import doobie.implicits._
 
 import com.snowplowanalytics.iglu.server.storage.Postgres
 
-
 object Bootstrap {
   val keyActionCreate =
     sql"""CREATE TYPE key_action AS ENUM ('CREATE', 'DELETE')"""
@@ -30,8 +29,7 @@ object Bootstrap {
   val schemaActionCreate =
     sql"""CREATE TYPE schema_action AS ENUM ('READ', 'BUMP', 'CREATE', 'CREATE_VENDOR')"""
 
-  val permissionsCreate = (
-    fr"CREATE TABLE" ++ Postgres.PermissionsTable ++ fr"""(
+  val permissionsCreate = (fr"CREATE TABLE" ++ Postgres.PermissionsTable ++ fr"""(
         apikey              UUID            NOT NULL,
         vendor              VARCHAR(128),
         wildcard            BOOL            NOT NULL,
@@ -40,8 +38,7 @@ object Bootstrap {
         PRIMARY KEY (apikey)
       );""")
 
-  val schemasCreate = (
-    fr"CREATE TABLE" ++ Postgres.SchemasTable ++ fr"""(
+  val schemasCreate = (fr"CREATE TABLE" ++ Postgres.SchemasTable ++ fr"""(
         vendor      VARCHAR(128)  NOT NULL,
         name        VARCHAR(128)  NOT NULL,
         format      VARCHAR(128)  NOT NULL,
@@ -56,8 +53,7 @@ object Bootstrap {
         body        JSON          NOT NULL
       )""")
 
-  val draftsCreate = (
-    fr"CREATE TABLE" ++ Postgres.DraftsTable ++ fr"""(
+  val draftsCreate = (fr"CREATE TABLE" ++ Postgres.DraftsTable ++ fr"""(
         vendor      VARCHAR(128) NOT NULL,
         name        VARCHAR(128) NOT NULL,
         format      VARCHAR(128) NOT NULL,
@@ -73,10 +69,9 @@ object Bootstrap {
   val allStatements =
     List(keyActionCreate, schemaActionCreate, permissionsCreate, schemasCreate, draftsCreate)
 
-  def initialize[F[_]](xa: Transactor[F])(implicit F: Bracket[F, Throwable]) = {
+  def initialize[F[_]](xa: Transactor[F])(implicit F: Bracket[F, Throwable]) =
     allStatements
       .traverse[ConnectionIO, Int](sql => sql.updateWithLogHandler(LogHandler.jdkLogHandler).run)
       .map(_.combineAll)
       .transact(xa)
-  }
 }

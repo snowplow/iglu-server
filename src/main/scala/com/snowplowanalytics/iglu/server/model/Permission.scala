@@ -33,9 +33,12 @@ import storage.Storage.IncompatibleStorage
 // Key A with x.y.z vendor CANNOT create key B with x.y vendor
 // Key A with any non-empty KeyAction set always has read key-permissions
 
-case class Permission(vendor: Permission.Vendor,
-                      schema: Option[Permission.SchemaAction],
-                      key: Set[Permission.KeyAction]) {
+case class Permission(
+  vendor: Permission.Vendor,
+  schema: Option[Permission.SchemaAction],
+  key: Set[Permission.KeyAction]
+) {
+
   /** Check if user has enough rights to read particular schema */
   def canRead(schemaVendor: String): Boolean =
     this match {
@@ -83,6 +86,7 @@ object Permission {
     *                 or just specified in `parts`
     */
   case class Vendor(parts: List[String], wildcard: Boolean) {
+
     /** Check if this `vendor` from permission is allowed to work with `requestedVendor` */
     def check(requestedVendor: String): Boolean = {
       val requestedParts = requestedVendor.split("\\.").toList
@@ -97,11 +101,12 @@ object Permission {
 
     def show: String = parts match {
       case Nil => "'wildcard vendor'"
-      case _ => parts.mkString(".")
+      case _   => parts.mkString(".")
     }
   }
 
   object Vendor {
+
     /** Can be applied to any vendor */
     val wildcard = Vendor(Nil, true)
 
@@ -110,9 +115,9 @@ object Permission {
 
     def parse(string: String): Vendor =
       string match {
-        case "*" => wildcard
+        case "*"                      => wildcard
         case _ if string.trim.isEmpty => wildcard
-        case vendor => Vendor(vendor.split('.').toList, true)
+        case vendor                   => Vendor(vendor.split('.').toList, true)
       }
 
     implicit val vendorCirceEncoder: Encoder[Vendor] =
@@ -122,16 +127,20 @@ object Permission {
   sealed trait SchemaAction extends Product with Serializable {
     def show: String = this match {
       case Permission.SchemaAction.CreateVendor => "CREATE_VENDOR"
-      case other => other.toString.toUpperCase
+      case other                                => other.toString.toUpperCase
     }
   }
   object SchemaAction {
+
     /** Only get/view schemas */
     case object Read extends SchemaAction
+
     /** Bump schema versions within existing schema and read */
     case object Bump extends SchemaAction
+
     /** Create new schemas/names (but within attached vendor permission) */
     case object Create extends SchemaAction
+
     /** Do everything, including creating new "subvendor" (applied only for `Vendor` with `wildcard`) */
     case object CreateVendor extends SchemaAction
 
@@ -145,8 +154,7 @@ object Permission {
       All.find(_.show === string).toRight(s"String $string is not valid SchemaAction")
 
     implicit val doobieSchemaActionGet: Meta[SchemaAction] =
-      Meta[String]
-        .timap(x => SchemaAction.parse(x).fold(e => throw IncompatibleStorage(e), identity))(_.show)
+      Meta[String].timap(x => SchemaAction.parse(x).fold(e => throw IncompatibleStorage(e), identity))(_.show)
 
     implicit val schemaActionCirceEncoder: Encoder[SchemaAction] =
       Encoder.instance(_.show.asJson)
@@ -165,8 +173,7 @@ object Permission {
       All.find(_.show === string).toRight(s"String $string is not valid KeyAction")
 
     implicit val doobieKeyActionGet: Meta[KeyAction] =
-      Meta[String]
-        .timap(x => parse(x).fold(e => throw IncompatibleStorage(e), identity))(_.show)
+      Meta[String].timap(x => parse(x).fold(e => throw IncompatibleStorage(e), identity))(_.show)
 
     implicit val keyActionCirceEncoder: Encoder[KeyAction] =
       Encoder.instance(_.show.asJson)
@@ -187,7 +194,7 @@ object Permission {
   implicit val doobiePermissionRead: Read[Permission] =
     Read[(Option[String], Boolean, Option[SchemaAction], List[String])].map {
       case (ven, wildcard, schemaAction, keyAction) =>
-        val vendor = ven.map(Vendor.parse).getOrElse(Vendor(Nil, wildcard))
+        val vendor     = ven.map(Vendor.parse).getOrElse(Vendor(Nil, wildcard))
         val keyActions = keyAction.traverse(KeyAction.parse).fold(e => throw IncompatibleStorage(e), identity)
         Permission(vendor, schemaAction, keyActions.toSet)
     }

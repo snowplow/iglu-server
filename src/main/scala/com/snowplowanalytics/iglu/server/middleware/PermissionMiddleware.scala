@@ -24,12 +24,12 @@ import cats.syntax.applicative._
 import cats.syntax.either._
 import cats.syntax.flatMap._
 
-import org.http4s.{ Request, HttpRoutes, Response, Status }
+import org.http4s.{HttpRoutes, Request, Response, Status}
 import org.http4s.server.AuthMiddleware
 import org.http4s.util.CaseInsensitiveString
 import org.http4s.rho.AuthedContext
 
-import com.snowplowanalytics.iglu.server.model.{ Permission, IgluResponse }
+import com.snowplowanalytics.iglu.server.model.{IgluResponse, Permission}
 import com.snowplowanalytics.iglu.server.storage.Storage
 
 /**
@@ -45,22 +45,34 @@ object PermissionMiddleware {
 
   /** Build an authentication middleware on top of storage */
   def apply[F[_]: Sync](storage: Storage[F]): AuthMiddleware[F, Permission] =
-    AuthMiddleware.noSpider(Kleisli { request => auth[F](storage)(request) }, badRequestHandler)  // TODO: SchemaServiceSpec.e6
+    AuthMiddleware.noSpider(Kleisli { request =>
+      auth[F](storage)(request)
+    }, badRequestHandler) // TODO: SchemaServiceSpec.e6
 
   /** Extract API key from HTTP request */
   def getApiKey[F[_]](request: Request[F]): Option[Either[Throwable, UUID]] =
-    request.headers.get(CaseInsensitiveString(ApiKey))
-      .map { header => header.value }
-      .map { apiKey => Either.catchOnly[IllegalArgumentException](UUID.fromString(apiKey)) }
+    request
+      .headers
+      .get(CaseInsensitiveString(ApiKey))
+      .map { header =>
+        header.value
+      }
+      .map { apiKey =>
+        Either.catchOnly[IllegalArgumentException](UUID.fromString(apiKey))
+      }
 
-  def wrapService[F[_]: Sync](db: Storage[F], ctx: AuthedContext[F, Permission], service: HttpRoutes[F]): HttpRoutes[F] =
+  def wrapService[F[_]: Sync](
+    db: Storage[F],
+    ctx: AuthedContext[F, Permission],
+    service: HttpRoutes[F]
+  ): HttpRoutes[F] =
     PermissionMiddleware[F](db).apply(ctx.toService(service))
 
   private val SchemaNotFoundBody = Utils.toBytes(IgluResponse.SchemaNotFound: IgluResponse)
-  private val PermissionsIssue = Utils.toBytes(IgluResponse.Message("Not enough permissions"): IgluResponse)
+  private val PermissionsIssue   = Utils.toBytes(IgluResponse.Message("Not enough permissions"): IgluResponse)
 
   /** Authenticate request against storage */
-  private def auth[F[_]: Sync](storage: Storage[F])(request: Request[F]): OptionT[F, Permission] = {
+  private def auth[F[_]: Sync](storage: Storage[F])(request: Request[F]): OptionT[F, Permission] =
     getApiKey(request) match {
       case None =>
         OptionT.pure(Permission.Noop)
@@ -69,20 +81,22 @@ object PermissionMiddleware {
       case Some(_) =>
         OptionT.none
     }
-  }
 
   /** Handle invalid apikey as BadRequest, everything else as NotFound
     * (because we don't reveal presence of private resources)
     * Function is called only on Some(_)
     */
   private def badRequestHandler[F[_]](implicit F: Applicative[F]): Request[F] => F[Response[F]] =
-    s => getApiKey(s) match {
-      case Some(Left(error)) =>
-        val body = Utils.toBytes[F, IgluResponse](IgluResponse.Message(s"Error parsing apikey HTTP header. ${error.getMessage}"))
-        F.pure(Response[F](Status.BadRequest, body = body))
-      case _ if s.uri.renderString.contains("keygen") =>  // Horrible way to check if we're not using SchemaService
-        F.pure(Response[F](Status.Forbidden, body = PermissionsIssue))
-      case Some(Right(_)) =>
-        F.pure(Response[F](Status.NotFound, body = SchemaNotFoundBody))
-    }
+    s =>
+      getApiKey(s) match {
+        case Some(Left(error)) =>
+          val body = Utils.toBytes[F, IgluResponse](
+            IgluResponse.Message(s"Error parsing apikey HTTP header. ${error.getMessage}")
+          )
+          F.pure(Response[F](Status.BadRequest, body = body))
+        case _ if s.uri.renderString.contains("keygen") => // Horrible way to check if we're not using SchemaService
+          F.pure(Response[F](Status.Forbidden, body = PermissionsIssue))
+        case Some(Right(_)) =>
+          F.pure(Response[F](Status.NotFound, body = SchemaNotFoundBody))
+      }
 }
