@@ -14,7 +14,7 @@
  */
 package com.snowplowanalytics.iglu.server
 
-import cats.Applicative
+import cats.effect.BracketThrow
 import cats.implicits._
 
 import io.circe.{Encoder, Json}
@@ -33,15 +33,15 @@ object Webhook {
   case class SchemaPublished(uri: Uri, vendorPrefixes: Option[List[String]]) extends Webhook
 
   case class WebhookClient[F[_]](webhooks: List[Webhook], httpClient: Client[F]) {
-    def schemaPublished(schemaKey: SchemaKey, updated: Boolean)(implicit F: Applicative[F]): F[List[Either[String, Unit]]] =
+    def schemaPublished(schemaKey: SchemaKey, updated: Boolean)(implicit F: BracketThrow[F]): F[List[Either[String, Unit]]] =
       webhooks.traverse {
         case SchemaPublished(uri, prefixes) if prefixes.isEmpty || prefixes.getOrElse(List()).exists(schemaKey.vendor.startsWith(_)) =>
           val event = SchemaPublishedEvent(schemaKey, updated)
           val req = Request[F]().withUri(uri).withBodyStream(Utils.toBytes(event))
-          httpClient.fetch(req) { res: Response[F] =>
+          httpClient.run(req).use { res: Response[F] =>
             res.status match {
-              case Status(code) if code < 200 || code > 299 => F.pure(code.toString.asLeft)
-              case _ => F.pure(().asRight)
+              case Status(code) if code < 200 || code > 299 => F.pure(code.toString.asLeft[Unit])
+              case _ => F.pure(().asRight[String])
             }
           }
         case _ => F.pure(().asRight)
