@@ -76,6 +76,18 @@ class PostgresSpec extends Specification with BeforeAll with IOChecker {
       check(Postgres.Sql.getSchema(SchemaMap("does", "not", "exist", SchemaVer.Full(1, 0, 0))))
     }
 
+    "typecheck getSchemasByVendorName" in {
+      check(Postgres.Sql.getSchemasByVendorName("does.not.exist", "myschema"))
+    }
+
+    "typecheck getSchemasByVendor" in {
+      check(Postgres.Sql.getSchemasByVendor("does.not.exist"))
+    }
+
+    "typecheck getSchemasByModel" in {
+      check(Postgres.Sql.getSchemasByModel("does.not.exist", "myschema", 1))
+    }
+
     "typecheck addSchema" in {
       check(
         Postgres
