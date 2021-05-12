@@ -17,7 +17,7 @@ package com.snowplowanalytics.iglu.server.codecs
 import cats.effect.Sync
 
 import fs2.text.utf8Encode
-import fs2.{RaiseThrowable, Stream}
+import fs2.Stream
 
 import io.circe.Json
 import io.circe.fs2.byteStreamParser
@@ -35,11 +35,11 @@ trait JsonCodecs {
 
   case class JsonArrayStream[F[_], A](nonArray: Stream[F, A])
 
-  implicit def arrayStreamEncoder[F[_]: RaiseThrowable, A: EntityEncoder[F, ?]] = {
+  implicit def arrayStreamEncoder[F[_]: Sync, A: EntityEncoder[F, ?]] = {
     val W = implicitly[EntityEncoder[F, A]]
     new EntityEncoder[F, JsonArrayStream[F, A]] {
       override def toEntity(stream: JsonArrayStream[F, A]): Entity[F] = {
-        val commaSeparated = stream.nonArray.flatMap(W.toEntity(_).body).through(byteStreamParser).map(_.noSpaces).intersperse(",")
+        val commaSeparated = stream.nonArray.flatMap(W.toEntity(_).body).through(byteStreamParser[F]).map(_.noSpaces).intersperse(",")
         val wrapped = Stream.emit("[") ++ commaSeparated ++ Stream.emit("]")
         Entity(wrapped.through(utf8Encode))
       }
