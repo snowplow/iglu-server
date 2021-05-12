@@ -67,28 +67,31 @@ object Schema {
   /** Encoding of a schema */
   sealed trait Repr
   object Repr {
+
     /** Canonical self-describing representation */
     case class Canonical(schema: SelfDescribingSchema[Json]) extends Repr
+
     /** Non-vanilla representation for UIs/non-validation clients */
     case class Full(schema: Schema) extends Repr
+
     /** Just URI string (but schema is on the server) */
     case class Uri(schemaKey: SchemaKey) extends Repr
 
-    def apply(schema: Schema): Repr = Full(schema)
-    def apply(uri: SchemaMap): Repr = Uri(uri.schemaKey)
+    def apply(schema: Schema): Repr                     = Full(schema)
+    def apply(uri: SchemaMap): Repr                     = Uri(uri.schemaKey)
     def apply(schema: SelfDescribingSchema[Json]): Repr = Canonical(schema)
 
     sealed trait Format extends Product with Serializable
     object Format {
-      case object Uri extends Format
-      case object Meta extends Format
+      case object Uri       extends Format
+      case object Meta      extends Format
       case object Canonical extends Format
 
       def parse(s: String): Option[Format] = s.toLowerCase match {
-        case "uri" => Some(Uri)
-        case "meta" => Some(Meta)
+        case "uri"       => Some(Uri)
+        case "meta"      => Some(Meta)
         case "canonical" => Some(Canonical)
-        case _ => None
+        case _           => None
       }
     }
 
@@ -97,13 +100,13 @@ object Schema {
   sealed trait SchemaBody extends Product with Serializable
   object SchemaBody {
     case class SelfDescribing(schema: SelfDescribingSchema[Json]) extends SchemaBody
-    case class BodyOnly(schema: Json) extends SchemaBody
+    case class BodyOnly(schema: Json)                             extends SchemaBody
 
     implicit val schemaBodyCirceDecoder: Decoder[SchemaBody] =
       Decoder.instance { json =>
         SelfDescribingSchema.parse(json.value) match {
           case Right(schema) => SelfDescribing(schema).asRight
-          case Left(_) => json.as[JsonObject].map(obj => BodyOnly(Json.fromJsonObject(obj)))
+          case Left(_)       => json.as[JsonObject].map(obj => BodyOnly(Json.fromJsonObject(obj)))
         }
       }
   }
@@ -114,16 +117,15 @@ object Schema {
 
     def parse(s: String): Option[Format] = s match {
       case "jsonschema" => Some(Jsonschema)
-      case _ => None
+      case _            => None
     }
   }
 
-  private def moveToFront[K, V](key: K, fields: List[(K, V)]) = {
+  private def moveToFront[K, V](key: K, fields: List[(K, V)]) =
     fields.span(_._1 != key) match {
       case (previous, matches :: next) => matches :: previous ++ next
       case _                           => fields
     }
-  }
 
   private def orderedSchema(schema: Json): Json =
     schema.asObject match {
@@ -134,27 +136,30 @@ object Schema {
 
   implicit val schemaEncoder: Encoder[Schema] =
     Encoder.instance { schema =>
-      Json.obj(
-        "self" -> schema.schemaMap.asJson,
-        "metadata" -> schema.metadata.asJson(Metadata.metadataEncoder)
-      ).deepMerge(schema.body)
+      Json
+        .obj(
+          "self"     -> schema.schemaMap.asJson,
+          "metadata" -> schema.metadata.asJson(Metadata.metadataEncoder)
+        )
+        .deepMerge(schema.body)
     }
 
   implicit val representationEncoder: Encoder[Repr] =
     Encoder.instance {
       case Repr.Full(s) => orderedSchema(schemaEncoder.apply(s))
-      case Repr.Uri(u) => Encoder[String].apply(u.toSchemaUri)
-      case Repr.Canonical(s) => orderedSchema(s.normalize.asObject match {
-        case Some(obj) => Json.fromJsonObject(("$schema", CanonicalUri.asJson) +: obj)
-        case None => s.normalize
-      })
+      case Repr.Uri(u)  => Encoder[String].apply(u.toSchemaUri)
+      case Repr.Canonical(s) =>
+        orderedSchema(s.normalize.asObject match {
+          case Some(obj) => Json.fromJsonObject(("$schema", CanonicalUri.asJson) +: obj)
+          case None      => s.normalize
+        })
     }
 
   implicit val serverSchemaDecoder: Decoder[Schema] =
     Decoder.instance { cursor =>
       for {
-        self <- cursor.value.as[SchemaMap]
-        meta <- cursor.downField("metadata").as[Metadata]
+        self     <- cursor.value.as[SchemaMap]
+        meta     <- cursor.downField("metadata").as[Metadata]
         bodyJson <- cursor.as[JsonObject]
         body = bodyJson.toList.filterNot { case (key, _) => key == "self" || key == "metadata" }
       } yield Schema(self, meta, Json.fromFields(body))

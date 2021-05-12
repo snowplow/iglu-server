@@ -23,19 +23,23 @@ import com.snowplowanalytics.iglu.core.SchemaVer
 sealed trait VersionCursor extends Product with Serializable
 
 object VersionCursor {
+
   /** The very first schema of whole group */
   case object Initial extends VersionCursor
+
   /** First schema of a particular model */
-  case class StartModel private(model: Int) extends VersionCursor
+  case class StartModel private (model: Int) extends VersionCursor
+
   /** First schema (addition) of a particular revision of particular model */
-  case class StartRevision private(model: Int, revision: Int) extends VersionCursor
+  case class StartRevision private (model: Int, revision: Int) extends VersionCursor
+
   /** Non-initial schema */
-  case class NonInitial private(schemaVer: SchemaVer.Full) extends VersionCursor
+  case class NonInitial private (schemaVer: SchemaVer.Full) extends VersionCursor
 
   sealed trait Inconsistency extends Product with Serializable
   object Inconsistency {
-    case object PreviousMissing extends Inconsistency
-    case object AlreadyExists extends Inconsistency
+    case object PreviousMissing                                         extends Inconsistency
+    case object AlreadyExists                                           extends Inconsistency
     case class Availability(isPublic: Boolean, previousPublic: Boolean) extends Inconsistency
 
     implicit val inconsistencyShowInstance: Show[Inconsistency] =
@@ -49,15 +53,20 @@ object VersionCursor {
       }
   }
 
-  def isAllowed(version: SchemaVer.Full, existing: List[SchemaVer.Full], patchesAllowed: Boolean): Either[Inconsistency, Unit] =
+  def isAllowed(
+    version: SchemaVer.Full,
+    existing: List[SchemaVer.Full],
+    patchesAllowed: Boolean
+  ): Either[Inconsistency, Unit] =
     if (existing.contains(version) && !patchesAllowed) Inconsistency.AlreadyExists.asLeft
-    else if (previousExists(existing, get(version))) ().asRight else Inconsistency.PreviousMissing.asLeft
+    else if (previousExists(existing, get(version))) ().asRight
+    else Inconsistency.PreviousMissing.asLeft
 
   def get(version: SchemaVer.Full): VersionCursor = version match {
     case SchemaVer.Full(1, 0, 0) => Initial
     case SchemaVer.Full(m, 0, 0) => StartModel(m)
     case SchemaVer.Full(m, r, 0) => StartRevision(m, r)
-    case next => NonInitial(next)
+    case next                    => NonInitial(next)
   }
 
   /**
@@ -74,9 +83,8 @@ object VersionCursor {
         val thisModel = existing.filter(_.model == m)
         thisModel.map(_.revision).contains(r - 1)
       case NonInitial(version) =>
-        val thisModel = existing.filter(_.model == version.model)
+        val thisModel    = existing.filter(_.model == version.model)
         val thisRevision = thisModel.filter(_.revision == version.revision)
         thisRevision.map(_.addition).contains(version.addition - 1)
     }
 }
-

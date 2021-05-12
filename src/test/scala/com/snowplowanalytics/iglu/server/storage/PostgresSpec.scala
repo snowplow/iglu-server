@@ -29,7 +29,7 @@ import doobie.implicits._
 import eu.timepit.refined.types.numeric.NonNegInt
 
 import com.snowplowanalytics.iglu.core.{SchemaMap, SchemaVer}
-import com.snowplowanalytics.iglu.server.model.{ SchemaDraft, Permission }
+import com.snowplowanalytics.iglu.server.model.{Permission, SchemaDraft}
 import com.snowplowanalytics.iglu.server.migrations.Bootstrap
 
 import scala.concurrent.ExecutionContext
@@ -42,9 +42,11 @@ class PostgresSpec extends Specification with BeforeAll with IOChecker {
   implicit val cs = IO.contextShift(ExecutionContext.global)
 
   val transactor = Transactor.fromDriverManager[IO](
-    "org.postgresql.Driver", "jdbc:postgresql://localhost:5432/testdb", "postgres", "iglusecret"
+    "org.postgresql.Driver",
+    "jdbc:postgresql://localhost:5432/testdb",
+    "postgres",
+    "iglusecret"
   )
-
 
   def beforeAll(): Unit = {
     val dropStatement =
@@ -53,9 +55,8 @@ class PostgresSpec extends Specification with BeforeAll with IOChecker {
         fr"DROP TABLE IF EXISTS" ++ Postgres.SchemasTable,
         fr"DROP TABLE IF EXISTS" ++ Postgres.DraftsTable,
         fr"DROP TYPE IF EXISTS schema_action",
-        fr"DROP TYPE IF EXISTS key_action")
-      .map(_.update.run).sequence
-
+        fr"DROP TYPE IF EXISTS key_action"
+      ).map(_.update.run).sequence
 
     val action = dropStatement.transact(transactor) *>
       Bootstrap.initialize(transactor)
@@ -76,7 +77,11 @@ class PostgresSpec extends Specification with BeforeAll with IOChecker {
     }
 
     "typecheck addSchema" in {
-      check(Postgres.Sql.addSchema(SchemaMap("does", "not", "exist", SchemaVer.Full(1, 0, 0)), Json.fromFields(List.empty), true))
+      check(
+        Postgres
+          .Sql
+          .addSchema(SchemaMap("does", "not", "exist", SchemaVer.Full(1, 0, 0)), Json.fromFields(List.empty), true)
+      )
     }
 
     "typecheck getDraft" in {
@@ -88,7 +93,14 @@ class PostgresSpec extends Specification with BeforeAll with IOChecker {
     }
 
     "typecheck addPermission" in {
-      check(Postgres.Sql.addPermission(UUID.fromString("6907ba19-b6e0-4126-a931-dd236eec2736"), Permission(Permission.Vendor(List("com", "acme"), false), None, Set.empty)))
+      check(
+        Postgres
+          .Sql
+          .addPermission(
+            UUID.fromString("6907ba19-b6e0-4126-a931-dd236eec2736"),
+            Permission(Permission.Vendor(List("com", "acme"), false), None, Set.empty)
+          )
+      )
     }
 
     "typecheck deletePermission" in {

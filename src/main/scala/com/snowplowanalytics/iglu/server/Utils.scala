@@ -17,10 +17,9 @@ package com.snowplowanalytics.iglu.server
 import io.circe.Encoder
 import io.circe.syntax._
 
-import fs2.{ Stream, text }
+import fs2.{Stream, text}
 
 import com.snowplowanalytics.iglu.core.{SchemaKey, SchemaMap, SchemaVer}
-
 
 object Utils {
 
