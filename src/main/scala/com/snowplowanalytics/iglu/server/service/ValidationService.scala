@@ -18,15 +18,15 @@ import io.circe.Json
 
 import org.http4s.HttpRoutes
 import org.http4s.circe._
-import org.http4s.rho.{RhoMiddleware, RhoRoutes, AuthedContext}
+import org.http4s.rho.{AuthedContext, RhoMiddleware, RhoRoutes}
 import org.http4s.rho.swagger.SwaggerSyntax
 import org.http4s.rho.swagger.syntax.io
 
-import cats.data.{NonEmptyList, ValidatedNel, Validated}
+import cats.data.{NonEmptyList, Validated, ValidatedNel}
 import cats.effect.{IO, Sync}
 import cats.implicits._
 
-import com.snowplowanalytics.iglu.core.{SelfDescribingData, SelfDescribingSchema, SchemaMap}
+import com.snowplowanalytics.iglu.core.{SchemaMap, SelfDescribingData, SelfDescribingSchema}
 import com.snowplowanalytics.iglu.core.circe.implicits._
 
 import com.snowplowanalytics.iglu.client.validator.ValidatorError
@@ -34,17 +34,19 @@ import com.snowplowanalytics.iglu.client.validator.CirceValidator
 import com.snowplowanalytics.iglu.schemaddl.jsonschema.circe.implicits._
 import com.snowplowanalytics.iglu.schemaddl.jsonschema.{Pointer, SelfSyntaxChecker, Schema => SchemaAst}
 import com.snowplowanalytics.iglu.schemaddl.jsonschema.SanityLinter.lint
-import com.snowplowanalytics.iglu.schemaddl.jsonschema.Linter.{ allLintersMap, Message, Level }
+import com.snowplowanalytics.iglu.schemaddl.jsonschema.Linter.{Level, Message, allLintersMap}
 
 import com.snowplowanalytics.iglu.server.storage.Storage
 import com.snowplowanalytics.iglu.server.middleware.PermissionMiddleware
-import com.snowplowanalytics.iglu.server.model.{ IgluResponse, Permission, Schema }
+import com.snowplowanalytics.iglu.server.model.{IgluResponse, Permission, Schema}
 import com.snowplowanalytics.iglu.server.codecs.JsonCodecs._
 import com.snowplowanalytics.iglu.server.codecs.UriParsers._
 
-class ValidationService[F[+_]: Sync](swagger: SwaggerSyntax[F],
-                                     ctx: AuthedContext[F, Permission],
-                                     db: Storage[F]) extends RhoRoutes[F] {
+class ValidationService[F[+_]: Sync](
+  swagger: SwaggerSyntax[F],
+  ctx: AuthedContext[F, Permission],
+  db: Storage[F]
+) extends RhoRoutes[F] {
   import swagger._
   import ValidationService._
 
@@ -68,7 +70,7 @@ class ValidationService[F[+_]: Sync](swagger: SwaggerSyntax[F],
         }
     }
 
-  def validateData(authInfo: Permission, instance: Json) = {
+  def validateData(authInfo: Permission, instance: Json) =
     SelfDescribingData.parse(instance) match {
       case Right(SelfDescribingData(key, data)) =>
         for {
@@ -92,14 +94,15 @@ class ValidationService[F[+_]: Sync](swagger: SwaggerSyntax[F],
         BadRequest(IgluResponse.Message(s"JSON payload is not self-describing, ${error.code}"): IgluResponse)
     }
 
-  }
 }
 
 object ValidationService {
 
-  def asRoutes(db: Storage[IO],
-               ctx: AuthedContext[IO, Permission],
-               rhoMiddleware: RhoMiddleware[IO]): HttpRoutes[IO] = {
+  def asRoutes(
+    db: Storage[IO],
+    ctx: AuthedContext[IO, Permission],
+    rhoMiddleware: RhoMiddleware[IO]
+  ): HttpRoutes[IO] = {
     val service = new ValidationService[IO](io, ctx, db).toRoutes(rhoMiddleware)
     PermissionMiddleware.wrapService(db, ctx, service)
   }
@@ -107,25 +110,25 @@ object ValidationService {
   type LintReport[A] = ValidatedNel[Message, A]
 
   val NotSelfDescribing = Message(Pointer.Root, "JSON Schema is not self-describing", Level.Error)
-  val NotSchema = Message(Pointer.Root, "Cannot extract JSON Schema", Level.Error)
+  val NotSchema         = Message(Pointer.Root, "Cannot extract JSON Schema", Level.Error)
 
   def validateJsonSchema(schema: Json): LintReport[SelfDescribingSchema[Json]] = {
     val generalCheck =
       SelfSyntaxChecker.validateSchema(schema)
 
-    val selfDescribingCheck = SelfDescribingSchema
-      .parse(schema)
-      .fold(_ => NotSelfDescribing.invalidNel[SelfDescribingSchema[Json]], _.validNel[Message])
+    val selfDescribingCheck =
+      SelfDescribingSchema
+        .parse(schema)
+        .fold(_ => NotSelfDescribing.invalidNel[SelfDescribingSchema[Json]], _.validNel[Message])
 
-    val lintReport: LintReport[Unit] = SchemaAst.parse(schema)
-      .fold(NotSchema.invalidNel[SchemaAst])(_.validNel[Message])
-      .andThen { ast =>
-        val result = lint(ast, allLintersMap.values.toList)
-          .toList
-          .flatMap { case (pointer, issues) => issues.toList.map(_.toMessage(pointer)) }
+    val lintReport: LintReport[Unit] =
+      SchemaAst.parse(schema).fold(NotSchema.invalidNel[SchemaAst])(_.validNel[Message]).andThen { ast =>
+        val result = lint(ast, allLintersMap.values.toList).toList.flatMap {
+          case (pointer, issues) => issues.toList.map(_.toMessage(pointer))
+        }
         NonEmptyList.fromList(result).fold(().validNel[Message])(_.invalid[Unit])
       }
 
-    (generalCheck, lintReport, selfDescribingCheck).mapN { (_, _, schema) => schema }
+    (generalCheck, lintReport, selfDescribingCheck).mapN((_, _, schema) => schema)
   }
 }

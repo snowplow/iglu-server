@@ -19,7 +19,7 @@ import doobie._
 import doobie.postgres.circe.json.implicits._
 import doobie.postgres.implicits._
 
-import io.circe.{ Json, Encoder }
+import io.circe.{Encoder, Json}
 import io.circe.generic.semiauto.deriveEncoder
 import io.circe.refined._
 
@@ -30,10 +30,19 @@ import storage.Storage.IncompatibleStorage
 
 import Schema.Metadata
 
-case class SchemaDraft(schemaMap: DraftId, metadata: Metadata, body: Json)
+case class SchemaDraft(
+  schemaMap: DraftId,
+  metadata: Metadata,
+  body: Json
+)
 
 object SchemaDraft {
-  case class DraftId(vendor: String, name: String, format: String, version: DraftVersion)
+  case class DraftId(
+    vendor: String,
+    name: String,
+    format: String,
+    version: DraftVersion
+  )
 
   implicit def draftIdEncoder: Encoder[DraftId] =
     deriveEncoder[DraftId]

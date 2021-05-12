@@ -16,7 +16,8 @@ package com.snowplowanalytics.iglu.server.model
 
 import com.snowplowanalytics.iglu.core.SchemaVer
 
-class VersionCursorSpec extends org.specs2.Specification { def is = s2"""
+class VersionCursorSpec extends org.specs2.Specification {
+  def is = s2"""
   previousExists validates new revision $e1
   previousExists validates new model if no schemas were created for this model yet $e2
   previousExists rejects new model if previous model does not exist yet $e3
@@ -27,41 +28,40 @@ class VersionCursorSpec extends org.specs2.Specification { def is = s2"""
   """
 
   def e1 = {
-    val existing = List(SchemaVer.Full(1,0,0), SchemaVer.Full(1,0,1))
-    val current = VersionCursor.get(SchemaVer.Full(1,1,0))
+    val existing = List(SchemaVer.Full(1, 0, 0), SchemaVer.Full(1, 0, 1))
+    val current  = VersionCursor.get(SchemaVer.Full(1, 1, 0))
     VersionCursor.previousExists(existing, current) must beTrue
   }
 
-
   def e2 = {
-    val existing = List(SchemaVer.Full(1,0,0), SchemaVer.Full(1,1,0), SchemaVer.Full(1,0,1))
-    val current = VersionCursor.get(SchemaVer.Full(2,0,0))
+    val existing = List(SchemaVer.Full(1, 0, 0), SchemaVer.Full(1, 1, 0), SchemaVer.Full(1, 0, 1))
+    val current  = VersionCursor.get(SchemaVer.Full(2, 0, 0))
     VersionCursor.previousExists(existing, current) must beTrue
   }
 
   def e3 = {
-    val existing = List(SchemaVer.Full(1,0,0), SchemaVer.Full(1,1,0))
-    val current = VersionCursor.get(SchemaVer.Full(3,0,0))
+    val existing = List(SchemaVer.Full(1, 0, 0), SchemaVer.Full(1, 1, 0))
+    val current  = VersionCursor.get(SchemaVer.Full(3, 0, 0))
     VersionCursor.previousExists(existing, current) must beFalse
   }
 
   def e4 = {
-    val existing = List(SchemaVer.Full(1,0,0), SchemaVer.Full(1,1,0), SchemaVer.Full(1,1,1))
-    val current = VersionCursor.get(SchemaVer.Full(1,1,2))
+    val existing = List(SchemaVer.Full(1, 0, 0), SchemaVer.Full(1, 1, 0), SchemaVer.Full(1, 1, 1))
+    val current  = VersionCursor.get(SchemaVer.Full(1, 1, 2))
     VersionCursor.previousExists(existing, current) must beTrue
   }
 
   def e5 = {
-    val existing = List(SchemaVer.Full(1,0,0), SchemaVer.Full(1,1,0), SchemaVer.Full(1,1,1))
-    val current = VersionCursor.get(SchemaVer.Full(1,1,3))
+    val existing = List(SchemaVer.Full(1, 0, 0), SchemaVer.Full(1, 1, 0), SchemaVer.Full(1, 1, 1))
+    val current  = VersionCursor.get(SchemaVer.Full(1, 1, 3))
     VersionCursor.previousExists(existing, current) must beFalse
   }
 
-  def e6 = {
-    VersionCursor.isAllowed(SchemaVer.Full(1,0,0), List(SchemaVer.Full(1,0,0)), true) must beRight(())
-  }
+  def e6 =
+    VersionCursor.isAllowed(SchemaVer.Full(1, 0, 0), List(SchemaVer.Full(1, 0, 0)), true) must beRight(())
 
-  def e7 = {
-    VersionCursor.isAllowed(SchemaVer.Full(1,0,0), List(SchemaVer.Full(1,0,0)), false) must beLeft(VersionCursor.Inconsistency.AlreadyExists)
-  }
+  def e7 =
+    VersionCursor.isAllowed(SchemaVer.Full(1, 0, 0), List(SchemaVer.Full(1, 0, 0)), false) must beLeft(
+      VersionCursor.Inconsistency.AlreadyExists
+    )
 }

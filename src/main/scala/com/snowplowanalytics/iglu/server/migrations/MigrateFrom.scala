@@ -26,8 +26,9 @@ object MigrateFrom {
       Fifth.perform
   }
 
-  def parse(s: String): Option[MigrateFrom] = s match {
-    case "0.5.0" => Some(`0.5.0`)
-    case _ => None
-  }
+  def parse(s: String): Option[MigrateFrom] =
+    s match {
+      case "0.5.0" => Some(`0.5.0`)
+      case _       => None
+    }
 }

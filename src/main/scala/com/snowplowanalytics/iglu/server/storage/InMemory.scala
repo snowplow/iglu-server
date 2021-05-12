@@ -22,14 +22,14 @@ import fs2.Stream
 
 import cats.Monad
 import cats.implicits._
-import cats.effect.{ Sync, Clock, Bracket }
+import cats.effect.{Bracket, Clock, Sync}
 import cats.effect.concurrent.Ref
 
 import io.circe.Json
 
 import com.snowplowanalytics.iglu.core.SchemaMap
 
-import com.snowplowanalytics.iglu.server.model.{ Permission, Schema, SchemaDraft }
+import com.snowplowanalytics.iglu.server.model.{Permission, Schema, SchemaDraft}
 import com.snowplowanalytics.iglu.server.model.SchemaDraft.DraftId
 
 /** Ephemeral storage that will be lost after server shut down */
@@ -47,17 +47,33 @@ case class InMemory[F[_]](ref: Ref[F, InMemory.State]) extends Storage[F] {
       _ <- ref.set(newState)
     } yield ()
 
-  def addSchema(schemaMap: SchemaMap, body: Json, isPublic: Boolean)(implicit C: Clock[F], M: Bracket[F, Throwable]): F[Unit] =
+  def addSchema(
+    schemaMap: SchemaMap,
+    body: Json,
+    isPublic: Boolean
+  )(
+    implicit
+    C: Clock[F],
+    M: Bracket[F, Throwable]
+  ): F[Unit] =
     for {
-      db <- ref.get
+      db            <- ref.get
       addedAtMillis <- C.realTime(TimeUnit.MILLISECONDS)
       addedAt = Instant.ofEpochMilli(addedAtMillis)
-      meta = Schema.Metadata(addedAt, addedAt, isPublic)
-      schema = Schema(schemaMap, meta, body)
+      meta    = Schema.Metadata(addedAt, addedAt, isPublic)
+      schema  = Schema(schemaMap, meta, body)
       _ <- ref.update(_.copy(schemas = db.schemas.updated(schemaMap, schema)))
     } yield ()
 
-  def updateSchema(schemaMap: SchemaMap, body: Json, isPublic: Boolean)(implicit C: Clock[F], M: Bracket[F, Throwable]): F[Unit] =
+  def updateSchema(
+    schemaMap: SchemaMap,
+    body: Json,
+    isPublic: Boolean
+  )(
+    implicit
+    C: Clock[F],
+    M: Bracket[F, Throwable]
+  ): F[Unit] =
     addSchema(schemaMap, body, isPublic)
 
   def getSchemas(implicit F: Bracket[F, Throwable]): F[List[Schema]] =
@@ -69,31 +85,40 @@ case class InMemory[F[_]](ref: Ref[F, InMemory.State]) extends Storage[F] {
   def getDraft(draftId: DraftId)(implicit B: Bracket[F, Throwable]): F[Option[SchemaDraft]] =
     for { db <- ref.get } yield db.drafts.get(draftId)
 
-  def addDraft(draftId: DraftId, body: Json, isPublic: Boolean)(implicit C: Clock[F], M: Bracket[F, Throwable]): F[Unit] =
+  def addDraft(
+    draftId: DraftId,
+    body: Json,
+    isPublic: Boolean
+  )(
+    implicit
+    C: Clock[F],
+    M: Bracket[F, Throwable]
+  ): F[Unit] =
     for {
-      db <- ref.get
+      db            <- ref.get
       addedAtMillis <- C.realTime(TimeUnit.MILLISECONDS)
       addedAt = Instant.ofEpochMilli(addedAtMillis)
-      meta = Schema.Metadata(addedAt, addedAt, isPublic)
-      schema = SchemaDraft(draftId, meta, body)
+      meta    = Schema.Metadata(addedAt, addedAt, isPublic)
+      schema  = SchemaDraft(draftId, meta, body)
       _ <- ref.update(_.copy(drafts = db.drafts.updated(draftId, schema)))
     } yield ()
 
   def getDrafts(implicit F: Monad[F]): Stream[F, SchemaDraft] = {
-    val drafts = ref.get.map(state => Stream.emits[F, SchemaDraft](state.drafts.values.toList.sortBy(_.metadata.createdAt)))
+    val drafts =
+      ref.get.map(state => Stream.emits[F, SchemaDraft](state.drafts.values.toList.sortBy(_.metadata.createdAt)))
     Stream.eval(drafts).flatten
   }
 
   def addPermission(apikey: UUID, permission: Permission)(implicit F: Bracket[F, Throwable]): F[Unit] =
     for {
       db <- ref.get
-      _ <- ref.update(_.copy(permission = db.permission.updated(apikey, permission)))
+      _  <- ref.update(_.copy(permission = db.permission.updated(apikey, permission)))
     } yield ()
 
   def deletePermission(apikey: UUID)(implicit F: Bracket[F, Throwable]): F[Unit] =
     for {
       db <- ref.get
-      _ <- ref.update(_.copy(permission = db.permission - apikey))
+      _  <- ref.update(_.copy(permission = db.permission - apikey))
     } yield ()
 }
 
@@ -101,9 +126,11 @@ object InMemory {
 
   val DummyMasterKey: UUID = UUID.fromString("48b267d7-cd2b-4f22-bae4-0f002008b5ad")
 
-  case class State(schemas: Map[SchemaMap, Schema],
-                   permission: Map[UUID, Permission],
-                   drafts: Map[DraftId, SchemaDraft])
+  case class State(
+    schemas: Map[SchemaMap, Schema],
+    permission: Map[UUID, Permission],
+    drafts: Map[DraftId, SchemaDraft]
+  )
 
   object State {
     val empty: State = State(Map.empty, Map.empty, Map.empty)

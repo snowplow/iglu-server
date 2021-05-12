@@ -1,8 +1,9 @@
 package com.snowplowanalytics.iglu.server.model
 
-import com.snowplowanalytics.iglu.server.model.Permission.{SchemaAction, Vendor, KeyAction}
+import com.snowplowanalytics.iglu.server.model.Permission.{KeyAction, SchemaAction, Vendor}
 
-class PermissionSpec extends org.specs2.Specification { def is = s2"""
+class PermissionSpec extends org.specs2.Specification {
+  def is = s2"""
   canRead returns true for read-only key $e1
   Vendor.check returns true for exactly same vendor $e2
   Vendor.check returns false for child vendor without wildcard $e3
@@ -18,13 +19,11 @@ class PermissionSpec extends org.specs2.Specification { def is = s2"""
     permission.canRead("com.acme") must beTrue
   }
 
-  def e2 = {
+  def e2 =
     Vendor(List("com", "acme"), false).check("com.acme") must beTrue
-  }
 
-  def e3 = {
+  def e3 =
     Vendor(List("com", "acme"), false).check("com.acme.unrelated") must beFalse
-  }
 
   def e4 = {
     val permission = Permission(Vendor(List("com", "acme"), false), Some(SchemaAction.Read), Set.empty)
@@ -42,11 +41,10 @@ class PermissionSpec extends org.specs2.Specification { def is = s2"""
   }
 
   def e7 = {
-    val permission = Permission(Vendor(List(),true),Some(SchemaAction.CreateVendor),Set())
+    val permission = Permission(Vendor(List(), true), Some(SchemaAction.CreateVendor), Set())
     permission.canCreateSchema("com.snowplowanalytics.snowplow.storage") must beTrue
   }
 
-  def e8 = {
+  def e8 =
     Vendor.parse(" ") must beEqualTo(Vendor.wildcard)
-  }
 }

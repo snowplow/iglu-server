@@ -23,7 +23,8 @@ import io.circe.literal._
 
 import cats.syntax.either._
 
-class ConfigSpec extends org.specs2.Specification { def is = s2"""
+class ConfigSpec extends org.specs2.Specification {
+  def is = s2"""
   parse run command without file $e1
   parse run config from file $e2
   parse run config with dummy DB from file $e3
@@ -32,59 +33,88 @@ class ConfigSpec extends org.specs2.Specification { def is = s2"""
   """
 
   def e1 = {
-    val input = "--config foo.hocon"
+    val input    = "--config foo.hocon"
     val expected = Config.ServerCommand.Run(Paths.get("foo.hocon"))
-    val result = Config.serverCommand.parse(input.split(" ").toList)
+    val result   = Config.serverCommand.parse(input.split(" ").toList)
     result must beRight(expected)
   }
 
   def e2 = {
-    val config = getClass.getResource("/valid-pg-config.conf").toURI
+    val config     = getClass.getResource("/valid-pg-config.conf").toURI
     val configPath = Paths.get(config)
-    val input = s"--config $configPath"
-    val pool = Config.StorageConfig.ConnectionPool.Hikari(Some(5000), Some(1000), Some(5), Some(3), Config.ThreadPool.Fixed(4), Config.ThreadPool.Cached)
+    val input      = s"--config $configPath"
+    val pool = Config
+      .StorageConfig
+      .ConnectionPool
+      .Hikari(Some(5000), Some(1000), Some(5), Some(3), Config.ThreadPool.Fixed(4), Config.ThreadPool.Cached)
     val expected = Config(
-      Config.StorageConfig.Postgres(
-        "postgres", 5432, "igludb", "sp_user", "sp_password", "org.postgresql.Driver",
-        None, Some(5), pool
-      ),
+      Config
+        .StorageConfig
+        .Postgres(
+          "postgres",
+          5432,
+          "igludb",
+          "sp_user",
+          "sp_password",
+          "org.postgresql.Driver",
+          None,
+          Some(5),
+          pool
+        ),
       Config.Http("0.0.0.0", 8080, Some(10), Config.ThreadPool.Global),
       Some(true),
       Some(true),
-      Some(List(
-        Webhook.SchemaPublished(uri"https://example.com/endpoint", Some(List.empty)),
-        Webhook.SchemaPublished(uri"https://example2.com/endpoint", Some(List("com", "org.acme", "org.snowplow")))
-      ))
+      Some(
+        List(
+          Webhook.SchemaPublished(uri"https://example.com/endpoint", Some(List.empty)),
+          Webhook.SchemaPublished(uri"https://example2.com/endpoint", Some(List("com", "org.acme", "org.snowplow")))
+        )
+      )
     )
-    val result = Config
-      .serverCommand.parse(input.split(" ").toList)
-      .leftMap(_.toString)
-      .flatMap(_.read)
+    val result = Config.serverCommand.parse(input.split(" ").toList).leftMap(_.toString).flatMap(_.read)
     result must beRight(expected)
   }
 
   def e3 = {
-    val config = getClass.getResource("/valid-dummy-config.conf").toURI
+    val config     = getClass.getResource("/valid-dummy-config.conf").toURI
     val configPath = Paths.get(config)
-    val input = s"--config $configPath"
-    val expected = Config(Config.StorageConfig.Dummy, Config.Http("0.0.0.0", 8080, None, Config.ThreadPool.Fixed(2)), Some(true), None, None)
-    val result = Config
-      .serverCommand.parse(input.split(" ").toList)
-      .leftMap(_.toString)
-      .flatMap(_.read)
+    val input      = s"--config $configPath"
+    val expected =
+      Config(
+        Config.StorageConfig.Dummy,
+        Config.Http("0.0.0.0", 8080, None, Config.ThreadPool.Fixed(2)),
+        Some(true),
+        None,
+        None
+      )
+    val result = Config.serverCommand.parse(input.split(" ").toList).leftMap(_.toString).flatMap(_.read)
     result must beRight(expected)
   }
 
   def e4 = {
     val input = Config(
-      Config.StorageConfig.Postgres("postgres", 5432, "igludb", "sp_user", "sp_password", "org.postgresql.Driver", None, Some(5), Config.StorageConfig.ConnectionPool.NoPool(Config.ThreadPool.Fixed(2))),
+      Config
+        .StorageConfig
+        .Postgres(
+          "postgres",
+          5432,
+          "igludb",
+          "sp_user",
+          "sp_password",
+          "org.postgresql.Driver",
+          None,
+          Some(5),
+          Config.StorageConfig.ConnectionPool.NoPool(Config.ThreadPool.Fixed(2))
+        ),
       Config.Http("0.0.0.0", 8080, None, Config.ThreadPool.Global),
       Some(true),
       Some(true),
-      Some(List(
-        Webhook.SchemaPublished(uri"https://example.com/endpoint", Some(List.empty)),
-        Webhook.SchemaPublished(uri"https://example2.com/endpoint", Some(List("com", "org.acme", "org.snowplow")))
-      ))
+      Some(
+        List(
+          Webhook.SchemaPublished(uri"https://example.com/endpoint", Some(List.empty)),
+          Webhook.SchemaPublished(uri"https://example2.com/endpoint", Some(List("com", "org.acme", "org.snowplow")))
+        )
+      )
     )
 
     val expected = json"""{
@@ -138,21 +168,30 @@ class ConfigSpec extends org.specs2.Specification { def is = s2"""
   }
 
   def e5 = {
-    val config = getClass.getResource("/valid-pg-minimal.conf").toURI
+    val config     = getClass.getResource("/valid-pg-minimal.conf").toURI
     val configPath = Paths.get(config)
-    val input = s"--config $configPath"
-    val pool = Config.StorageConfig.ConnectionPool.NoPool(Config.ThreadPool.Cached)
+    val input      = s"--config $configPath"
+    val pool       = Config.StorageConfig.ConnectionPool.NoPool(Config.ThreadPool.Cached)
     val expected = Config(
-      Config.StorageConfig.Postgres(
-        "postgres", 5432, "igludb", "sp_user", "sp_password", "org.postgresql.Driver",
-        None, None, pool
-      ),
+      Config
+        .StorageConfig
+        .Postgres(
+          "postgres",
+          5432,
+          "igludb",
+          "sp_user",
+          "sp_password",
+          "org.postgresql.Driver",
+          None,
+          None,
+          pool
+        ),
       Config.Http("0.0.0.0", 8080, None, Config.ThreadPool.Fixed(4)),
-      Some(false), None, None)
-    val result = Config
-      .serverCommand.parse(input.split(" ").toList)
-      .leftMap(_.toString)
-      .flatMap(_.read)
+      Some(false),
+      None,
+      None
+    )
+    val result = Config.serverCommand.parse(input.split(" ").toList).leftMap(_.toString).flatMap(_.read)
     result must beRight(expected)
 
   }
