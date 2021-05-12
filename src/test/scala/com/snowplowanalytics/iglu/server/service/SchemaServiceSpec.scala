@@ -12,6 +12,7 @@ import io.circe._
 import io.circe.literal._
 
 import org.http4s._
+import org.http4s.implicits._
 import org.http4s.circe._
 import org.http4s.client.Client
 import org.http4s.rho.swagger.syntax.io.createRhoMiddleware
@@ -359,7 +360,7 @@ class SchemaServiceSpec extends org.specs2.Specification { def is = s2"""
 
     val result = for {
       r <- response
-      body <- r.bodyAsText.compile.foldMonoid
+      body <- r.bodyText.compile.foldMonoid
     } yield (r.status, body)
 
     // Text body transformed to JSON later in HttpApp
@@ -401,7 +402,7 @@ class SchemaServiceSpec extends org.specs2.Specification { def is = s2"""
 
     val result = for {
       response <- SchemaServiceSpec.request(reqs, false)
-      last <- response.bodyAsText.compile.foldMonoid
+      last <- response.bodyText.compile.foldMonoid
     } yield last
 
     result.unsafeRunSync() must beEqualTo(expected)
