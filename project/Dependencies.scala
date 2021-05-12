@@ -29,7 +29,7 @@ object Dependencies {
     val Circe      = "0.13.0"
     val CirceJava8 = "0.11.1"
     val Refined    = "0.9.24"
-    val PureConfig = "0.10.2"
+    val PureConfig = "0.15.0"
     val SwaggerUi  = "3.22.0"
     val Slf4j      = "1.7.26"
     val ScalaCache = "0.27.0"
