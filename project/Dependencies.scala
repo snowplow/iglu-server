@@ -16,11 +16,6 @@ import sbt._
 
 object Dependencies {
 
-  val ResolutionRepos = Seq(
-    // Speed-up build
-    "snowplow" at "https://snowplow.bintray.com/snowplow-maven"
-  )
-
   object V {
     val IgluCore   = "0.5.1"
     val SchemaDdl  = "0.10.0-M7"
