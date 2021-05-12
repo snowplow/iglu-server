@@ -20,9 +20,8 @@ import java.util.UUID
 import fs2.Stream
 
 import cats.Monad
-import cats.effect.{Clock, ContextShift, Effect, Bracket}
+import cats.effect.{Bracket, Blocker, Clock, ContextShift, Effect, Resource, Sync}
 import cats.implicits._
-import cats.effect.{Sync, Resource}
 
 import io.circe.Json
 
@@ -88,14 +87,14 @@ object Storage {
       case StorageConfig.Postgres(host, port, name, username, password, driver, _, _, Config.StorageConfig.ConnectionPool.NoPool(ec)) =>
         val url = s"jdbc:postgresql://$host:$port/$name"
         for {
-          blockingContext <- Server.createThreadPool(ec)
-          xa: Transactor[F] = Transactor.fromDriverManager[F](driver, url, username, password, blockingContext)
+          blocker <- Server.createThreadPool(ec).map(Blocker.liftExecutionContext)
+          xa: Transactor[F] = Transactor.fromDriverManager[F](driver, url, username, password, blocker)
         } yield Postgres[F](xa, logger)
       case p @ StorageConfig.Postgres(host, port, name, username, password, driver, _, _, pool: Config.StorageConfig.ConnectionPool.Hikari) =>
         val url = s"jdbc:postgresql://$host:$port/$name"
         for {
           connectEC  <- Server.createThreadPool(pool.connectionPool)
-          transactEC <- Server.createThreadPool(pool.transactionPool)
+          transactEC <- Server.createThreadPool(pool.transactionPool).map(Blocker.liftExecutionContext)
           xa <- HikariTransactor.newHikariTransactor[F](driver, url, username, password, connectEC, transactEC)
           _ <- Resource.eval {
             xa.configure { ds =>
