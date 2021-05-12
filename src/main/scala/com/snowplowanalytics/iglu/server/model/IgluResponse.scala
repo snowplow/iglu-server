@@ -34,19 +34,20 @@ trait IgluResponse extends Product with Serializable {
 
 object IgluResponse {
 
-  val NotFoundSchema = "The schema is not found"
-  val NotAuthorized = "Authentication error: not authorized"
-  val Mismatch = "Mismatch: the schema metadata does not match the payload and URI"
-  val DecodeError = "Cannot decode JSON schema"
+  val NotFoundSchema            = "The schema is not found"
+  val NotAuthorized             = "Authentication error: not authorized"
+  val Mismatch                  = "Mismatch: the schema metadata does not match the payload and URI"
+  val DecodeError               = "Cannot decode JSON schema"
   val SchemaInvalidationMessage = "The schema does not conform to a JSON Schema v4 specification"
-  val DataInvalidationMessage = "The data for a field instance is invalid against its schema"
-  val NotFoundEndpoint = "The endpoint does not exist"
+  val DataInvalidationMessage   = "The data for a field instance is invalid against its schema"
+  val NotFoundEndpoint          = "The endpoint does not exist"
 
-  case object SchemaNotFound extends IgluResponse
-  case object EndpointNotFound extends IgluResponse
-  case object InvalidSchema extends IgluResponse
+  case object SchemaNotFound                                                      extends IgluResponse
+  case object EndpointNotFound                                                    extends IgluResponse
+  case object InvalidSchema                                                       extends IgluResponse
   case class SchemaMismatch(uriSchemaKey: SchemaKey, payloadSchemaKey: SchemaKey) extends IgluResponse
-  case class SchemaUploaded(updated: Boolean, location: SchemaKey) extends IgluResponse
+  case class SchemaUploaded(updated: Boolean, location: SchemaKey)                extends IgluResponse
+
   /** Generic human-readable message, used everywhere as a fallback */
   case class Message(message: String) extends IgluResponse
 
@@ -54,7 +55,7 @@ object IgluResponse {
 
   case object Forbidden extends IgluResponse
 
-  case class SchemaValidationReport(report: NonEmptyList[LinterMessage]) extends IgluResponse
+  case class SchemaValidationReport(report: NonEmptyList[LinterMessage])     extends IgluResponse
   case class InstanceValidationReport(report: NonEmptyList[ValidatorReport]) extends IgluResponse
 
   implicit val responsesEncoder: Encoder[IgluResponse] =
@@ -68,54 +69,67 @@ object IgluResponse {
       case Forbidden =>
         Json.fromFields(List("message" -> Json.fromString(NotAuthorized)))
       case ApiKeys(read, write) =>
-        Json.fromFields(List(
-          "read" -> Json.fromString(read.toString),
-          "write" -> Json.fromString(write.toString)
-        ))
+        Json.fromFields(
+          List(
+            "read"  -> Json.fromString(read.toString),
+            "write" -> Json.fromString(write.toString)
+          )
+        )
       case SchemaMismatch(uri, payload) =>
-        Json.fromFields(List(
-          "uriSchemaKey" -> Json.fromString(uri.toSchemaUri),
-          "payloadSchemaKey" -> Json.fromString(payload.toSchemaUri),
-          "message" -> Json.fromString(Mismatch)
-        ))
+        Json.fromFields(
+          List(
+            "uriSchemaKey"     -> Json.fromString(uri.toSchemaUri),
+            "payloadSchemaKey" -> Json.fromString(payload.toSchemaUri),
+            "message"          -> Json.fromString(Mismatch)
+          )
+        )
       case SchemaUploaded(updated, location) =>
-        Json.fromFields(List(
-          "message" -> Json.fromString(if (updated) "Schema updated" else "Schema created"),
-          "updated" -> Json.fromBoolean(updated),
-          "location" -> location.toSchemaUri.asJson,
-          "status" -> Json.fromInt(if (updated) 200 else 201)   // TODO: remove after igluctl 0.7.0 released
-        ))
+        Json.fromFields(
+          List(
+            "message"  -> Json.fromString(if (updated) "Schema updated" else "Schema created"),
+            "updated"  -> Json.fromBoolean(updated),
+            "location" -> location.toSchemaUri.asJson,
+            "status"   -> Json.fromInt(if (updated) 200 else 201) // TODO: remove after igluctl 0.7.0 released
+          )
+        )
       case InvalidSchema =>
         Json.fromFields(List("message" -> Json.fromString(DecodeError)))
       case SchemaValidationReport(report) =>
-        Json.fromFields(List(
-          "message" -> SchemaInvalidationMessage.asJson,
-          "report" -> Json.fromValues(report.toList.map { message =>
-            Json.fromFields(List(
-              "message" -> message.message.asJson,
-              "level" -> message.level.toString.toUpperCase.asJson,
-              "pointer" -> message.jsonPointer.show.asJson
-            ))
-          })
-      ))
+        Json.fromFields(
+          List(
+            "message" -> SchemaInvalidationMessage.asJson,
+            "report" -> Json.fromValues(report.toList.map { message =>
+              Json.fromFields(
+                List(
+                  "message" -> message.message.asJson,
+                  "level"   -> message.level.toString.toUpperCase.asJson,
+                  "pointer" -> message.jsonPointer.show.asJson
+                )
+              )
+            })
+          )
+        )
       case InstanceValidationReport(report) =>
-        Json.fromFields(List(
-          "message" -> DataInvalidationMessage.asJson,
-          "report" -> report.asJson
-        ))
+        Json.fromFields(
+          List(
+            "message" -> DataInvalidationMessage.asJson,
+            "report"  -> report.asJson
+          )
+        )
     }
 
   implicit val responsesDecoder: Decoder[IgluResponse] = Decoder.instance { cur =>
     cur.downField("message").as[String] match {
       case Right(NotFoundSchema) => SchemaNotFound.asRight
-      case Right(NotAuthorized) => Forbidden.asRight
-      case Right(Mismatch) => for {
-        uriSchemaKey <- cur.downField("uriSchemaKey").as[SchemaKey]
-        payloadSchemaKey <- cur.downField("payloadSchemaKey").as[SchemaKey]
-      } yield SchemaMismatch(uriSchemaKey, payloadSchemaKey)
+      case Right(NotAuthorized)  => Forbidden.asRight
+      case Right(Mismatch) =>
+        for {
+          uriSchemaKey     <- cur.downField("uriSchemaKey").as[SchemaKey]
+          payloadSchemaKey <- cur.downField("payloadSchemaKey").as[SchemaKey]
+        } yield SchemaMismatch(uriSchemaKey, payloadSchemaKey)
       case Right(DecodeError) => Message(DecodeError).asRight
-      case Right(message) => Message(message).asRight
-      case Left(e) =>  Message(e.show).asRight
+      case Right(message)     => Message(message).asRight
+      case Left(e)            => Message(e.show).asRight
     }
   }
 }

@@ -23,7 +23,7 @@ import com.snowplowanalytics.iglu.server.model.IgluResponse
 
 import io.circe.parser.parse
 
-import org.http4s.{HttpRoutes, Request, Response, MediaType}
+import org.http4s.{HttpRoutes, MediaType, Request, Response}
 import org.http4s.headers.`Content-Type`
 
 /** Wrap any non-JSON message into `{"message": original}` payload */
@@ -32,14 +32,17 @@ object BadRequestHandler {
     Kleisli { req: Request[G] =>
       def handle(res: Response[G]): G[Response[G]] =
         if (res.status.code >= 400 && res.status.code < 500)
-          res.bodyText
+          res
+            .bodyText
             .compile
             .foldMonoid
             .fproduct(parse)
             .map { case (b, e) => Utils.toBytes(e.fold(_ => IgluResponse.Message(b).asJson, identity)) }
-            .map(s => Response(res.status).withBodyStream(s).withContentType(`Content-Type`(MediaType.application.json)))
+            .map(s =>
+              Response(res.status).withBodyStream(s).withContentType(`Content-Type`(MediaType.application.json))
+            )
         else Effect[G].pure(res)
 
-      OptionT[G, Response[G]](http(req).value.flatMap { o => o.traverse(handle) })
+      OptionT[G, Response[G]](http(req).value.flatMap(o => o.traverse(handle)))
     }
 }

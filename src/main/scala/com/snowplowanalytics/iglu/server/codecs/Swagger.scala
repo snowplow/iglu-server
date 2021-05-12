@@ -30,17 +30,18 @@ import com.snowplowanalytics.iglu.server.model.Schema
 
 object Swagger {
 
-  def Formats = DefaultSwaggerFormats
-    .withSerializers(typeOf[IgluResponse], exampleModel)
-    .withSerializers(typeOf[Schema.Repr.Canonical], exampleModel)
-    .withSerializers(typeOf[JsonCodecs.JsonArrayStream[cats.effect.IO, Schema.Repr]], exampleModel)
-    .withSerializers(typeOf[Json], exampleModel)
-    .withSerializers(typeOf[SchemaKey], exampleModel)
+  def Formats =
+    DefaultSwaggerFormats
+      .withSerializers(typeOf[IgluResponse], exampleModel)
+      .withSerializers(typeOf[Schema.Repr.Canonical], exampleModel)
+      .withSerializers(typeOf[JsonCodecs.JsonArrayStream[cats.effect.IO, Schema.Repr]], exampleModel)
+      .withSerializers(typeOf[Json], exampleModel)
+      .withSerializers(typeOf[SchemaKey], exampleModel)
 
   val exampleModel: Set[Model] = Set(
     ModelImpl(
       id = "IgluResponse",
-      id2 = "IgluResponse",   // Somehow, only id2 works
+      id2 = "IgluResponse", // Somehow, only id2 works
       `type` = "object".some,
       description = "Iglu Server generic response".some,
       properties = Map(
@@ -50,21 +51,17 @@ object Swagger {
           enums = Set()
         )
       ),
-      example =
-        """{"message" : "Schema does not exist"}""".some
+      example = """{"message" : "Schema does not exist"}""".some
     ),
-
     ModelImpl(
       id = "JsonArrayStream",
       id2 = "JsonArrayStream«F,Repr»",
       name = "Array".some,
       `type` = "array".some,
       description = "Generic JSON array JSON Schema representations".some,
-      properties = Map( ),
-      example =
-        """[]""".some
+      properties = Map(),
+      example = """[]""".some
     ),
-
     ModelImpl(
       id = "Canonical",
       id2 = "Canonical",
@@ -76,28 +73,23 @@ object Swagger {
           properties = Map("name" -> StringProperty(enums = Set()))
         )
       ),
-      example =
-        """{"self": {"name": "event", "vendor": "com.acme", "format": "jsonschema", "version": "1-0-0"}}""".some
+      example = """{"self": {"name": "event", "vendor": "com.acme", "format": "jsonschema", "version": "1-0-0"}}""".some
     ),
-
     ModelImpl(
       id = "SchemaKey",
       id2 = "SchemaKey",
       `type` = "string".some,
       description = "Canonical iglu URI".some,
       properties = Map(),
-      example =
-        """iglu:com.snowplowanalytics/geo_location/jsonschema/1-0-0""".some
+      example = """iglu:com.snowplowanalytics/geo_location/jsonschema/1-0-0""".some
     ),
-
     ModelImpl(
       id = "Json",
       id2 = "Json",
       `type` = "string".some,
       description = "Any valid JSON".some,
       properties = Map(),
-      example =
-        """{"foo": null}""".some
+      example = """{"foo": null}""".some
     )
   )
 }
