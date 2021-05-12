@@ -21,7 +21,7 @@ import cats.effect.{Resource, Sync, Async => CatsAsync}
 
 import com.github.benmanes.caffeine.cache.Caffeine
 
-import io.chrisdavenport.log4cats.slf4j.Slf4jLogger
+import org.typelevel.log4cats.slf4j.Slf4jLogger
 
 import org.http4s.{HttpRoutes, Method, Request, Response}
 import org.http4s.syntax.string._
