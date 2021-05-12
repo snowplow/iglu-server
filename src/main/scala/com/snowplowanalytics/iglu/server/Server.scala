@@ -24,7 +24,7 @@ import cats.effect.{Blocker, ContextShift, Sync, ExitCode, IO, Timer, Resource}
 
 import io.circe.syntax._
 
-import io.chrisdavenport.log4cats.slf4j.Slf4jLogger
+import org.typelevel.log4cats.slf4j.Slf4jLogger
 
 import fs2.Stream
 
