@@ -17,17 +17,17 @@ import sbt._
 object Dependencies {
 
   object V {
-    val IgluCore   = "0.5.1"
-    val SchemaDdl  = "0.10.0-M7"
-    val IgluClient = "0.6.1-M1"
+    val IgluCore   = "1.0.0"
+    val SchemaDdl  = "0.14.0"
+    val IgluClient = "1.1.0"
 
     val Http4s     = "0.20.23"
     val Rho        = "0.19.1"
     val Doobie     = "0.7.0"
     val Decline    = "0.6.2"
     val Log4Cats   = "0.3.0"
-    val Circe      = "0.11.1"
-    val CirceFs2   = "0.11.0"
+    val Circe      = "0.13.0"
+    val CirceJava8 = "0.11.1"
     val Refined    = "0.9.3"
     val PureConfig = "0.10.2"
     val SwaggerUi  = "3.22.0"
@@ -51,11 +51,11 @@ object Dependencies {
     "org.http4s"            %% "http4s-dsl"            % V.Http4s,
     "org.http4s"            %% "rho-swagger"           % V.Rho,
     "io.circe"              %% "circe-generic"         % V.Circe,
-    "io.circe"              %% "circe-java8"           % V.Circe,
+    "io.circe"              %% "circe-java8"           % V.CirceJava8,
     "io.circe"              %% "circe-jawn"            % V.Circe,
     "io.circe"              %% "circe-literal"         % V.Circe,
     "io.circe"              %% "circe-refined"         % V.Circe,
-    "io.circe"              %% "circe-fs2"             % V.CirceFs2,
+    "io.circe"              %% "circe-fs2"             % V.Circe,
     "eu.timepit"            %% "refined"               % V.Refined,
     "com.github.pureconfig" %% "pureconfig"            % V.PureConfig,
     "com.github.pureconfig" %% "pureconfig-http4s"     % V.PureConfig,

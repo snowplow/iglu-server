@@ -18,7 +18,6 @@ package storage
 import java.util.UUID
 import io.circe.Json
 
-import cats.syntax.apply._
 import cats.syntax.traverse._
 import cats.instances.list._
 import cats.effect.IO
