@@ -25,7 +25,7 @@ object Dependencies {
     val Rho        = "0.21.0"
     val Doobie     = "0.13.2"
     val Decline    = "1.4.0"
-    val Log4Cats   = "0.3.0"
+    val Log4Cats   = "1.3.0"
     val Circe      = "0.13.0"
     val CirceJava8 = "0.11.1"
     val Refined    = "0.9.3"
@@ -44,7 +44,7 @@ object Dependencies {
     "com.snowplowanalytics" %% "iglu-scala-client"     % V.IgluClient,
 
     "com.monovore"          %% "decline"               % V.Decline,
-    "io.chrisdavenport"     %% "log4cats-slf4j"        % V.Log4Cats,
+    "org.typelevel"         %% "log4cats-slf4j"        % V.Log4Cats,
     "org.http4s"            %% "http4s-blaze-server"   % V.Http4s,
     "org.http4s"            %% "http4s-blaze-client"   % V.Http4s,
     "org.http4s"            %% "http4s-circe"          % V.Http4s,
