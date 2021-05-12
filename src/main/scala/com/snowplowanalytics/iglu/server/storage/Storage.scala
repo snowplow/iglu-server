@@ -42,14 +42,15 @@ import com.snowplowanalytics.iglu.server.model.SchemaDraft.DraftId
 trait Storage[F[_]] {
 
   def getSchema(schemaMap: SchemaMap)(implicit F: Bracket[F, Throwable]): F[Option[Schema]]
-  def getSchemasByVendor(vendor: String, wildcard: Boolean)(implicit F: Bracket[F, Throwable]): Stream[F, Schema] = {
-    val all = Stream.eval(getSchemas).flatMap(list => Stream.emits(list))
-    if (wildcard) all.filter(_.schemaMap.schemaKey.vendor.startsWith(vendor))
-    else all.filter(_.schemaMap.schemaKey.vendor === vendor)
-  }
+  def getSchemasByVendor(vendor: String)(implicit F: Bracket[F, Throwable]): Stream[F, Schema] =
+    Stream.eval(getSchemas).flatMap(list => Stream.emits(list)).filter(_.schemaMap.schemaKey.vendor === vendor)
   def deleteSchema(schemaMap: SchemaMap)(implicit F: Bracket[F, Throwable]): F[Unit]
-  def getSchemasByVendorName(vendor: String, name: String)(implicit F: Bracket[F, Throwable]): Stream[F, Schema] =
-    getSchemasByVendor(vendor, false).filter(_.schemaMap.schemaKey.name === name)
+  def getSchemasByName(vendor: String, name: String)(implicit F: Bracket[F, Throwable]): Stream[F, Schema] =
+    getSchemasByVendor(vendor).filter(_.schemaMap.schemaKey.name === name)
+  def getSchemasByModel(vendor: String, name: String, model: Int)(
+    implicit F: Bracket[F, Throwable]
+  ): Stream[F, Schema] =
+    getSchemasByName(vendor, name).filter(_.schemaMap.schemaKey.version.model === model)
   def getSchemas(implicit F: Bracket[F, Throwable]): F[List[Schema]]
 
   /** Optimization for `getSchemas` */

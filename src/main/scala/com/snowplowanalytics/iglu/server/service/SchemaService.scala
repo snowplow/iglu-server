@@ -116,21 +116,27 @@ class SchemaService[F[+_]: Sync](
     }
 
   def getSchemasByName(vendor: String, name: String, format: SchemaFormat, permission: Permission) = {
-    val query = db.getSchemasByVendorName(vendor, name).filter(isReadable(permission)).map(_.withFormat(format))
+    val query = db.getSchemasByName(vendor, name).filter(isReadable(permission)).map(_.withFormat(format))
     schemasOrNotFound(query)
   }
 
-  def getSchemasByVendor(vendor: String, format: SchemaFormat, permission: Permission) = {
-    val query = db.getSchemasByVendor(vendor, false).filter(isReadable(permission)).map(_.withFormat(format))
+  def getSchemasByVendor(
+    vendor: String,
+    format: SchemaFormat,
+    permission: Permission
+  ) = {
+    val query = db.getSchemasByVendor(vendor).filter(isReadable(permission)).map(_.withFormat(format))
     schemasOrNotFound(query)
   }
 
-  def getSchemasByModel(vendor: String, name: String, model: Int, format: SchemaFormat, permission: Permission) = {
-    val query = db
-      .getSchemasByVendorName(vendor, name)
-      .filter(isReadable(permission))
-      .filter(_.schemaMap.schemaKey.version.model == model)
-      .map(_.withFormat(format))
+  def getSchemasByModel(
+    vendor: String,
+    name: String,
+    model: Int,
+    format: SchemaFormat,
+    permission: Permission
+  ) = {
+    val query = db.getSchemasByModel(vendor, name, model).filter(isReadable(permission)).map(_.withFormat(format))
     schemasOrNotFound(query)
   }
 
@@ -218,7 +224,7 @@ object SchemaService {
     isPublic: Boolean
   ): F[Either[String, Unit]] =
     for {
-      schemas <- db.getSchemasByVendorName(schemaMap.schemaKey.vendor, schemaMap.schemaKey.name).compile.toList
+      schemas <- db.getSchemasByName(schemaMap.schemaKey.vendor, schemaMap.schemaKey.name).compile.toList
       previousPublic = schemas.forall(_.metadata.isPublic)
       versions       = schemas.map(_.schemaMap.schemaKey.version)
     } yield
