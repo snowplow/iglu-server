@@ -27,7 +27,7 @@ import cats.effect.{IO, Sync}
 import cats.implicits._
 
 import com.snowplowanalytics.iglu.core.{SelfDescribingData, SelfDescribingSchema, SchemaMap}
-import com.snowplowanalytics.iglu.core.circe.instances._
+import com.snowplowanalytics.iglu.core.circe.implicits._
 
 import com.snowplowanalytics.iglu.client.validator.ValidatorError
 import com.snowplowanalytics.iglu.client.validator.CirceValidator
@@ -41,7 +41,6 @@ import com.snowplowanalytics.iglu.server.middleware.PermissionMiddleware
 import com.snowplowanalytics.iglu.server.model.{ IgluResponse, Permission, Schema }
 import com.snowplowanalytics.iglu.server.codecs.JsonCodecs._
 import com.snowplowanalytics.iglu.server.codecs.UriParsers._
-import com.snowplowanalytics.iglu.server.Utils._
 
 class ValidationService[F[+_]: Sync](swagger: SwaggerSyntax[F],
                                      ctx: AuthedContext[F, Permission],
@@ -110,7 +109,7 @@ object ValidationService {
 
   def validateJsonSchema(schema: Json): LintReport[SelfDescribingSchema[Json]] = {
     val generalCheck =
-      SelfSyntaxChecker.validateSchema(schema.fromCirce, false)
+      SelfSyntaxChecker.validateSchema(schema)
 
     val selfDescribingCheck = SelfDescribingSchema
       .parse(schema)
