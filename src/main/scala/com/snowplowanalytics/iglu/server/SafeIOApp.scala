@@ -45,7 +45,7 @@ trait SafeIOApp extends IOApp.WithContext {
   }
 
   val executionContextResource: Resource[SyncIO, ExecutionContext] =
-    Resource.liftF(SyncIO(exitingEC))
+    Resource.eval(SyncIO(exitingEC))
 
   private object DaemonThreadFactory extends ThreadFactory {
     private val s: SecurityManager  = System.getSecurityManager

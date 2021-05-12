@@ -16,7 +16,7 @@ package com.snowplowanalytics.iglu.server
 
 import java.nio.file.Paths
 
-import org.http4s._
+import org.http4s.implicits._
 
 import io.circe.syntax._
 import io.circe.literal._
