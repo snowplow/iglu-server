@@ -2,7 +2,6 @@ lazy val root = (project in file("."))
   .settings(
     organization := "com.snowplowanalytics",
     name := "iglu-server",
-    version := "0.6.2",
     scalaVersion := "2.12.9",
     libraryDependencies ++= Dependencies.all,
     scalacOptions ++= Seq(
@@ -56,7 +55,6 @@ lazy val root = (project in file("."))
     scalacOptions in (Compile, console) --= Seq("-Ywarn-unused:imports", "-Xfatal-warnings")
   )
   .settings(BuildSettings.dockerSettings)
-  .settings(resolvers ++= Dependencies.ResolutionRepos)
   .enablePlugins(JavaAppPackaging)
   .enablePlugins(BuildInfoPlugin)
   .settings(
@@ -71,5 +69,8 @@ lazy val root = (project in file("."))
     addCompilerPlugin("org.spire-math" %% "kind-projector" % "0.9.9")
   )
   .settings(
-    assemblyJarName in assembly := { s"${name.value}-${version.value}.jar" }
+    assemblyJarName in assembly := { s"${name.value}-${version.value}.jar" },
+    Test / parallelExecution := false, // Because we have several specs that use the database
+    ThisBuild / dynverVTagPrefix := false, // Otherwise git tags required to have v-prefix
+    ThisBuild / dynverSeparator := "-" // to be compatible with docker
   )
