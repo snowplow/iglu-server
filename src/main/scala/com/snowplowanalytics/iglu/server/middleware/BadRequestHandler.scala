@@ -32,7 +32,7 @@ object BadRequestHandler {
     Kleisli { req: Request[G] =>
       def handle(res: Response[G]): G[Response[G]] =
         if (res.status.code >= 400 && res.status.code < 500)
-          res.bodyAsText
+          res.bodyText
             .compile
             .foldMonoid
             .fproduct(parse)
