@@ -27,6 +27,7 @@ import io.circe.generic.semiauto._
 
 import doobie._
 import doobie.postgres.circe.json.implicits._
+import doobie.postgres.implicits._
 
 import com.snowplowanalytics.iglu.core.{SchemaKey, SchemaMap, SelfDescribingSchema}
 import com.snowplowanalytics.iglu.core.circe.implicits._
@@ -60,6 +61,7 @@ object Schema {
 
     implicit val metadataDecoder: Decoder[Metadata] =
       deriveDecoder[Metadata]
+
   }
 
   /** Encoding of a schema */
