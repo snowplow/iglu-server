@@ -23,7 +23,7 @@ object Dependencies {
 
     val Http4s     = "0.21.22"
     val Rho        = "0.21.0"
-    val Doobie     = "0.7.0"
+    val Doobie     = "0.13.2"
     val Decline    = "0.6.2"
     val Log4Cats   = "0.3.0"
     val Circe      = "0.13.0"
