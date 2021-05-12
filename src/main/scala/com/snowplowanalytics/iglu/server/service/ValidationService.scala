@@ -48,8 +48,10 @@ class ValidationService[F[+_]: Sync](swagger: SwaggerSyntax[F],
   import swagger._
   import ValidationService._
 
+  val schemaFormat = pathVar[Schema.Format]("format", "Schema format, e.g. jsonschema")
+
   "This route allows you to validate schemas" **
-    POST / "validate" / "schema" / pathVar[Schema.Format] ^ jsonDecoder[F] |>> validateSchema _
+    POST / "validate" / "schema" / schemaFormat ^ jsonDecoder[F] |>> validateSchema _
 
   "This route allows you to validate self-describing instances" **
     POST / "validate" / "instance" >>> ctx.auth ^ jsonDecoder[F] |>> validateData _
