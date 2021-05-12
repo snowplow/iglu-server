@@ -23,7 +23,7 @@ object Main extends SafeIOApp {
   def run(args: List[String]) = {
     val cli = for {
       command <- EitherT.fromEither[IO](Config.serverCommand.parse(args).leftMap(_.toString))
-      config  <- EitherT[IO, String, Config](command.read)
+      config  <- EitherT.fromEither[IO](command.read)
       result  <- command match {
         case _: Config.ServerCommand.Run =>
           EitherT.liftF[IO, String, ExitCode](Server.run(config).compile.lastOrError )
