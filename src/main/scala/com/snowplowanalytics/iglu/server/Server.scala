@@ -20,7 +20,7 @@ import scala.concurrent.duration._
 import scala.concurrent.ExecutionContext
 
 import cats.data.Kleisli
-import cats.effect.{ContextShift, Sync, ExitCode, IO, Timer, Resource}
+import cats.effect.{Blocker, ContextShift, Sync, ExitCode, IO, Timer, Resource}
 
 import io.circe.syntax._
 
@@ -40,6 +40,7 @@ import org.http4s.rho.{AuthedContext, RhoMiddleware}
 import org.http4s.rho.bits.PathAST.{PathMatch, TypedPath}
 import org.http4s.rho.swagger.syntax.{io => ioSwagger}
 import org.http4s.rho.swagger.models.{ApiKeyAuthDefinition, In, Info}
+import org.http4s.rho.swagger.SwaggerMetadata
 
 import doobie.implicits._
 import doobie.util.transactor.Transactor
@@ -75,10 +76,12 @@ object Server {
   def addSwagger(storage: Storage[IO])(service: (String, RoutesConstructor)) = {
     val (base, constructor) = service
     val swagger = ioSwagger.createRhoMiddleware(
-      apiPath = TypedPath(PathMatch("swagger.json")),
-      apiInfo = Info(title = "Iglu Server API", version = version),
-      basePath = Some(base),
-      securityDefinitions = Map("Iglu API key" -> ApiKeyAuthDefinition("apikey", In.HEADER)),
+      jsonApiPath = TypedPath(PathMatch("swagger.json")),
+      swaggerMetadata = SwaggerMetadata(
+        apiInfo = Info(title = "Iglu Server API", version = version),
+        basePath = Some(base),
+        securityDefinitions = Map("Iglu API key" -> ApiKeyAuthDefinition("apikey", In.HEADER))
+      ),
       swaggerFormats = Swagger.Formats
     )
 
@@ -90,9 +93,9 @@ object Server {
               patchesAllowed: Boolean,
               webhook: Webhook.WebhookClient[IO],
               cache: CachingMiddleware.ResponseCache[IO],
-              ec: ExecutionContext)
+              blocker: Blocker)
              (implicit cs: ContextShift[IO]): HttpApp[IO] = {
-    val serverRoutes = httpRoutes(storage, debug, patchesAllowed, webhook, cache, ec)
+    val serverRoutes = httpRoutes(storage, debug, patchesAllowed, webhook, cache, blocker)
     Kleisli[IO, Request[IO], Response[IO]](req => Router(serverRoutes: _*).run(req).getOrElse(NotFound))
   }
 
@@ -101,7 +104,7 @@ object Server {
                  patchesAllowed: Boolean,
                  webhook: Webhook.WebhookClient[IO],
                  cache: CachingMiddleware.ResponseCache[IO],
-                 ec: ExecutionContext)
+                 blocker: Blocker)
                 (implicit cs: ContextShift[IO]): List[(String, HttpRoutes[IO])] = {
     val services: List[(String, RoutesConstructor)] = List(
       "/api/meta"       -> MetaService.asRoutes(debug, patchesAllowed),
@@ -112,7 +115,7 @@ object Server {
     )
 
     val debugRoute = "/api/debug" -> DebugService.asRoutes(storage, ioSwagger.createRhoMiddleware())
-    val staticRoute = "/static" -> StaticService.routes(ec)
+    val staticRoute = "/static" -> StaticService.routes(blocker)
     val routes = staticRoute :: services.map(addSwagger(storage))
     val corsConfig = CORSConfig(
       anyOrigin = true,
@@ -147,16 +150,16 @@ object Server {
 
   def buildServer(config: Config)(implicit cs: ContextShift[IO], timer: Timer[IO]): Resource[IO, BlazeServerBuilder[IO]] =
     for {
-      _            <- Resource.liftF(logger.info(s"Initializing server with following configuration: ${config.asJson.noSpaces}"))
+      _            <- Resource.eval(logger.info(s"Initializing server with following configuration: ${config.asJson.noSpaces}"))
       httpPool     <- createThreadPool[IO](config.repoServer.threadPool)
       client       <- BlazeClientBuilder[IO](httpPool).resource
       webhookClient = Webhook.WebhookClient(config.webhooks.getOrElse(Nil), client)
       storage      <- Storage.initialize[IO](config.database)
       cache        <- CachingMiddleware.initResponseCache[IO](1000, CacheTtl)
-      builder       = BlazeServerBuilder.apply[IO](ExecutionContext.global)
+      blocker      <- Blocker[IO]
+      builder       = BlazeServerBuilder[IO](httpPool)
         .bindHttp(config.repoServer.port, config.repoServer.interface)
-        .withHttpApp(httpApp(storage, config.debug.getOrElse(false), config.patchesAllowed.getOrElse(false), webhookClient, cache, httpPool))
-        .withExecutionContext(httpPool)
+        .withHttpApp(httpApp(storage, config.debug.getOrElse(false), config.patchesAllowed.getOrElse(false), webhookClient, cache, blocker))
       builderWithIdle = config.repoServer.idleTimeout match {
         case Some(t) => builder.withIdleTimeout(t.seconds)
         case None    => builder

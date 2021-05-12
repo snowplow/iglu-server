@@ -21,6 +21,7 @@ import io.circe.Json
 import io.circe.literal._
 
 import org.http4s._
+import org.http4s.implicits._
 import org.http4s.circe._
 import org.http4s.client.blaze.BlazeClientBuilder
 
@@ -143,7 +144,7 @@ object ServerSpec {
 
   /** Execute requests against fresh server (only one execution per test is allowed) */
   def executeRequests(requests: List[Request[IO]]): IO[List[Response[IO]]] =
-    env.use { client => requests.traverse(client.fetch(_)(IO.pure)) }
+    env.use { client => requests.traverse(client.run(_).use(IO.pure)) }
 
   val specification = Resource.make {
     Storage.initialize[IO](storageConfig).use(s => s.asInstanceOf[Postgres[IO]].drop) *>
