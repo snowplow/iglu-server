@@ -84,7 +84,7 @@ object Storage {
     val logger = Slf4jLogger.getLoggerFromName("Storage")
     config match {
       case StorageConfig.Dummy =>
-        Resource.liftF(storage.InMemory.empty)
+        Resource.eval(storage.InMemory.empty)
       case StorageConfig.Postgres(host, port, name, username, password, driver, _, _, Config.StorageConfig.ConnectionPool.NoPool(ec)) =>
         val url = s"jdbc:postgresql://$host:$port/$name"
         for {
@@ -97,7 +97,7 @@ object Storage {
           connectEC  <- Server.createThreadPool(pool.connectionPool)
           transactEC <- Server.createThreadPool(pool.transactionPool)
           xa <- HikariTransactor.newHikariTransactor[F](driver, url, username, password, connectEC, transactEC)
-          _ <- Resource.liftF {
+          _ <- Resource.eval {
             xa.configure { ds =>
               Sync[F].delay {
                 ds.setPoolName("iglu-hikaricp-pool")
@@ -109,7 +109,7 @@ object Storage {
               }
             }
           }
-          storage <- Resource.liftF(Postgres(xa, logger).ping)
+          storage <- Resource.eval(Postgres(xa, logger).ping)
         } yield storage
     }
   }
