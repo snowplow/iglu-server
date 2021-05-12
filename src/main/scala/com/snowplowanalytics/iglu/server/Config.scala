@@ -17,7 +17,6 @@ package com.snowplowanalytics.iglu.server
 import java.nio.file.Path
 
 import cats.implicits._
-import cats.effect.IO
 
 import com.monovore.decline._
 
@@ -222,7 +221,7 @@ object Config {
         case "dummy" => StorageConfig.Dummy.asRight
         case _ =>
           val message = s"type has value $typeStr instead of class1 or class2"
-          objCur.failed[StorageConfig](error.CannotConvert(objCur.value.toString, "StorageConfig", message))
+          objCur.failed[StorageConfig](error.CannotConvert(objCur.objValue.toString, "StorageConfig", message))
       }
     } yield result
   }
@@ -244,8 +243,11 @@ object Config {
 
   sealed trait ServerCommand {
     def config: Path
-    def read: IO[Either[String, Config]] =
-      IO(pureconfig.loadConfigFromFiles[Config](List(config)).leftMap(_.toList.map(_.description).mkString("\n")))
+    def read: Either[String, Config] =
+      ConfigSource
+        .default(ConfigSource.file(config))
+        .load[Config]
+        .leftMap(_.toList.map(_.description).mkString("\n"))
   }
 
   object ServerCommand {
