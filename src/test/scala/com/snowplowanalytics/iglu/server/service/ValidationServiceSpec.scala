@@ -46,10 +46,11 @@ class ValidationServiceSpec extends org.specs2.Specification { def is = s2"""
     val expected = json"""{
       "message":"The schema does not conform to a JSON Schema v4 specification",
       "report":[
-        {"message":"The following keywords are unknown and will be ignored: [self]", "level":"WARNING", "pointer":"/"},
+        {"message":"self is unknown keyword for vanilla $$schema, use http://iglucentral.com/schemas/com.snowplowanalytics.self-desc/schema/jsonschema/1-0-0#", "level":"ERROR", "pointer":"/"},
         {"message":"The schema is missing the \"description\" property","level":"INFO","pointer":"/"},
         {"message":"At the root level, the schema should have a \"type\" property set to \"object\" and have a \"properties\" property","level":"WARNING","pointer":"/"},
-        {"message":"No $$schema field in top-level of schema","level":"ERROR","pointer":"/"}
+        {"message":"No $$schema field in top-level of schema","level":"ERROR","pointer":"/"},
+        {"message":"JSON Schema is not self-describing","level":"ERROR","pointer":"/"}
       ]
     }"""
 
@@ -103,8 +104,9 @@ class ValidationServiceSpec extends org.specs2.Specification { def is = s2"""
     val expected = json"""{
       "message":"The schema does not conform to a JSON Schema v4 specification",
       "report":[
-        {"message":"The following keywords are unknown and will be ignored: [self]", "level":"WARNING", "pointer":"/"},
-        {"message":"No $$schema field in top-level of schema","level":"ERROR","pointer":"/"}
+        {"message":"self is unknown keyword for vanilla $$schema, use http://iglucentral.com/schemas/com.snowplowanalytics.self-desc/schema/jsonschema/1-0-0#", "level":"ERROR", "pointer":"/"},
+        {"message":"No $$schema field in top-level of schema","level":"ERROR","pointer":"/"},
+        {"message":"JSON Schema is not self-describing","level":"ERROR","pointer":"/"}
       ]
     }"""
 
@@ -249,7 +251,7 @@ class ValidationServiceSpec extends org.specs2.Specification { def is = s2"""
       "message" : "The schema does not conform to a JSON Schema v4 specification",
       "report" : [
         {
-          "message" : "The following keywords are unknown and will be ignored: [misplacedProperty]",
+          "message" : "$$.properties.inner.misplacedProperty: is not defined in the schema and the schema does not allow additional properties",
           "level" : "WARNING",
           "pointer" : "/properties/inner"
         }

@@ -29,7 +29,7 @@ import doobie._
 import doobie.postgres.circe.json.implicits._
 
 import com.snowplowanalytics.iglu.core.{SchemaKey, SchemaMap, SelfDescribingSchema}
-import com.snowplowanalytics.iglu.core.circe.instances._
+import com.snowplowanalytics.iglu.core.circe.implicits._
 
 import Schema.Metadata
 

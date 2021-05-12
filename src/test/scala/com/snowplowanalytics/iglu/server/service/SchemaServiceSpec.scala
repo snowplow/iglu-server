@@ -191,6 +191,7 @@ class SchemaServiceSpec extends org.specs2.Specification { def is = s2"""
     val selfDescribingSchema =
       json"""
         {
+          "$$schema": "http://iglucentral.com/schemas/com.snowplowanalytics.self-desc/schema/jsonschema/1-0-0#",
           "self": {
             "vendor": "com.acme",
             "name": "nonexistent",
@@ -222,6 +223,7 @@ class SchemaServiceSpec extends org.specs2.Specification { def is = s2"""
     val selfDescribingSchema =
       json"""
         {
+          "$$schema": "http://iglucentral.com/schemas/com.snowplowanalytics.self-desc/schema/jsonschema/1-0-0#",
           "self": {
             "vendor": "com.acme",
             "name": "nonexistent",
@@ -235,6 +237,7 @@ class SchemaServiceSpec extends org.specs2.Specification { def is = s2"""
     val selfDescribingSchemaUpdated =
       json"""
         {
+          "$$schema": "http://iglucentral.com/schemas/com.snowplowanalytics.self-desc/schema/jsonschema/1-0-0#",
           "self": {
             "vendor": "com.acme",
             "name": "nonexistent",
@@ -272,6 +275,7 @@ class SchemaServiceSpec extends org.specs2.Specification { def is = s2"""
     val selfDescribingSchema =
       json"""
         {
+          "$$schema": "http://iglucentral.com/schemas/com.snowplowanalytics.self-desc/schema/jsonschema/1-0-0#",
           "self": {
             "vendor": "com.acme",
             "name": "nonexistent",
@@ -300,6 +304,7 @@ class SchemaServiceSpec extends org.specs2.Specification { def is = s2"""
     val selfDescribingSchema =
       json"""
         {
+          "$$schema": "http://iglucentral.com/schemas/com.snowplowanalytics.self-desc/schema/jsonschema/1-0-0#",
           "self": {
             "vendor": "com.acme",
             "name": "nonexistent",
@@ -313,6 +318,7 @@ class SchemaServiceSpec extends org.specs2.Specification { def is = s2"""
     val selfDescribingSchemaUpdated =
       json"""
         {
+          "$$schema": "http://iglucentral.com/schemas/com.snowplowanalytics.self-desc/schema/jsonschema/1-0-0#",
           "self": {
             "vendor": "com.acme",
             "name": "nonexistent",
