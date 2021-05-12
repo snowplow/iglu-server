@@ -20,8 +20,6 @@ import scala.concurrent.duration._
 import scala.concurrent.ExecutionContext
 
 import cats.data.Kleisli
-import cats.syntax.functor._
-import cats.syntax.apply._
 import cats.effect.{ContextShift, Sync, ExitCode, IO, Timer, Resource}
 
 import io.circe.syntax._
