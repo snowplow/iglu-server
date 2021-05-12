@@ -16,7 +16,6 @@ package com.snowplowanalytics.iglu.server
 
 import cats.data.EitherT
 import cats.effect._
-import cats.syntax.functor._
 import cats.syntax.either._
 
 object Main extends SafeIOApp {
