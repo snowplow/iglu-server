@@ -17,12 +17,12 @@ import org.http4s.circe._
 import org.http4s.client.Client
 import org.http4s.rho.swagger.syntax.io.createRhoMiddleware
 
-import com.snowplowanalytics.iglu.core.{SchemaMap, SchemaVer, SchemaKey, SelfDescribingSchema}
+import com.snowplowanalytics.iglu.core.{SchemaKey, SchemaMap, SchemaVer, SelfDescribingSchema}
 import com.snowplowanalytics.iglu.server.codecs.JsonCodecs._
-import com.snowplowanalytics.iglu.server.model.{ IgluResponse, Schema }
+import com.snowplowanalytics.iglu.server.model.{IgluResponse, Schema}
 
-
-class SchemaServiceSpec extends org.specs2.Specification { def is = s2"""
+class SchemaServiceSpec extends org.specs2.Specification {
+  def is = s2"""
   GET
     Returns 404 for non-existing schema $e1
     Returns 200 and schema for existing public schema $e3
@@ -56,11 +56,11 @@ class SchemaServiceSpec extends org.specs2.Specification { def is = s2"""
 
     val result = for {
       response <- SchemaServiceSpec.request(List(req), false)
-      body <- response.as[Json]
+      body     <- response.as[Json]
     } yield (response.status, body)
 
     val (status, body) = result.unsafeRunSync()
-    status must beEqualTo(Status.Ok) and (body must beEqualTo(SpecHelpers.selfSchemaZero))
+    (status must beEqualTo(Status.Ok)).and(body must beEqualTo(SpecHelpers.selfSchemaZero))
   }
 
   def e4 = {
@@ -68,15 +68,16 @@ class SchemaServiceSpec extends org.specs2.Specification { def is = s2"""
       Request(
         Method.GET,
         Uri.uri("/com.acme/secret/jsonschema/1-0-0"),
-        headers = Headers.of(Header("apikey", SpecHelpers.readKeyAcme.toString)))
+        headers = Headers.of(Header("apikey", SpecHelpers.readKeyAcme.toString))
+      )
 
     val result = for {
       response <- SchemaServiceSpec.request(List(req), false)
-      body <- response.as[Json]
+      body     <- response.as[Json]
     } yield (response.status, body)
 
     val (status, body) = result.unsafeRunSync()
-    status must beEqualTo(Status.Ok) and (body must beEqualTo(SpecHelpers.selfSchemaPrivate))
+    (status must beEqualTo(Status.Ok)).and(body must beEqualTo(SpecHelpers.selfSchemaPrivate))
   }
 
   def e5 = {
@@ -84,70 +85,63 @@ class SchemaServiceSpec extends org.specs2.Specification { def is = s2"""
       Request(
         Method.GET,
         Uri.uri("/com.acme/secret/jsonschema/1-0-0"),
-        headers = Headers.of(Header("apikey", UUID.randomUUID().toString)))
+        headers = Headers.of(Header("apikey", UUID.randomUUID().toString))
+      )
 
     val result = for {
       response <- SchemaServiceSpec.request(List(req), false)
-      body <- response.as[IgluResponse]
+      body     <- response.as[IgluResponse]
     } yield (response.status, body)
 
     val (status, body) = result.unsafeRunSync()
-    status must beEqualTo(Status.NotFound) and (body must beEqualTo(IgluResponse.SchemaNotFound))
+    (status must beEqualTo(Status.NotFound)).and(body must beEqualTo(IgluResponse.SchemaNotFound))
   }
 
   def e9 = {
     val req: Request[IO] =
-      Request(
-        Method.GET,
-        Uri.uri("/").withQueryParam("metadata", "1"))
+      Request(Method.GET, Uri.uri("/").withQueryParam("metadata", "1"))
 
     val result = for {
       response <- SchemaServiceSpec.request(List(req), false)
-      body <- response.as[List[Schema]]
+      body     <- response.as[List[Schema]]
     } yield (response.status, body)
 
-    val expectedBody = SpecHelpers.schemas
-      .filter { case (_, m) => m.metadata.isPublic }
-      .map(_._2)
+    val expectedBody = SpecHelpers.schemas.filter { case (_, m) => m.metadata.isPublic }.map(_._2)
 
     val (status, body) = result.unsafeRunSync()
-    status must beEqualTo(Status.Ok) and (body must beEqualTo(expectedBody))
+    (status must beEqualTo(Status.Ok)).and(body must beEqualTo(expectedBody))
   }
 
   def e10 = {
     val req: Request[IO] =
-      Request(
-        Method.GET,
-        Uri.uri("/").withQueryParam("body", "1"))
+      Request(Method.GET, Uri.uri("/").withQueryParam("body", "1"))
 
     val result = for {
       response <- SchemaServiceSpec.request(List(req), false)
-      body <- response.as[List[SelfDescribingSchema[Json]]]
+      body     <- response.as[List[SelfDescribingSchema[Json]]]
     } yield (response.status, body.map(_.self))
 
-    val expectedBody = SpecHelpers.schemas
-      .filter { case (_, m) => m.metadata.isPublic }
-      .map(_._2.schemaMap)
+    val expectedBody = SpecHelpers.schemas.filter { case (_, m) => m.metadata.isPublic }.map(_._2.schemaMap)
 
     val (status, body) = result.unsafeRunSync()
-    status must beEqualTo(Status.Ok) and (body must beEqualTo(expectedBody))
+    (status must beEqualTo(Status.Ok)).and(body must beEqualTo(expectedBody))
   }
-
 
   def e6 = {
     val req: Request[IO] =
       Request(
         Method.GET,
         Uri.uri("/com.acme/secret/jsonschema/1-0-0"),
-        headers = Headers.of(Header("apikey", "not-uuid")))
+        headers = Headers.of(Header("apikey", "not-uuid"))
+      )
 
     val result = for {
       response <- SchemaServiceSpec.request(List(req), false)
-      body <- response.as[Json]
+      body     <- response.as[Json]
     } yield (response.status, body)
 
     val (status, body) = result.unsafeRunSync()
-    status must beEqualTo(Status.BadRequest) and (body.noSpaces must contain("Invalid UUID"))
+    (status must beEqualTo(Status.BadRequest)).and(body.noSpaces must contain("Invalid UUID"))
   }
 
   def e7 = {
@@ -156,36 +150,35 @@ class SchemaServiceSpec extends org.specs2.Specification { def is = s2"""
 
     val result = for {
       response <- SchemaServiceSpec.request(List(req), false)
-      body <- response.as[List[SchemaKey]]
+      body     <- response.as[List[SchemaKey]]
     } yield (response.status, body)
 
     val expected = List(
-      SchemaKey("com.acme", "event", "jsonschema", SchemaVer.Full(1,0,0)),
-      SchemaKey("com.acme", "event", "jsonschema", SchemaVer.Full(1,0,1))
+      SchemaKey("com.acme", "event", "jsonschema", SchemaVer.Full(1, 0, 0)),
+      SchemaKey("com.acme", "event", "jsonschema", SchemaVer.Full(1, 0, 1))
     )
     val (status, body) = result.unsafeRunSync()
 
-    status must beEqualTo(Status.Ok) and (body must beEqualTo(expected))
+    (status must beEqualTo(Status.Ok)).and(body must beEqualTo(expected))
   }
 
   def e8 = {
     val req: Request[IO] =
-      Request(Method.GET, uri"/")
-        .withHeaders(Headers.of(Header("apikey", SpecHelpers.masterKey.toString)))
+      Request(Method.GET, uri"/").withHeaders(Headers.of(Header("apikey", SpecHelpers.masterKey.toString)))
 
     val result = for {
       response <- SchemaServiceSpec.request(List(req), false)
-      body <- response.as[List[SchemaKey]]
+      body     <- response.as[List[SchemaKey]]
     } yield (response.status, body)
 
     val expected = List(
-      SchemaKey("com.acme", "event", "jsonschema", SchemaVer.Full(1,0,0)),
-      SchemaKey("com.acme", "event", "jsonschema", SchemaVer.Full(1,0,1)),
-      SchemaKey("com.acme", "secret", "jsonschema", SchemaVer.Full(1,0,0))
+      SchemaKey("com.acme", "event", "jsonschema", SchemaVer.Full(1, 0, 0)),
+      SchemaKey("com.acme", "event", "jsonschema", SchemaVer.Full(1, 0, 1)),
+      SchemaKey("com.acme", "secret", "jsonschema", SchemaVer.Full(1, 0, 0))
     )
     val (status, body) = result.unsafeRunSync()
 
-    status must beEqualTo(Status.Ok) and (body must beEqualTo(expected))
+    (status must beEqualTo(Status.Ok)).and(body must beEqualTo(expected))
   }
 
   def e2 = {
@@ -214,10 +207,13 @@ class SchemaServiceSpec extends org.specs2.Specification { def is = s2"""
 
     val (requests, state) = SchemaServiceSpec.state(reqs, false).unsafeRunSync()
     val dbExpectation = state.schemas.mapValues(s => (s.metadata.isPublic, s.body)) must havePair(
-      (SchemaMap("com.acme", "nonexistent", "jsonschema", SchemaVer.Full(1,0,0)), (false, json"""{"type": "object"}"""))
+      (
+        SchemaMap("com.acme", "nonexistent", "jsonschema", SchemaVer.Full(1, 0, 0)),
+        (false, json"""{"type": "object"}""")
+      )
     )
     val requestExpectation = requests.lastOption.map(_.status) must beSome(Status.Ok)
-    dbExpectation and requestExpectation
+    dbExpectation.and(requestExpectation)
   }
 
   def e11 = {
@@ -265,11 +261,14 @@ class SchemaServiceSpec extends org.specs2.Specification { def is = s2"""
 
     val (requests, state) = SchemaServiceSpec.state(reqs, false).unsafeRunSync()
     val dbExpectation = state.schemas.mapValues(s => (s.metadata.isPublic, s.body)) must havePair(
-      (SchemaMap("com.acme", "nonexistent", "jsonschema", SchemaVer.Full(1,0,0)), (false, json"""{"type": "object"}"""))
+      (
+        SchemaMap("com.acme", "nonexistent", "jsonschema", SchemaVer.Full(1, 0, 0)),
+        (false, json"""{"type": "object"}""")
+      )
     )
     val putRequestExpectation = requests.get(1).map(_.status) must beSome(Status.Conflict)
     val getRequestExpectation = requests.lastOption.map(_.status) must beSome(Status.Ok)
-    dbExpectation and putRequestExpectation and getRequestExpectation
+    dbExpectation.and(putRequestExpectation).and(getRequestExpectation)
   }
 
   def e12 = {
@@ -288,17 +287,21 @@ class SchemaServiceSpec extends org.specs2.Specification { def is = s2"""
     val exampleSchema = Stream.emits(selfDescribingSchema.noSpaces.stripMargin.getBytes).covary[IO]
 
     val req = Request[IO](Method.PUT, Uri.uri("/com.acme/nonexistent/jsonschema/1-2-0"))
-        .withContentType(headers.`Content-Type`(MediaType.application.json))
-        .withHeaders(Headers.of(Header("apikey", SpecHelpers.masterKey.toString)))
-        .withBodyStream(exampleSchema)
+      .withContentType(headers.`Content-Type`(MediaType.application.json))
+      .withHeaders(Headers.of(Header("apikey", SpecHelpers.masterKey.toString)))
+      .withBodyStream(exampleSchema)
 
     val result = for {
       response <- SchemaServiceSpec.request(List(req), false)
-      body <- response.as[Json]
+      body     <- response.as[Json]
     } yield (response.status, body)
 
     val (status, body) = result.unsafeRunSync()
-    status must beEqualTo(Status.Conflict) and (body.noSpaces must contain("Preceding SchemaVer in the group is missing, check that schemas published in proper order"))
+    (status must beEqualTo(Status.Conflict)).and(
+      body.noSpaces must contain(
+        "Preceding SchemaVer in the group is missing, check that schemas published in proper order"
+      )
+    )
   }
 
   def e13 = {
@@ -346,10 +349,13 @@ class SchemaServiceSpec extends org.specs2.Specification { def is = s2"""
 
     val (requests, state) = SchemaServiceSpec.state(reqs, true).unsafeRunSync()
     val dbExpectation = state.schemas.mapValues(s => (s.metadata.isPublic, s.body)) must havePair(
-      (SchemaMap("com.acme", "nonexistent", "jsonschema", SchemaVer.Full(1,0,0)), (false, json"""{"type": "object", "additionalProperties": true}"""))
+      (
+        SchemaMap("com.acme", "nonexistent", "jsonschema", SchemaVer.Full(1, 0, 0)),
+        (false, json"""{"type": "object", "additionalProperties": true}""")
+      )
     )
     val requestExpectation = requests.lastOption.map(_.status) must beSome(Status.Ok)
-    dbExpectation and requestExpectation
+    dbExpectation.and(requestExpectation)
   }
 
   def e14 = {
@@ -359,17 +365,18 @@ class SchemaServiceSpec extends org.specs2.Specification { def is = s2"""
     val response = SchemaServiceSpec.request(List(req), false)
 
     val result = for {
-      r <- response
+      r    <- response
       body <- r.bodyText.compile.foldMonoid
     } yield (r.status, body)
 
     // Text body transformed to JSON later in HttpApp
     val (status, body) = result.unsafeRunSync()
-    (status must beEqualTo(Status.BadRequest)) and (body must beEqualTo("Cannot parse version part 'boom' as SchemaVer, INVALID_SCHEMAVER"))
+    (status must beEqualTo(Status.BadRequest))
+      .and(body must beEqualTo("Cannot parse version part 'boom' as SchemaVer, INVALID_SCHEMAVER"))
   }
 
   def e15 = {
-    val simpleSchema = json"""{"type": "object"}"""
+    val simpleSchema  = json"""{"type": "object"}"""
     val exampleSchema = Stream.emits(simpleSchema.noSpaces.stripMargin.getBytes).covary[IO]
 
     val reqs: List[Request[IO]] = List(
@@ -402,7 +409,7 @@ class SchemaServiceSpec extends org.specs2.Specification { def is = s2"""
 
     val result = for {
       response <- SchemaServiceSpec.request(reqs, false)
-      last <- response.bodyText.compile.foldMonoid
+      last     <- response.bodyText.compile.foldMonoid
     } yield last
 
     result.unsafeRunSync() must beEqualTo(expected)
@@ -414,20 +421,26 @@ object SchemaServiceSpec {
 
   val client: Client[IO] = Client.fromHttpApp(HttpApp[IO](r => Response[IO]().withEntity(r.body).pure[IO]))
 
-  def request(reqs: List[Request[IO]], patchesAllowed: Boolean): IO[Response[IO]] = {
+  def request(reqs: List[Request[IO]], patchesAllowed: Boolean): IO[Response[IO]] =
     for {
       storage <- InMemory.getInMemory[IO](SpecHelpers.exampleState)
-      service = SchemaService.asRoutes(patchesAllowed, Webhook.WebhookClient(List(), client))(storage, SpecHelpers.ctx, createRhoMiddleware())
+      service = SchemaService.asRoutes(patchesAllowed, Webhook.WebhookClient(List(), client))(
+        storage,
+        SpecHelpers.ctx,
+        createRhoMiddleware()
+      )
       responses <- reqs.traverse(service.run).value
     } yield responses.flatMap(_.lastOption).getOrElse(Response(Status.NotFound))
-  }
 
-  def state(reqs: List[Request[IO]], patchesAllowed: Boolean): IO[(List[Response[IO]], InMemory.State)] = {
+  def state(reqs: List[Request[IO]], patchesAllowed: Boolean): IO[(List[Response[IO]], InMemory.State)] =
     for {
       storage <- InMemory.getInMemory[IO](SpecHelpers.exampleState)
-      service = SchemaService.asRoutes(patchesAllowed, Webhook.WebhookClient(List(), client))(storage, SpecHelpers.ctx, createRhoMiddleware())
+      service = SchemaService.asRoutes(patchesAllowed, Webhook.WebhookClient(List(), client))(
+        storage,
+        SpecHelpers.ctx,
+        createRhoMiddleware()
+      )
       responses <- reqs.traverse(service.run).value
-      state <- storage.ref.get
+      state     <- storage.ref.get
     } yield (responses.getOrElse(List.empty), state)
-  }
 }

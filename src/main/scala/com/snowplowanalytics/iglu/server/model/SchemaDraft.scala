@@ -19,7 +19,7 @@ import doobie._
 import doobie.postgres.circe.json.implicits._
 import doobie.postgres.implicits._
 
-import io.circe.{ Json, Encoder }
+import io.circe.{Encoder, Json}
 import io.circe.generic.semiauto.deriveEncoder
 import io.circe.refined._
 

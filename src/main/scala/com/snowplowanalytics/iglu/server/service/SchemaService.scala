@@ -38,24 +38,26 @@ import com.snowplowanalytics.iglu.server.model.Schema.SchemaBody
 import com.snowplowanalytics.iglu.server.model.Schema.Repr.{Format => SchemaFormat}
 import com.snowplowanalytics.iglu.server.model.VersionCursor.Inconsistency
 
-class SchemaService[F[+_]: Sync](swagger: SwaggerSyntax[F],
-                                 ctx: AuthedContext[F, Permission],
-                                 db: Storage[F],
-                                 patchesAllowed: Boolean,
-                                 webhooks: Webhook.WebhookClient[F]) extends RhoRoutes[F] {
+class SchemaService[F[+_]: Sync](
+  swagger: SwaggerSyntax[F],
+  ctx: AuthedContext[F, Permission],
+  db: Storage[F],
+  patchesAllowed: Boolean,
+  webhooks: Webhook.WebhookClient[F]
+) extends RhoRoutes[F] {
 
   import swagger._
   import SchemaService._
   implicit val C: Clock[F] = Clock.create[F]
 
-  val reprUri = genericQueryCapture(UriParsers.parseRepresentationUri[F]).withMetadata(ReprMetadata)
+  val reprUri       = genericQueryCapture(UriParsers.parseRepresentationUri[F]).withMetadata(ReprMetadata)
   val reprCanonical = genericQueryCapture(UriParsers.parseRepresentationCanonical[F]).withMetadata(ReprMetadata)
 
-  val version = pathVar[SchemaVer.Full]("version", "SchemaVer")
+  val version  = pathVar[SchemaVer.Full]("version", "SchemaVer")
   val isPublic = paramD[Boolean]("isPublic", false, "Should schema be created as public")
 
   val schemaOrJson = jsonOf[F, SchemaBody]
-  val schema = jsonOf[F, SelfDescribingSchema[Json]]
+  val schema       = jsonOf[F, SelfDescribingSchema[Json]]
 
   private val validationService = new ValidationService[F](swagger, ctx, db)
 
@@ -83,45 +85,44 @@ class SchemaService[F[+_]: Sync](swagger: SwaggerSyntax[F],
   "Publish new self-describing schema" **
     POST +? isPublic >>> ctx.auth ^ schema |>> publishSchema _
 
-
   "Schema validation endpoint (deprecated)" **
     POST / "validate" / 'vendor / 'name / "jsonschema" / 'version ^ jsonDecoder[F] |>> {
     (_: String, _: String, _: String, json: Json) =>
       validationService.validateSchema(Schema.Format.Jsonschema, json)
   }
 
-  def getSchema(vendor: String, name: String, format: String, version: SchemaVer.Full,
-                schemaFormat: SchemaFormat, permission: Permission) = {
+  def getSchema(
+    vendor: String,
+    name: String,
+    format: String,
+    version: SchemaVer.Full,
+    schemaFormat: SchemaFormat,
+    permission: Permission
+  ) =
     db.getSchema(SchemaMap(vendor, name, format, version)).flatMap {
-      case Some(schema) if schema.metadata.isPublic => Ok(schema.withFormat(schemaFormat))
+      case Some(schema) if schema.metadata.isPublic                              => Ok(schema.withFormat(schemaFormat))
       case Some(schema) if permission.canRead(schema.schemaMap.schemaKey.vendor) => Ok(schema.withFormat(schemaFormat))
-      case _ => NotFound(IgluResponse.SchemaNotFound: IgluResponse)
+      case _                                                                     => NotFound(IgluResponse.SchemaNotFound: IgluResponse)
     }
-  }
 
-  def deleteSchema(vendor: String, name: String, format: String, version: SchemaVer.Full, permission: Permission) = {
+  def deleteSchema(vendor: String, name: String, format: String, version: SchemaVer.Full, permission: Permission) =
     permission match {
       case Permission.Master if patchesAllowed =>
-        db.deleteSchema(SchemaMap(vendor, name, format, version)) *> Ok(IgluResponse.Message("Schema deleted"): IgluResponse)
+        db.deleteSchema(SchemaMap(vendor, name, format, version)) *> Ok(
+          IgluResponse.Message("Schema deleted"): IgluResponse
+        )
       case Permission.Master =>
         MethodNotAllowed(IgluResponse.Message("DELETE is forbidden on production registry"): IgluResponse)
       case _ => Unauthorized(IgluResponse.Message("Not enough permissions"): IgluResponse)
     }
-  }
 
   def getSchemasByName(vendor: String, name: String, format: SchemaFormat, permission: Permission) = {
-    val query = db
-      .getSchemasByVendorName(vendor, name)
-      .filter(isReadable(permission))
-      .map(_.withFormat(format))
+    val query = db.getSchemasByVendorName(vendor, name).filter(isReadable(permission)).map(_.withFormat(format))
     schemasOrNotFound(query)
   }
 
   def getSchemasByVendor(vendor: String, format: SchemaFormat, permission: Permission) = {
-    val query = db
-      .getSchemasByVendor(vendor, false)
-      .filter(isReadable(permission))
-      .map(_.withFormat(format))
+    val query = db.getSchemasByVendor(vendor, false).filter(isReadable(permission)).map(_.withFormat(format))
     schemasOrNotFound(query)
   }
 
@@ -137,9 +138,15 @@ class SchemaService[F[+_]: Sync](swagger: SwaggerSyntax[F],
   def publishSchema(isPublic: Boolean, permission: Permission, schema: SelfDescribingSchema[Json]) =
     addSchema(permission, schema, isPublic)
 
-  def putSchema(vendor: String, name: String, format: String, version: SchemaVer.Full, isPublic: Boolean,
-                permission: Permission,
-                json: SchemaBody) = json match {
+  def putSchema(
+    vendor: String,
+    name: String,
+    format: String,
+    version: SchemaVer.Full,
+    isPublic: Boolean,
+    permission: Permission,
+    json: SchemaBody
+  ) = json match {
     case SchemaBody.BodyOnly(body) =>
       val schemaMap = SchemaMap(vendor, name, format, version)
       addSchema(permission, SelfDescribingSchema(schemaMap, body), isPublic)
@@ -153,23 +160,21 @@ class SchemaService[F[+_]: Sync](swagger: SwaggerSyntax[F],
     val result = format match {
       case SchemaFormat.Uri =>
         db.getSchemasKeyOnly
-          .map(_.filter(isReadablePair(permission)).map { case (map, meta) => Schema(map, meta, Json.Null).withFormat(SchemaFormat.Uri) })
+          .map(_.filter(isReadablePair(permission)).map {
+            case (map, meta) => Schema(map, meta, Json.Null).withFormat(SchemaFormat.Uri)
+          })
       case _ =>
-        db.getSchemas
-          .map(_.filter(isReadable(permission)).map(_.withFormat(format)))
+        db.getSchemas.map(_.filter(isReadable(permission)).map(_.withFormat(format)))
     }
     result.flatMap(response => Ok(response))
   }
 
   /** Make sure that SchemaList can be only non-empty list */
   private def schemasOrNotFound(queryResult: fs2.Stream[F, Schema.Repr]) =
-    queryResult
-      .compile
-      .toList
-      .flatMap {
-        case Nil => NotFound(IgluResponse.Message(s"No schemas available"): IgluResponse)
-        case schemas => Ok(schemas)
-      }
+    queryResult.compile.toList.flatMap {
+      case Nil     => NotFound(IgluResponse.Message(s"No schemas available"): IgluResponse)
+      case schemas => Ok(schemas)
+    }
 
   private def addSchema(permission: Permission, schema: SelfDescribingSchema[Json], isPublic: Boolean) =
     if (permission.canCreateSchema(schema.self.schemaKey.vendor))
@@ -179,8 +184,9 @@ class SchemaService[F[+_]: Sync](swagger: SwaggerSyntax[F],
           case Right(_) =>
             for {
               existing <- db.getSchema(schema.self).map(_.isDefined)
-              _        <- if (existing) db.updateSchema(schema.self, schema.schema, isPublic) else db.addSchema(schema.self, schema.schema, isPublic)
-              payload   = IgluResponse.SchemaUploaded(existing, schema.self.schemaKey): IgluResponse
+              _ <- if (existing) db.updateSchema(schema.self, schema.schema, isPublic)
+              else db.addSchema(schema.self, schema.schema, isPublic)
+              payload = IgluResponse.SchemaUploaded(existing, schema.self.schemaKey): IgluResponse
               _        <- webhooks.schemaPublished(schema.self.schemaKey, existing)
               response <- if (existing) Ok(payload) else Created(payload)
             } yield response
@@ -198,26 +204,28 @@ object SchemaService {
       "Schema representation format (can be specified either by repr=uri/meta/canonical or legacy meta=1&body=1)"
   }
 
-  def asRoutes(patchesAllowed: Boolean, webhook: Webhook.WebhookClient[IO])
-              (db: Storage[IO],
-               ctx: AuthedContext[IO, Permission],
-               rhoMiddleware: RhoMiddleware[IO]): HttpRoutes[IO] = {
+  def asRoutes(
+    patchesAllowed: Boolean,
+    webhook: Webhook.WebhookClient[IO]
+  )(db: Storage[IO], ctx: AuthedContext[IO, Permission], rhoMiddleware: RhoMiddleware[IO]): HttpRoutes[IO] = {
     val service = new SchemaService(swaggerSyntax, ctx, db, patchesAllowed, webhook).toRoutes(rhoMiddleware)
     PermissionMiddleware.wrapService(db, ctx, service)
   }
 
-  def isSchemaAllowed[F[_]: Sync](db: Storage[F],
-                                  schemaMap: SchemaMap,
-                                  patchesAllowed: Boolean,
-                                  isPublic: Boolean): F[Either[String, Unit]] =
+  def isSchemaAllowed[F[_]: Sync](
+    db: Storage[F],
+    schemaMap: SchemaMap,
+    patchesAllowed: Boolean,
+    isPublic: Boolean
+  ): F[Either[String, Unit]] =
     for {
-      schemas        <- db.getSchemasByVendorName(schemaMap.schemaKey.vendor, schemaMap.schemaKey.name).compile.toList
-      previousPublic  = schemas.forall(_.metadata.isPublic)
-      versions        = schemas.map(_.schemaMap.schemaKey.version)
+      schemas <- db.getSchemasByVendorName(schemaMap.schemaKey.vendor, schemaMap.schemaKey.name).compile.toList
+      previousPublic = schemas.forall(_.metadata.isPublic)
+      versions       = schemas.map(_.schemaMap.schemaKey.version)
     } yield
       (if ((previousPublic && isPublic) || (!previousPublic && !isPublic) || schemas.isEmpty)
-        VersionCursor.isAllowed(schemaMap.schemaKey.version, versions, patchesAllowed)
-      else Inconsistency.Availability(isPublic, previousPublic).asLeft).leftMap(_.show)
+         VersionCursor.isAllowed(schemaMap.schemaKey.version, versions, patchesAllowed)
+       else Inconsistency.Availability(isPublic, previousPublic).asLeft).leftMap(_.show)
 
   /** Extract schemas from database, available for particular permission */
   def isReadable(permission: Permission)(schema: Schema): Boolean =

@@ -43,18 +43,20 @@ import generated.BuildInfo.version
   *                       be skipped if a schema with the same key already exists
   * @param webhooks       List of webhooks triggered by specific actions or endpoints
   */
-case class Config(database: Config.StorageConfig,
-                  repoServer: Config.Http,
-                  debug: Option[Boolean],
-                  patchesAllowed: Option[Boolean],
-                  webhooks: Option[List[Webhook]])
+case class Config(
+  database: Config.StorageConfig,
+  repoServer: Config.Http,
+  debug: Option[Boolean],
+  patchesAllowed: Option[Boolean],
+  webhooks: Option[List[Webhook]]
+)
 
 object Config {
 
   sealed trait ThreadPool extends Product with Serializable
   object ThreadPool {
-    case object Global extends ThreadPool
-    case object Cached extends ThreadPool
+    case object Global          extends ThreadPool
+    case object Cached          extends ThreadPool
     case class Fixed(size: Int) extends ThreadPool
 
     implicit val threadPoolReader: ConfigReader[ThreadPool] =
@@ -64,7 +66,7 @@ object Config {
           case Right(s) if s.toLowerCase == "cached" => Right(Cached)
           case Left(err) =>
             for {
-              obj <- cur.asObjectCursor
+              obj     <- cur.asObjectCursor
               typeCur <- obj.atKey("type")
               typeStr <- typeCur.asString
               pool <- typeStr.toLowerCase match {
@@ -75,7 +77,7 @@ object Config {
                   } yield Fixed(sizeInt)
                 case "global" => Right(Global)
                 case "cached" => Right(Cached)
-                case _ => Left(err)
+                case _        => Left(err)
               }
             } yield pool
         }
@@ -99,27 +101,31 @@ object Config {
     sealed trait ConnectionPool extends Product with Serializable
     object ConnectionPool {
       case class NoPool(threadPool: ThreadPool = ThreadPool.Cached) extends ConnectionPool
-      case class Hikari(connectionTimeout: Option[Int],
-                        maxLifetime: Option[Int],
-                        minimumIdle: Option[Int],
-                        maximumPoolSize: Option[Int],
-                        // Provided by doobie
-                        connectionPool: ThreadPool = ThreadPool.Fixed(2),
-                        transactionPool: ThreadPool = ThreadPool.Cached) extends ConnectionPool
+      case class Hikari(
+        connectionTimeout: Option[Int],
+        maxLifetime: Option[Int],
+        minimumIdle: Option[Int],
+        maximumPoolSize: Option[Int],
+        // Provided by doobie
+        connectionPool: ThreadPool = ThreadPool.Fixed(2),
+        transactionPool: ThreadPool = ThreadPool.Cached
+      ) extends ConnectionPool
 
       implicit val circePoolEncoder: Encoder[ConnectionPool] =
         Encoder.instance {
           case NoPool(threadPool) =>
-            Json.fromFields(List(
-              ("type", Json.fromString("NoPool")),
-              ("threadPool", threadPool.asJson(ThreadPool.threadPoolCirceEncoder))
-            ))
+            Json.fromFields(
+              List(
+                ("type", Json.fromString("NoPool")),
+                ("threadPool", threadPool.asJson(ThreadPool.threadPoolCirceEncoder))
+              )
+            )
           case h: Hikari =>
             deriveEncoder[Hikari].apply(h)
         }
 
-      implicit val nopoolHint = ProductHint[NoPool](ConfigFieldMapping(CamelCase, CamelCase))
-      implicit val hikariHint = ProductHint[Hikari](ConfigFieldMapping(CamelCase, CamelCase))
+      implicit val nopoolHint   = ProductHint[NoPool](ConfigFieldMapping(CamelCase, CamelCase))
+      implicit val hikariHint   = ProductHint[Hikari](ConfigFieldMapping(CamelCase, CamelCase))
       implicit val noPoolReader = deriveReader[NoPool]
       implicit val hikariReader = deriveReader[Hikari]
 
@@ -129,15 +135,16 @@ object Config {
             objCur <- cur.asObjectCursor
             typeCur = objCur.atKeyOrUndefined("type")
             pool <- if (typeCur.isUndefined) Right(ConfigReader[NoPool].from(cur).getOrElse(ConnectionPool.NoPool()))
-            else for {
-              typeStr <- typeCur.asString
-              result <- typeStr.toLowerCase match {
-                case "hikari" =>
-                  ConfigReader[Hikari].from(cur)
-                case "nopool" =>
-                  ConfigReader[NoPool].from(cur)
-              }
-            } yield result
+            else
+              for {
+                typeStr <- typeCur.asString
+                result <- typeStr.toLowerCase match {
+                  case "hikari" =>
+                    ConfigReader[Hikari].from(cur)
+                  case "nopool" =>
+                    ConfigReader[NoPool].from(cur)
+                }
+              } yield result
           } yield pool
         }
     }
@@ -150,15 +157,17 @@ object Config {
     /**
       * Configuration for PostgreSQL state storage.
       */
-    case class Postgres(host: String,
-                        port: Int,
-                        dbname: String,
-                        username: String,
-                        password: String,
-                        driver: String,
-                        connectThreads: Option[Int],
-                        maxPoolSize: Option[Int], // deprecated
-                        pool: ConnectionPool = ConnectionPool.NoPool(ThreadPool.Cached)) extends StorageConfig {
+    case class Postgres(
+      host: String,
+      port: Int,
+      dbname: String,
+      username: String,
+      password: String,
+      driver: String,
+      connectThreads: Option[Int],
+      maxPoolSize: Option[Int], // deprecated
+      pool: ConnectionPool = ConnectionPool.NoPool(ThreadPool.Cached)
+    ) extends StorageConfig {
 
       /** Backward-compatibility */
       val maximumPoolSize: Int = pool match {
@@ -168,19 +177,26 @@ object Config {
     }
 
     val postgresReader: ConfigReader[Postgres] =
-      ConfigReader.forProduct9("host", "port","dbname", "username",
-        "password", "driver", "connectThreads", "maxPoolSize", "pool")(StorageConfig.Postgres.apply)
+      ConfigReader.forProduct9(
+        "host",
+        "port",
+        "dbname",
+        "username",
+        "password",
+        "driver",
+        "connectThreads",
+        "maxPoolSize",
+        "pool"
+      )(StorageConfig.Postgres.apply)
 
     implicit val storageConfigCirceEncoder: Encoder[StorageConfig] =
       deriveEncoder[StorageConfig].mapJson { json =>
-        json.hcursor
-          .downField("Postgres")
-          .focus
-          .getOrElse(Json.Null)
-          .mapObject { o => JsonObject.fromMap(o.toMap.map {
+        json.hcursor.downField("Postgres").focus.getOrElse(Json.Null).mapObject { o =>
+          JsonObject.fromMap(o.toMap.map {
             case ("password", _) => ("password", Json.fromString("******"))
-            case (k, v) => (k, v)
-          })}
+            case (k, v)          => (k, v)
+          })
+        }
       }
   }
 
@@ -200,13 +216,13 @@ object Config {
 
   implicit val pureWebhookReader: ConfigReader[Webhook] = ConfigReader.fromCursor { cur =>
     for {
-      objCur <- cur.asObjectCursor
+      objCur    <- cur.asObjectCursor
       uriCursor <- objCur.atKey("uri")
-      uri <- ConfigReader[org.http4s.Uri].from(uriCursor)
+      uri       <- ConfigReader[org.http4s.Uri].from(uriCursor)
 
       prefixes <- objCur.atKeyOrUndefined("vendor-prefixes") match {
         case keyCur if keyCur.isUndefined => List.empty.asRight
-        case keyCur => keyCur.asList.flatMap(_.traverse(cur => cur.asString))
+        case keyCur                       => keyCur.asList.flatMap(_.traverse(cur => cur.asString))
       }
     } yield Webhook.SchemaPublished(uri, Some(prefixes))
   }
@@ -216,9 +232,9 @@ object Config {
       objCur  <- cur.asObjectCursor
       typeCur <- objCur.atKey("type")
       typeStr <- typeCur.asString
-      result  <- typeStr match {
+      result <- typeStr match {
         case "postgres" => StorageConfig.postgresReader.from(cur)
-        case "dummy" => StorageConfig.Dummy.asRight
+        case "dummy"    => StorageConfig.Dummy.asRight
         case _ =>
           val message = s"type has value $typeStr instead of class1 or class2"
           objCur.failed[StorageConfig](error.CannotConvert(objCur.objValue.toString, "StorageConfig", message))
@@ -230,9 +246,9 @@ object Config {
 
   implicit val pureWebhooksReader: ConfigReader[List[Webhook]] = ConfigReader.fromCursor { cur =>
     for {
-      objCur  <- cur.asObjectCursor
+      objCur                 <- cur.asObjectCursor
       schemaPublishedCursors <- objCur.atKeyOrUndefined("schema-published").asList
-      webhooks <- schemaPublishedCursors.traverse(cur => pureWebhookReader.from(cur))
+      webhooks               <- schemaPublishedCursors.traverse(cur => pureWebhookReader.from(cur))
     } yield webhooks
   }
 
@@ -244,26 +260,26 @@ object Config {
   sealed trait ServerCommand {
     def config: Path
     def read: Either[String, Config] =
-      ConfigSource
-        .default(ConfigSource.file(config))
-        .load[Config]
-        .leftMap(_.toList.map(_.description).mkString("\n"))
+      ConfigSource.default(ConfigSource.file(config)).load[Config].leftMap(_.toList.map(_.description).mkString("\n"))
   }
 
   object ServerCommand {
-    case class Run(config: Path) extends ServerCommand
+    case class Run(config: Path)                                 extends ServerCommand
     case class Setup(config: Path, migrate: Option[MigrateFrom]) extends ServerCommand
   }
 
   val configOpt = Opts.option[Path]("config", "Path to server configuration HOCON")
   val migrateOpt = Opts
     .option[String]("migrate", "Migrate the DB from a particular version")
-    .mapValidated { s => MigrateFrom.parse(s).toValid(s"Cannot perform migration from version $s to $version").toValidatedNel }
+    .mapValidated { s =>
+      MigrateFrom.parse(s).toValid(s"Cannot perform migration from version $s to $version").toValidatedNel
+    }
     .orNone
 
   val runCommand: Opts[ServerCommand] = configOpt.map(ServerCommand.Run.apply)
   val setupCommand: Opts[ServerCommand] =
     Opts.subcommand("setup", "Setup Iglu Server")((configOpt, migrateOpt).mapN(ServerCommand.Setup.apply))
 
-  val serverCommand = Command[ServerCommand](generated.BuildInfo.name, generated.BuildInfo.version)(runCommand.orElse(setupCommand))
+  val serverCommand =
+    Command[ServerCommand](generated.BuildInfo.name, generated.BuildInfo.version)(runCommand.orElse(setupCommand))
 }

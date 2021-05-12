@@ -14,13 +14,13 @@
  */
 package com.snowplowanalytics.iglu.server
 
-import java.util.concurrent.{ Executors, ExecutorService }
+import java.util.concurrent.{ExecutorService, Executors}
 
 import scala.concurrent.duration._
 import scala.concurrent.ExecutionContext
 
 import cats.data.Kleisli
-import cats.effect.{Blocker, ContextShift, Sync, ExitCode, IO, Timer, Resource}
+import cats.effect.{Blocker, ContextShift, ExitCode, IO, Resource, Sync, Timer}
 
 import io.circe.syntax._
 
@@ -88,47 +88,50 @@ object Server {
     base -> constructor(storage, PermissionContext, swagger)
   }
 
-  def httpApp(storage: Storage[IO],
-              debug: Boolean,
-              patchesAllowed: Boolean,
-              webhook: Webhook.WebhookClient[IO],
-              cache: CachingMiddleware.ResponseCache[IO],
-              blocker: Blocker)
-             (implicit cs: ContextShift[IO]): HttpApp[IO] = {
+  def httpApp(
+    storage: Storage[IO],
+    debug: Boolean,
+    patchesAllowed: Boolean,
+    webhook: Webhook.WebhookClient[IO],
+    cache: CachingMiddleware.ResponseCache[IO],
+    blocker: Blocker
+  )(implicit cs: ContextShift[IO]): HttpApp[IO] = {
     val serverRoutes = httpRoutes(storage, debug, patchesAllowed, webhook, cache, blocker)
     Kleisli[IO, Request[IO], Response[IO]](req => Router(serverRoutes: _*).run(req).getOrElse(NotFound))
   }
 
-  def httpRoutes(storage: Storage[IO],
-                 debug: Boolean,
-                 patchesAllowed: Boolean,
-                 webhook: Webhook.WebhookClient[IO],
-                 cache: CachingMiddleware.ResponseCache[IO],
-                 blocker: Blocker)
-                (implicit cs: ContextShift[IO]): List[(String, HttpRoutes[IO])] = {
+  def httpRoutes(
+    storage: Storage[IO],
+    debug: Boolean,
+    patchesAllowed: Boolean,
+    webhook: Webhook.WebhookClient[IO],
+    cache: CachingMiddleware.ResponseCache[IO],
+    blocker: Blocker
+  )(implicit cs: ContextShift[IO]): List[(String, HttpRoutes[IO])] = {
     val services: List[(String, RoutesConstructor)] = List(
       "/api/meta"       -> MetaService.asRoutes(debug, patchesAllowed),
       "/api/schemas"    -> SchemaService.asRoutes(patchesAllowed, webhook),
       "/api/auth"       -> AuthService.asRoutes,
       "/api/validation" -> ValidationService.asRoutes,
-      "/api/drafts"     -> DraftService.asRoutes,
+      "/api/drafts"     -> DraftService.asRoutes
     )
 
-    val debugRoute = "/api/debug" -> DebugService.asRoutes(storage, ioSwagger.createRhoMiddleware())
+    val debugRoute  = "/api/debug" -> DebugService.asRoutes(storage, ioSwagger.createRhoMiddleware())
     val staticRoute = "/static" -> StaticService.routes(blocker)
-    val routes = staticRoute :: services.map(addSwagger(storage))
+    val routes      = staticRoute :: services.map(addSwagger(storage))
     val corsConfig = CORSConfig(
       anyOrigin = true,
       anyMethod = false,
       allowedMethods = Some(Set("GET", "POST", "PUT", "OPTIONS", "DELETE")),
       allowedHeaders = Some(Set("content-type", "apikey")),
       allowCredentials = true,
-      maxAge = 1.day.toSeconds)
+      maxAge = 1.day.toSeconds
+    )
 
     (if (debug) debugRoute :: routes else routes).map {
       case (endpoint, route) =>
         // Apply middleware
-        val httpRoutes = CachingMiddleware(cache)(BadRequestHandler(CORS(AutoSlash(route), corsConfig)))
+        val httpRoutes        = CachingMiddleware(cache)(BadRequestHandler(CORS(AutoSlash(route), corsConfig)))
         val redactHeadersWhen = (Headers.SensitiveHeaders + "apikey".ci).contains _
         (endpoint, Logger.httpRoutes[IO](true, true, redactHeadersWhen, Some(logger.debug(_)))(httpRoutes))
     }
@@ -136,7 +139,7 @@ object Server {
 
   def createThreadPool[F[_]: Sync](pool: Config.ThreadPool): Resource[F, ExecutionContext] =
     pool match {
-      case Config.ThreadPool.Global =>  // Assuming we already have shutdown hook thanks to IOApp
+      case Config.ThreadPool.Global => // Assuming we already have shutdown hook thanks to IOApp
         Resource.pure[F, ExecutionContext](scala.concurrent.ExecutionContext.global)
       case Config.ThreadPool.Cached =>
         val alloc = Sync[F].delay(Executors.newCachedThreadPool)
@@ -148,18 +151,30 @@ object Server {
         Resource.make(alloc)(free).map(ExecutionContext.fromExecutor)
     }
 
-  def buildServer(config: Config)(implicit cs: ContextShift[IO], timer: Timer[IO]): Resource[IO, BlazeServerBuilder[IO]] =
+  def buildServer(
+    config: Config
+  )(implicit cs: ContextShift[IO], timer: Timer[IO]): Resource[IO, BlazeServerBuilder[IO]] =
     for {
-      _            <- Resource.eval(logger.info(s"Initializing server with following configuration: ${config.asJson.noSpaces}"))
-      httpPool     <- createThreadPool[IO](config.repoServer.threadPool)
-      client       <- BlazeClientBuilder[IO](httpPool).resource
+      _        <- Resource.eval(logger.info(s"Initializing server with following configuration: ${config.asJson.noSpaces}"))
+      httpPool <- createThreadPool[IO](config.repoServer.threadPool)
+      client   <- BlazeClientBuilder[IO](httpPool).resource
       webhookClient = Webhook.WebhookClient(config.webhooks.getOrElse(Nil), client)
-      storage      <- Storage.initialize[IO](config.database)
-      cache        <- CachingMiddleware.initResponseCache[IO](1000, CacheTtl)
-      blocker      <- Blocker[IO]
-      builder       = BlazeServerBuilder.apply[IO](ExecutionContext.global)
+      storage <- Storage.initialize[IO](config.database)
+      cache   <- CachingMiddleware.initResponseCache[IO](1000, CacheTtl)
+      blocker <- Blocker[IO]
+      builder = BlazeServerBuilder
+        .apply[IO](ExecutionContext.global)
         .bindHttp(config.repoServer.port, config.repoServer.interface)
-        .withHttpApp(httpApp(storage, config.debug.getOrElse(false), config.patchesAllowed.getOrElse(false), webhookClient, cache, blocker))
+        .withHttpApp(
+          httpApp(
+            storage,
+            config.debug.getOrElse(false),
+            config.patchesAllowed.getOrElse(false),
+            webhookClient,
+            cache,
+            blocker
+          )
+        )
         .withExecutionContext(httpPool)
       builderWithIdle = config.repoServer.idleTimeout match {
         case Some(t) => builder.withIdleTimeout(t.seconds)
@@ -167,11 +182,10 @@ object Server {
       }
     } yield builderWithIdle
 
-
   def run(config: Config)(implicit cs: ContextShift[IO], timer: Timer[IO]): Stream[IO, ExitCode] =
     Stream.resource(buildServer(config)).flatMap(_.serve)
 
-  def setup(config: Config, migrate: Option[MigrateFrom])(implicit cs: ContextShift[IO]): IO[ExitCode] = {
+  def setup(config: Config, migrate: Option[MigrateFrom])(implicit cs: ContextShift[IO]): IO[ExitCode] =
     config.database match {
       case pg @ Config.StorageConfig.Postgres(_, _, dbname, _, _, _, _, _, _) =>
         val xa = getTransactor(pg)
@@ -187,7 +201,6 @@ object Server {
       case Config.StorageConfig.Dummy =>
         logger.error(s"Nothing to setup with dummy storage").as(ExitCode.Error)
     }
-  }
 
   def getTransactor(config: Config.StorageConfig.Postgres)(implicit cs: ContextShift[IO]): Transactor[IO] = {
     val url = s"jdbc:postgresql://${config.host}:${config.port}/${config.dbname}"
