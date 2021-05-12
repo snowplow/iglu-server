@@ -17,6 +17,7 @@ import java.io.File
 import sbt._
 import Keys._
 
+import sbtassembly.AssemblyPlugin.autoImport._
 import com.typesafe.sbt.packager.Keys.{daemonUser, maintainer}
 import com.typesafe.sbt.packager.docker._
 import com.typesafe.sbt.packager.docker.DockerPlugin.autoImport._
@@ -42,5 +43,16 @@ object BuildSettings {
     dockerEntrypoint := Seq("docker-entrypoint.sh"),
     dockerCommands ++= BuildSettings.dockerPgInstallCmds,
     dockerCmd := Seq("--help")
+  )
+
+  lazy val assemblySettings = Seq(
+    assemblyJarName in assembly := { s"${name.value}-${version.value}.jar" },
+    assemblyMergeStrategy in assembly := {
+      case x if x.endsWith("module-info.class") => MergeStrategy.first
+      case x if x.endsWith("nowarn.class") => MergeStrategy.first
+      case x =>
+        val oldStrategy = (assembly / assemblyMergeStrategy).value
+        oldStrategy(x)
+    }
   )
 }
