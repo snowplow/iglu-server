@@ -25,12 +25,14 @@ import scala.concurrent.ExecutionContext
 trait SafeIOApp extends IOApp.WithContext {
 
   private lazy val ec: ExecutionContext =
-    ExecutionContext.fromExecutorService(Executors.newFixedThreadPool(List(2, Runtime.getRuntime.availableProcessors()).max, DaemonThreadFactory))
+    ExecutionContext.fromExecutorService(
+      Executors.newFixedThreadPool(List(2, Runtime.getRuntime.availableProcessors()).max, DaemonThreadFactory)
+    )
 
-  private final val log: Logger = LoggerFactory.getLogger(Main.getClass)
+  final private val log: Logger = LoggerFactory.getLogger(Main.getClass)
 
   // To overcome https://github.com/typelevel/cats-effect/issues/515
-  private final val exitingEC: ExecutionContext = new ExecutionContext {
+  final private val exitingEC: ExecutionContext = new ExecutionContext {
     def execute(r: Runnable): Unit =
       ec.execute { () =>
         try r.run()
@@ -48,14 +50,14 @@ trait SafeIOApp extends IOApp.WithContext {
     Resource.eval(SyncIO(exitingEC))
 
   private object DaemonThreadFactory extends ThreadFactory {
-    private val s: SecurityManager  = System.getSecurityManager
-    private val poolNumber: AtomicInteger = new AtomicInteger(1)
-    private val group: ThreadGroup  = if (s == null) Thread.currentThread().getThreadGroup else s.getThreadGroup
-    private val threadNumber: AtomicInteger  = new AtomicInteger(1)
-    private val namePrefix: String  = "ioapp-pool-" + poolNumber.getAndIncrement() + "-thread-"
+    private val s: SecurityManager          = System.getSecurityManager
+    private val poolNumber: AtomicInteger   = new AtomicInteger(1)
+    private val group: ThreadGroup          = if (s == null) Thread.currentThread().getThreadGroup else s.getThreadGroup
+    private val threadNumber: AtomicInteger = new AtomicInteger(1)
+    private val namePrefix: String          = "ioapp-pool-" + poolNumber.getAndIncrement() + "-thread-"
 
     def newThread(r: Runnable): Thread = {
-      val t: Thread  = new Thread(group, r, namePrefix + threadNumber.getAndIncrement(), 0)
+      val t: Thread = new Thread(group, r, namePrefix + threadNumber.getAndIncrement(), 0)
       t.setDaemon(true)
       if (t.getPriority != Thread.NORM_PRIORITY) t.setPriority(Thread.NORM_PRIORITY)
       t

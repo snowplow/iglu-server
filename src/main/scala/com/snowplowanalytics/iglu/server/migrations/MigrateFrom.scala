@@ -28,6 +28,6 @@ object MigrateFrom {
 
   def parse(s: String): Option[MigrateFrom] = s match {
     case "0.5.0" => Some(`0.5.0`)
-    case _ => None
+    case _       => None
   }
 }

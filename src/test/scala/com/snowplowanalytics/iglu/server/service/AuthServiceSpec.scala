@@ -6,7 +6,8 @@ import fs2.Stream
 import org.http4s._
 import org.http4s.rho.swagger.syntax.io.createRhoMiddleware
 
-class AuthServiceSpec extends org.specs2.Specification { def is = s2"""
+class AuthServiceSpec extends org.specs2.Specification {
+  def is = s2"""
   /keygen generates read-only API key pair for master key and JSON payload $e1
   /keygen does not work with deprecated form API $e2
   /keygen doesn't authorize without apikey header $e3
@@ -16,18 +17,20 @@ class AuthServiceSpec extends org.specs2.Specification { def is = s2"""
   def e1 = {
     import model._
 
-    val req = Request(Method.POST,
+    val req = Request(
+      Method.POST,
       Uri.uri("/keygen"),
       headers = Headers.of(Header("apikey", SpecHelpers.masterKey.toString)),
-      body = Stream.emits("""{"vendorPrefix": "me.chuwy"}""").evalMap(c => IO.pure(c.toByte)))
+      body = Stream.emits("""{"vendorPrefix": "me.chuwy"}""").evalMap(c => IO.pure(c.toByte))
+    )
 
     val expected = Permission(
-      Permission.Vendor(List("me", "chuwy"),true),
+      Permission.Vendor(List("me", "chuwy"), true),
       Some(Permission.SchemaAction.Read),
       Set()
     )
 
-    val response = AuthServiceSpec.state(List(req))
+    val response   = AuthServiceSpec.state(List(req))
     val (_, state) = response.unsafeRunSync()
     state.permission must haveValues(expected)
   }
@@ -35,47 +38,52 @@ class AuthServiceSpec extends org.specs2.Specification { def is = s2"""
   def e2 = {
     import model._
 
-    val req = Request(Method.POST,
+    val req = Request(
+      Method.POST,
       Uri.uri("/keygen"),
       headers = Headers.of(Header("apikey", SpecHelpers.masterKey.toString)),
       body = Stream.emits("""vendor_prefix=ru.chuwy""").evalMap(c => IO.pure(c.toByte))
     ).withContentType(headers.`Content-Type`(MediaType.application.`x-www-form-urlencoded`))
 
     val expected = Permission(
-      Permission.Vendor(List("ru", "chuwy"),true),
+      Permission.Vendor(List("ru", "chuwy"), true),
       Some(Permission.SchemaAction.Read),
       Set()
     )
 
-    val response = AuthServiceSpec.state(List(req))
+    val response   = AuthServiceSpec.state(List(req))
     val (_, state) = response.unsafeRunSync()
-    state.permission must not haveValues(expected)
+    (state.permission must not).haveValues(expected)
   }
 
   def e3 = {
-    val req = Request(Method.POST,
+    val req = Request(
+      Method.POST,
       Uri.uri("/keygen"),
-      body = Stream.emits("""{"vendorPrefix": "me.chuwy"}""").evalMap(c => IO.pure(c.toByte)))
+      body = Stream.emits("""{"vendorPrefix": "me.chuwy"}""").evalMap(c => IO.pure(c.toByte))
+    )
 
-    val response = AuthServiceSpec.state(List(req))
+    val response           = AuthServiceSpec.state(List(req))
     val (responses, state) = response.unsafeRunSync()
     val stateHaventChanged = state must beEqualTo(SpecHelpers.exampleState)
-    val unauthorized = responses.map(_.status) must beEqualTo(List(Status.Forbidden))
+    val unauthorized       = responses.map(_.status) must beEqualTo(List(Status.Forbidden))
 
-    stateHaventChanged and unauthorized
+    stateHaventChanged.and(unauthorized)
   }
 
   def e4 = {
-    val req = Request[IO](Method.DELETE,
+    val req = Request[IO](
+      Method.DELETE,
       Uri.uri("/keygen").withQueryParam("key", SpecHelpers.readKey.toString),
-      headers = Headers.of(Header("apikey", SpecHelpers.masterKey.toString)))
+      headers = Headers.of(Header("apikey", SpecHelpers.masterKey.toString))
+    )
 
-    val response = AuthServiceSpec.state(List(req))
+    val response           = AuthServiceSpec.state(List(req))
     val (responses, state) = response.unsafeRunSync()
-    val nokey = state.permission must not haveKey(SpecHelpers.readKey)
-    val deletedResponse = responses.map(_.status) must beEqualTo(List(Status.Ok))
+    val nokey              = (state.permission must not).haveKey(SpecHelpers.readKey)
+    val deletedResponse    = responses.map(_.status) must beEqualTo(List(Status.Ok))
 
-    nokey and deletedResponse
+    nokey.and(deletedResponse)
   }
 }
 
