@@ -30,7 +30,7 @@ import doobie.implicits._
 import doobie.postgres.implicits._
 import doobie.postgres.circe.json.implicits._
 
-import io.chrisdavenport.log4cats.Logger
+import org.typelevel.log4cats.Logger
 
 import com.snowplowanalytics.iglu.core.{ SchemaMap, SchemaVer }
 import com.snowplowanalytics.iglu.server.model.{ Permission, Schema, SchemaDraft }
