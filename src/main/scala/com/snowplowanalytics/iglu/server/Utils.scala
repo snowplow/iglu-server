@@ -14,33 +14,15 @@
  */
 package com.snowplowanalytics.iglu.server
 
-import org.json4s.JValue
-import org.json4s.jackson.JsonMethods.{ compact, parse => parseJson4s }
-
-import io.circe.{Encoder, Json}
+import io.circe.Encoder
 import io.circe.syntax._
-import io.circe.jawn.parse
 
 import fs2.{ Stream, text }
 
 import com.snowplowanalytics.iglu.core.{SchemaKey, SchemaMap, SchemaVer}
-import com.snowplowanalytics.iglu.schemaddl.jsonschema.Schema
-import com.snowplowanalytics.iglu.schemaddl.jsonschema.json4s.implicits._
 
 
 object Utils {
-
-
-  // TODO: factor out json4s from Iglu entirely
-  implicit class DowngradeJson(json: Json) {
-    def fromCirce: JValue = parseJson4s(json.noSpaces)
-  }
-
-  implicit class UpgradeSchema(schema: Schema) {
-    def toCirce: Json =
-      parse(compact(Schema.normalize(schema)))
-        .getOrElse(throw new RuntimeException("Unexpected JSON conversion exception"))
-  }
 
   def toSchemaMap(schemaKey: SchemaKey): SchemaMap =
     SchemaMap(schemaKey.vendor, schemaKey.name, schemaKey.format, schemaKey.version.asInstanceOf[SchemaVer.Full])
