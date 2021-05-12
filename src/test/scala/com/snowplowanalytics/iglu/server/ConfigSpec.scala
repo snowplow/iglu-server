@@ -59,7 +59,7 @@ class ConfigSpec extends org.specs2.Specification { def is = s2"""
     val result = Config
       .serverCommand.parse(input.split(" ").toList)
       .leftMap(_.toString)
-      .flatMap(_.read.unsafeRunSync())
+      .flatMap(_.read)
     result must beRight(expected)
   }
 
@@ -71,7 +71,7 @@ class ConfigSpec extends org.specs2.Specification { def is = s2"""
     val result = Config
       .serverCommand.parse(input.split(" ").toList)
       .leftMap(_.toString)
-      .flatMap(_.read.unsafeRunSync())
+      .flatMap(_.read)
     result must beRight(expected)
   }
 
@@ -152,7 +152,7 @@ class ConfigSpec extends org.specs2.Specification { def is = s2"""
     val result = Config
       .serverCommand.parse(input.split(" ").toList)
       .leftMap(_.toString)
-      .flatMap(_.read.unsafeRunSync())
+      .flatMap(_.read)
     result must beRight(expected)
 
   }
