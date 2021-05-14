@@ -57,6 +57,7 @@ lazy val root = (project in file("."))
   .settings(BuildSettings.dockerSettings)
   .enablePlugins(JavaAppPackaging)
   .enablePlugins(BuildInfoPlugin)
+  .enablePlugins(DockerPlugin)
   .settings(
     buildInfoKeys := Seq[BuildInfoKey](
       organization, name, version,
