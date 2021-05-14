@@ -39,7 +39,7 @@ import org.http4s.syntax.string._
 import org.http4s.rho.{AuthedContext, RhoMiddleware}
 import org.http4s.rho.bits.PathAST.{PathMatch, TypedPath}
 import org.http4s.rho.swagger.syntax.{io => ioSwagger}
-import org.http4s.rho.swagger.models.{ApiKeyAuthDefinition, In, Info}
+import org.http4s.rho.swagger.models.{ApiKeyAuthDefinition, In, Info, SecurityRequirement}
 import org.http4s.rho.swagger.SwaggerMetadata
 
 import doobie.implicits._
@@ -80,7 +80,8 @@ object Server {
       swaggerMetadata = SwaggerMetadata(
         apiInfo             = Info(title = "Iglu Server API", version = version),
         basePath            = Some(base),
-        securityDefinitions = Map("Iglu API key" -> ApiKeyAuthDefinition("apikey", In.HEADER))
+        securityDefinitions = Map("Iglu API key" -> ApiKeyAuthDefinition("apikey", In.HEADER)),
+        security            = List(SecurityRequirement("Iglu API key", Nil))
       ),
       swaggerFormats = Swagger.Formats
     )
