@@ -18,7 +18,7 @@ import cats.data.EitherT
 import cats.effect._
 import cats.syntax.either._
 
-object Main extends SafeIOApp {
+object Main extends IOApp {
 
   def run(args: List[String]) = {
     val cli = for {
