@@ -285,7 +285,9 @@ class ValidationServiceSpec extends org.specs2.Specification {
 object ValidationServiceSpec {
 
   def request(reqs: List[Request[IO]]) =
-    SpecHelpers.state(storage => ValidationService.asRoutes(storage, SpecHelpers.ctx, createRhoMiddleware()))(reqs)
+    SpecHelpers.state(storage => ValidationService.asRoutes(false)(storage, SpecHelpers.ctx, createRhoMiddleware()))(
+      reqs
+    )
 
   def sendRequest(req: Request[IO]) =
     request(List(req)).flatMap { case (responses, _) => responses.last.as[Json] }.unsafeRunSync()

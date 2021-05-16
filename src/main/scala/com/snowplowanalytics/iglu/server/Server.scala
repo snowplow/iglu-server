@@ -121,7 +121,7 @@ object Server {
       "/api/meta"       -> MetaService.asRoutes(debug, patchesAllowed),
       "/api/schemas"    -> SchemaService.asRoutes(patchesAllowed, webhook),
       "/api/auth"       -> AuthService.asRoutes,
-      "/api/validation" -> ValidationService.asRoutes,
+      "/api/validation" -> ValidationService.asRoutes(patchesAllowed),
       "/api/drafts"     -> DraftService.asRoutes
     )
 

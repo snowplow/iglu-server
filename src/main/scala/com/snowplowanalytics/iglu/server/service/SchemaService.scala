@@ -59,7 +59,7 @@ class SchemaService[F[+_]: Sync](
   val schemaOrJson = jsonOf[F, SchemaBody]
   val schema       = jsonOf[F, SelfDescribingSchema[Json]]
 
-  private val validationService = new ValidationService[F](swagger, ctx, db)
+  private val validationService = new ValidationService[F](swagger, ctx, db, patchesAllowed)
 
   "Get a particular schema by its Iglu URI" **
     GET / 'vendor / 'name / 'format / version +? reprCanonical >>> ctx.auth |>> getSchema _
@@ -86,9 +86,9 @@ class SchemaService[F[+_]: Sync](
     POST +? isPublic >>> ctx.auth ^ schema |>> publishSchema _
 
   "Schema validation endpoint (deprecated)" **
-    POST / "validate" / 'vendor / 'name / "jsonschema" / 'version ^ jsonDecoder[F] |>> {
-    (_: String, _: String, _: String, json: Json) =>
-      validationService.validateSchema(Schema.Format.Jsonschema, json)
+    POST / "validate" / 'vendor / 'name / "jsonschema" / 'version >>> ctx.auth ^ jsonDecoder[F] |>> {
+    (_: String, _: String, _: String, permission: Permission, json: Json) =>
+      validationService.validateSchema(Schema.Format.Jsonschema, permission, json)
   }
 
   def getSchema(
