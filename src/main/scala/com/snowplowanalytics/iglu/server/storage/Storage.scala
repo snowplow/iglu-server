@@ -118,7 +118,6 @@ object Storage {
           password,
           driver,
           _,
-          _,
           Config.StorageConfig.ConnectionPool.NoPool(ec)
           ) =>
         val url = s"jdbc:postgresql://$host:$port/$name"
@@ -134,7 +133,6 @@ object Storage {
             password,
             driver,
             _,
-            _,
             pool: Config.StorageConfig.ConnectionPool.Hikari
           ) =>
         val url = s"jdbc:postgresql://$host:$port/$name"
@@ -149,8 +147,8 @@ object Storage {
 
                 ds.setMaximumPoolSize(p.maximumPoolSize)
                 pool.connectionTimeout.foreach(t => ds.setConnectionTimeout(t.toLong))
-                pool.maxLifetime.foreach(t       => ds.setMaxLifetime(t.toLong))
-                pool.minimumIdle.foreach(t       => ds.setMinimumIdle(t))
+                pool.maxLifetime.foreach(t => ds.setMaxLifetime(t.toLong))
+                pool.minimumIdle.foreach(t => ds.setMinimumIdle(t))
               }
             }
           }
