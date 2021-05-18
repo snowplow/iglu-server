@@ -69,7 +69,8 @@ class ConfigSpec extends org.specs2.Specification {
           Webhook.SchemaPublished(uri"https://example.com/endpoint", Some(List.empty)),
           Webhook.SchemaPublished(uri"https://example2.com/endpoint", Some(List("com", "org.acme", "org.snowplow")))
         )
-      )
+      ),
+      Some(Config.Swagger(Some("/custom/prefix")))
     )
     val result = Config.serverCommand.parse(input.split(" ").toList).leftMap(_.toString).flatMap(_.read)
     result must beRight(expected)
@@ -84,6 +85,7 @@ class ConfigSpec extends org.specs2.Specification {
         Config.StorageConfig.Dummy,
         Config.Http("0.0.0.0", 8080, None, Config.ThreadPool.Fixed(2)),
         Some(true),
+        None,
         None,
         None
       )
@@ -114,7 +116,8 @@ class ConfigSpec extends org.specs2.Specification {
           Webhook.SchemaPublished(uri"https://example.com/endpoint", Some(List.empty)),
           Webhook.SchemaPublished(uri"https://example2.com/endpoint", Some(List("com", "org.acme", "org.snowplow")))
         )
-      )
+      ),
+      Some(Config.Swagger(Some("/custom/prefix")))
     )
 
     val expected = json"""{
@@ -161,7 +164,10 @@ class ConfigSpec extends org.specs2.Specification {
             ]
           }
         }
-      ]
+      ],
+      "swagger": {
+        "baseUrl": "/custom/prefix"
+      }
     }"""
 
     input.asJson must beEqualTo(expected)
@@ -188,6 +194,7 @@ class ConfigSpec extends org.specs2.Specification {
         ),
       Config.Http("0.0.0.0", 8080, None, Config.ThreadPool.Fixed(4)),
       Some(false),
+      None,
       None,
       None
     )
