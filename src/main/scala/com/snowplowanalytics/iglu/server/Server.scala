@@ -191,7 +191,7 @@ object Server {
 
   def setup(config: Config, migrate: Option[MigrateFrom])(implicit cs: ContextShift[IO]): IO[ExitCode] =
     config.database match {
-      case pg @ Config.StorageConfig.Postgres(_, _, dbname, _, _, _, _, _, _) =>
+      case pg @ Config.StorageConfig.Postgres(_, _, dbname, _, _, _, _, _) =>
         val xa = getTransactor(pg)
         val action = migrate match {
           case Some(migration) =>
