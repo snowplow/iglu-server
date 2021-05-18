@@ -100,7 +100,6 @@ object Storage {
           password,
           driver,
           _,
-          _,
           Config.StorageConfig.ConnectionPool.NoPool(ec)
           ) =>
         val url = s"jdbc:postgresql://$host:$port/$name"
@@ -115,7 +114,6 @@ object Storage {
             username,
             password,
             driver,
-            _,
             _,
             pool: Config.StorageConfig.ConnectionPool.Hikari
           ) =>

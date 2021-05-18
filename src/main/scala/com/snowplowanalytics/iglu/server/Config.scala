@@ -166,7 +166,6 @@ object Config {
       username: String,
       password: String,
       driver: String,
-      connectThreads: Option[Int],
       maxPoolSize: Option[Int], // deprecated
       pool: ConnectionPool = ConnectionPool.NoPool(ThreadPool.Cached)
     ) extends StorageConfig {
@@ -179,14 +178,13 @@ object Config {
     }
 
     val postgresReader: ConfigReader[Postgres] =
-      ConfigReader.forProduct9(
+      ConfigReader.forProduct8(
         "host",
         "port",
         "dbname",
         "username",
         "password",
         "driver",
-        "connectThreads",
         "maxPoolSize",
         "pool"
       )(StorageConfig.Postgres.apply)
