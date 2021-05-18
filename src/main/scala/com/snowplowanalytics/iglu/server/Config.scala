@@ -42,13 +42,15 @@ import generated.BuildInfo.version
   * @param patchesAllowed If true, schemas sent to the /api/schemas endpoint will overwrite existing ones rather than
   *                       be skipped if a schema with the same key already exists
   * @param webhooks       List of webhooks triggered by specific actions or endpoints
+  * @param swagger        Configures the swagger api documentation
   */
 case class Config(
   database: Config.StorageConfig,
   repoServer: Config.Http,
   debug: Option[Boolean],
   patchesAllowed: Option[Boolean],
-  webhooks: Option[List[Webhook]]
+  webhooks: Option[List[Webhook]],
+  swagger: Option[Config.Swagger]
 )
 
 object Config {
@@ -289,4 +291,13 @@ object Config {
 
   val serverCommand =
     Command[ServerCommand](generated.BuildInfo.name, generated.BuildInfo.version)(runCommand.orElse(setupCommand))
+
+  case class Swagger(baseUrl: Option[String])
+
+  object Swagger {
+    implicit val swaggerReader: ConfigReader[Swagger] = ConfigReader.forProduct1("baseUrl")(Swagger.apply)
+
+    implicit val swaggerEncoder: Encoder[Swagger] =
+      deriveEncoder[Swagger]
+  }
 }

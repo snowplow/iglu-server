@@ -73,13 +73,13 @@ object Server {
       .withBodyStream(Utils.toBytes(IgluResponse.EndpointNotFound: IgluResponse))
       .withContentType(`Content-Type`(MediaType.application.json))
 
-  def addSwagger(storage: Storage[IO])(service: (String, RoutesConstructor)) = {
+  def addSwagger(storage: Storage[IO], config: Option[Config.Swagger])(service: (String, RoutesConstructor)) = {
     val (base, constructor) = service
     val swagger = ioSwagger.createRhoMiddleware(
       jsonApiPath = TypedPath(PathMatch("swagger.json")),
       swaggerMetadata = SwaggerMetadata(
         apiInfo             = Info(title = "Iglu Server API", version = version),
-        basePath            = Some(base),
+        basePath            = Some(config.flatMap(_.baseUrl).getOrElse("").stripSuffix("/") ++ base),
         securityDefinitions = Map("Iglu API key" -> ApiKeyAuthDefinition("apikey", In.HEADER)),
         security            = List(SecurityRequirement("Iglu API key", Nil))
       ),
@@ -95,12 +95,13 @@ object Server {
     patchesAllowed: Boolean,
     webhook: Webhook.WebhookClient[IO],
     cache: CachingMiddleware.ResponseCache[IO],
+    swaggerConfig: Option[Config.Swagger],
     blocker: Blocker
   )(
     implicit
     cs: ContextShift[IO]
   ): HttpApp[IO] = {
-    val serverRoutes = httpRoutes(storage, debug, patchesAllowed, webhook, cache, blocker)
+    val serverRoutes = httpRoutes(storage, debug, patchesAllowed, webhook, cache, swaggerConfig, blocker)
     Kleisli[IO, Request[IO], Response[IO]](req => Router(serverRoutes: _*).run(req).getOrElse(NotFound))
   }
 
@@ -110,6 +111,7 @@ object Server {
     patchesAllowed: Boolean,
     webhook: Webhook.WebhookClient[IO],
     cache: CachingMiddleware.ResponseCache[IO],
+    swaggerConfig: Option[Config.Swagger],
     blocker: Blocker
   )(
     implicit
@@ -125,7 +127,7 @@ object Server {
 
     val debugRoute  = "/api/debug" -> DebugService.asRoutes(storage, ioSwagger.createRhoMiddleware())
     val staticRoute = "/static" -> StaticService.routes(blocker)
-    val routes      = staticRoute :: services.map(addSwagger(storage))
+    val routes      = staticRoute :: services.map(addSwagger(storage, swaggerConfig))
     val corsConfig = CORSConfig(
       anyOrigin        = true,
       anyMethod        = false,
@@ -179,6 +181,7 @@ object Server {
             config.patchesAllowed.getOrElse(false),
             webhookClient,
             cache,
+            config.swagger,
             blocker
           )
         )
