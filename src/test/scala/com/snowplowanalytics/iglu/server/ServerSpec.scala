@@ -148,10 +148,21 @@ object ServerSpec {
 
   val dbPoolConfig = Config.StorageConfig.ConnectionPool.Hikari(None, None, None, None)
   val httpConfig   = Config.Http("0.0.0.0", 8080, None, Config.ThreadPool.Cached)
-  val storageConfig = Config
-    .StorageConfig
-    .Postgres("localhost", 5432, "testdb", "postgres", "iglusecret", "org.postgresql.Driver", None, None, dbPoolConfig)
-  val config = Config(storageConfig, httpConfig, Some(false), Some(true), None)
+  val storageConfig =
+    Config
+      .StorageConfig
+      .Postgres(
+        "localhost",
+        5432,
+        "testdb",
+        "postgres",
+        "iglusecret",
+        "org.postgresql.Driver",
+        None,
+        None,
+        dbPoolConfig
+      )
+  val config = Config(storageConfig, httpConfig, Some(false), Some(true), None, None)
 
   private val runServer = Server.buildServer(config).flatMap(_.resource)
   private val client    = BlazeClientBuilder[IO](global).resource
