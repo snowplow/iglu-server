@@ -57,7 +57,6 @@ class ConfigSpec extends org.specs2.Specification {
           "sp_user",
           "sp_password",
           "org.postgresql.Driver",
-          None,
           Some(5),
           pool
         ),
@@ -104,7 +103,6 @@ class ConfigSpec extends org.specs2.Specification {
           "sp_user",
           "sp_password",
           "org.postgresql.Driver",
-          None,
           Some(5),
           Config.StorageConfig.ConnectionPool.NoPool(Config.ThreadPool.Fixed(2))
         ),
@@ -122,7 +120,6 @@ class ConfigSpec extends org.specs2.Specification {
 
     val expected = json"""{
       "database" : {
-        "connectThreads" : null,
         "username" : "sp_user",
         "host" : "postgres",
         "dbname" : "igludb",
@@ -188,7 +185,6 @@ class ConfigSpec extends org.specs2.Specification {
           "sp_user",
           "sp_password",
           "org.postgresql.Driver",
-          None,
           None,
           pool
         ),
