@@ -21,13 +21,13 @@ services:
   iglu-server:
     container_name: iglu-server
     image: snowplow/iglu-server:${IGLU_VERSION:-0.6.2}
-    command: --config /snowplow/config/application.conf
+    command: --config /snowplow/config/config.hocon
     depends_on:
       - postgres
     ports:
       - "8080:8080"
     volumes:
-      - "../application.conf:/snowplow/config/application.conf"
+      - "../config.hocon.sample:/snowplow/config/config.hocon"
     logging:
       options:
         max-size: 1G
