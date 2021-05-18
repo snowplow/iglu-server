@@ -18,11 +18,11 @@ package service
 import java.util.UUID
 
 import cats.implicits._
-import cats.data.EitherT
 import cats.effect.{IO, Sync}
 
 import io.circe._
 import io.circe.syntax._
+import io.circe.generic.semiauto._
 
 import org.http4s._
 import org.http4s.circe._
@@ -51,24 +51,19 @@ class AuthService[F[+_]: Sync](
     DELETE / "keygen" +? apikey >>> ctx.auth |>> deleteKey _
 
   "Route to generate new keys" **
-    POST / "keygen" >>> ctx.auth |>> { (req: Request[F], authInfo: Permission) =>
-    if (authInfo.key.contains(Permission.KeyAction.Create))
-      for {
-        vendorE <- vendorFromBody(req).value
-        response <- vendorE match {
-          case Right(vendor) if authInfo.canCreatePermission(vendor.asString) =>
-            for {
-              keyPair    <- Permission.KeyPair.generate[F]
-              _          <- db.addKeyPair(keyPair, vendor)
-              okResponse <- Ok(keyPair.asJson)
-            } yield okResponse
-          case Right(vendor) =>
-            Forbidden(IgluResponse.Message(s"Cannot create ${vendor.show} using your permissions"): IgluResponse)
-          case Left(error) =>
-            BadRequest(IgluResponse.Message(s"Cannot decode vendorPrefix: ${error.message}"): IgluResponse)
-        }
-      } yield response
-    else Forbidden(IgluResponse.Message("Not sufficient privileges to create keys"): IgluResponse)
+    POST / "keygen" >>> ctx.auth ^ jsonOf[F, GenerateKey] |>> { (authInfo: Permission, gk: GenerateKey) =>
+    if (authInfo.key.contains(Permission.KeyAction.Create)) {
+      val vendorPrefix = Permission.Vendor.parse(gk.vendorPrefix)
+      if (authInfo.canCreatePermission(vendorPrefix.asString)) {
+        for {
+          keyPair    <- Permission.KeyPair.generate[F]
+          _          <- db.addKeyPair(keyPair, vendorPrefix)
+          okResponse <- Ok(keyPair.asJson)
+        } yield okResponse
+      } else {
+        Forbidden(IgluResponse.Message(s"Cannot create ${vendorPrefix.show} using your permissions"): IgluResponse)
+      }
+    } else Forbidden(IgluResponse.Message("Not sufficient privileges to create keys"): IgluResponse)
   }
 
   def deleteKey(key: UUID, permission: Permission) =
@@ -79,12 +74,9 @@ class AuthService[F[+_]: Sync](
 
 object AuthService {
 
-  case class GenerateKey(vendorPrefix: Permission.Vendor)
+  case class GenerateKey(vendorPrefix: String)
 
-  implicit val schemaGenerateReq: Decoder[GenerateKey] =
-    Decoder.instance { cursor =>
-      cursor.downField("vendorPrefix").as[String].map(Permission.Vendor.parse).map(GenerateKey.apply)
-    }
+  implicit val schemaGenerateReq: Decoder[GenerateKey] = deriveDecoder[GenerateKey]
 
   def asRoutes(
     db: Storage[IO],
@@ -94,16 +86,4 @@ object AuthService {
     val service = new AuthService(swaggerSyntax, ctx, db).toRoutes(rhoMiddleware)
     PermissionMiddleware.wrapService(db, ctx, service)
   }
-
-  def vendorFromBody[F[_]: Sync](request: Request[F]): EitherT[F, DecodeFailure, Permission.Vendor] =
-    request.attemptAs[Json].flatMap { json =>
-      EitherT.fromEither[F](
-        json
-          .as[GenerateKey]
-          .fold(
-            e => InvalidMessageBodyFailure(e.show).asLeft[Permission.Vendor],
-            p => p.vendorPrefix.asRight[DecodeFailure]
-          )
-      )
-    }
 }
