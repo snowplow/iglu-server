@@ -9,7 +9,26 @@ Launch the stack with:
 
 ```bash
 docker-compose up -d
+
 ```
+
+### API keys
+
+Iglu server must be configured with a master api key, which has permissions to add other api keys, and to read/write any schema.
+By default, the docker-compose file uses the following api key:
+
+```
+5fb4713d-73ad-4163-93a9-2b82f0177c5b
+```
+
+You can override this API key by setting the `IGLU_MASTER_API_KEY` environment variable:
+
+```bash
+IGLU_MASTER_API_KEY=35cba2e2-7f16-422d-b780-e43b84270fcc docker-compose up -d
+
+```
+
+Or alternatively edit the `masterApiKey` field in [the sample hocon file](../config.hocon.sample).
 
 ### Initialise the database
 
@@ -17,18 +36,6 @@ This is a one-off command that you run to initialise the database tables when yo
 
 ```bash
 docker-compose run iglu-server setup --config /snowplow/config/config.hocon
-```
-
-### Set the API key
-
-The easiest way to set an API key is to `exec` into the postgres container:
-
-```bash
-docker-compose exec postgres psql -U postgres igludb -c "$(cat << 'EOH'
-  INSERT INTO iglu_permissions(apikey, vendor, wildcard, schema_action, key_action)
-  VALUES ('5fb4713d-73ad-4163-93a9-2b82f0177c5b', '', 'TRUE', 'CREATE_VENDOR'::schema_action, '{"CREATE", "DELETE"}'::key_action[])
-EOH
-)"
 ```
 
 ### Using your iglu server

@@ -22,6 +22,8 @@ services:
     container_name: iglu-server
     image: snowplow/iglu-server:${IGLU_VERSION:-0.6.2}
     command: --config /snowplow/config/config.hocon
+    environment:
+      IGLU_MASTER_API_KEY: ${IGLU_MASTER_API_KEY:-5fb4713d-73ad-4163-93a9-2b82f0177c5b}
     depends_on:
       - postgres
     ports:
