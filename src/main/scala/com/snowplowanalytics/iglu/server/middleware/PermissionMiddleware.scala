@@ -20,9 +20,8 @@ import java.util.UUID
 import cats.Applicative
 import cats.data.{Kleisli, OptionT}
 import cats.effect.Sync
-import cats.syntax.applicative._
 import cats.syntax.either._
-import cats.syntax.flatMap._
+import cats.syntax.eq._
 
 import org.http4s.{HttpRoutes, Request, Response, Status}
 import org.http4s.server.AuthMiddleware
@@ -44,9 +43,9 @@ object PermissionMiddleware {
   val ApiKey = "apikey"
 
   /** Build an authentication middleware on top of storage */
-  def apply[F[_]: Sync](storage: Storage[F]): AuthMiddleware[F, Permission] =
+  def apply[F[_]: Sync](storage: Storage[F], master: Option[UUID]): AuthMiddleware[F, Permission] =
     AuthMiddleware.noSpider(
-      Kleisli(request => auth[F](storage)(request)),
+      Kleisli(request => auth[F](storage, master)(request)),
       badRequestHandler
     ) // TODO: SchemaServiceSpec.e6
 
@@ -58,21 +57,27 @@ object PermissionMiddleware {
 
   def wrapService[F[_]: Sync](
     db: Storage[F],
+    master: Option[UUID],
     ctx: AuthedContext[F, Permission],
     service: HttpRoutes[F]
   ): HttpRoutes[F] =
-    PermissionMiddleware[F](db).apply(ctx.toService(service))
+    PermissionMiddleware[F](db, master).apply(ctx.toService(service))
 
   private val SchemaNotFoundBody = Utils.toBytes(IgluResponse.SchemaNotFound: IgluResponse)
   private val PermissionsIssue   = Utils.toBytes(IgluResponse.Message("Not enough permissions"): IgluResponse)
 
   /** Authenticate request against storage */
-  private def auth[F[_]: Sync](storage: Storage[F])(request: Request[F]): OptionT[F, Permission] =
+  private def auth[F[_]: Sync](storage: Storage[F], master: Option[UUID])(request: Request[F]): OptionT[F, Permission] =
     getApiKey(request) match {
       case None =>
         OptionT.pure(Permission.Noop)
       case Some(Right(apiKey)) =>
-        OptionT(apiKey.pure[F].flatMap(storage.getPermission))
+        master match {
+          case Some(masterKey) if masterKey === apiKey =>
+            OptionT.pure(Permission.Master)
+          case _ =>
+            OptionT(storage.getPermission(apiKey))
+        }
       case Some(_) =>
         OptionT.none
     }
