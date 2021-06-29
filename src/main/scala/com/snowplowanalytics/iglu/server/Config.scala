@@ -15,6 +15,7 @@
 package com.snowplowanalytics.iglu.server
 
 import java.nio.file.Path
+import java.util.UUID
 
 import cats.implicits._
 
@@ -43,6 +44,7 @@ import generated.BuildInfo.version
   *                       be skipped if a schema with the same key already exists
   * @param webhooks       List of webhooks triggered by specific actions or endpoints
   * @param swagger        Configures the swagger api documentation
+  * @param masterApiKey   Add an api key with permission to read/write any schema, and manage api keys.
   */
 case class Config(
   database: Config.StorageConfig,
@@ -50,7 +52,8 @@ case class Config(
   debug: Option[Boolean],
   patchesAllowed: Option[Boolean],
   webhooks: Option[List[Webhook]],
-  swagger: Option[Config.Swagger]
+  swagger: Option[Config.Swagger],
+  masterApiKey: Option[UUID]
 )
 
 object Config {
@@ -262,7 +265,14 @@ object Config {
   implicit val pureConfigReader: ConfigReader[Config] = deriveReader[Config]
 
   implicit val mainConfigCirceEncoder: Encoder[Config] =
-    deriveEncoder[Config]
+    deriveEncoder[Config].mapJson { json =>
+      json.mapObject { o =>
+        JsonObject.fromMap(o.toMap.map {
+          case ("masterApiKey", v) if !v.isNull => ("masterApiKey", Json.fromString("******"))
+          case (k, v) => (k, v)
+        })
+      }
+    }
 
   sealed trait ServerCommand {
     def config: Path

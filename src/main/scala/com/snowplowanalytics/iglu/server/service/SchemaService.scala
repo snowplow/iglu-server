@@ -15,6 +15,8 @@
 package com.snowplowanalytics.iglu.server
 package service
 
+import java.util.UUID
+
 import cats.effect._
 import cats.implicits._
 
@@ -235,11 +237,12 @@ object SchemaService {
     webhook: Webhook.WebhookClient[IO]
   )(
     db: Storage[IO],
+    masterKey: Option[UUID],
     ctx: AuthedContext[IO, Permission],
     rhoMiddleware: RhoMiddleware[IO]
   ): HttpRoutes[IO] = {
     val service = new SchemaService(swaggerSyntax, ctx, db, patchesAllowed, webhook).toRoutes(rhoMiddleware)
-    PermissionMiddleware.wrapService(db, ctx, service)
+    PermissionMiddleware.wrapService(db, masterKey, ctx, service)
   }
 
   def isSchemaAllowed[F[_]: Sync](

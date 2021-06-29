@@ -14,6 +14,8 @@
  */
 package com.snowplowanalytics.iglu.server.service
 
+import java.util.UUID
+
 import cats.effect._
 import cats.implicits._
 
@@ -93,11 +95,12 @@ object DraftService {
 
   def asRoutes(
     db: Storage[IO],
+    masterKey: Option[UUID],
     ctx: AuthedContext[IO, Permission],
     rhoMiddleware: RhoMiddleware[IO]
   ): HttpRoutes[IO] = {
     val service = new DraftService(io, db, ctx).toRoutes(rhoMiddleware)
-    PermissionMiddleware.wrapService(db, ctx, service)
+    PermissionMiddleware.wrapService(db, masterKey, ctx, service)
   }
 
   /** Extract schemas from database, available for particular permission */

@@ -14,6 +14,8 @@
  */
 package com.snowplowanalytics.iglu.server.service
 
+import java.util.UUID
+
 import cats.effect.{IO, Sync}
 import cats.instances.list._
 import cats.syntax.functor._
@@ -91,10 +93,11 @@ object MetaService {
     patchesAllowed: Boolean
   )(
     db: Storage[IO],
+    masterKey: Option[UUID],
     ctx: AuthedContext[IO, Permission],
     rhoMiddleware: RhoMiddleware[IO]
   ): HttpRoutes[IO] = {
     val service = new MetaService(debug, patchesAllowed, swaggerSyntax, ctx, db).toRoutes(rhoMiddleware)
-    PermissionMiddleware.wrapService(db, ctx, service)
+    PermissionMiddleware.wrapService(db, masterKey, ctx, service)
   }
 }

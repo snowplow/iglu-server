@@ -14,6 +14,8 @@
  */
 package com.snowplowanalytics.iglu.server.service
 
+import java.util.UUID
+
 import io.circe.Json
 
 import org.http4s.HttpRoutes
@@ -100,11 +102,12 @@ object ValidationService {
 
   def asRoutes(
     db: Storage[IO],
+    masterKey: Option[UUID],
     ctx: AuthedContext[IO, Permission],
     rhoMiddleware: RhoMiddleware[IO]
   ): HttpRoutes[IO] = {
     val service = new ValidationService[IO](io, ctx, db).toRoutes(rhoMiddleware)
-    PermissionMiddleware.wrapService(db, ctx, service)
+    PermissionMiddleware.wrapService(db, masterKey, ctx, service)
   }
 
   type LintReport[A] = ValidatedNel[Message, A]
