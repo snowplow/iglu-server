@@ -440,6 +440,7 @@ object SchemaServiceSpec {
       storage <- InMemory.getInMemory[IO](SpecHelpers.exampleState)
       service = SchemaService.asRoutes(patchesAllowed, Webhook.WebhookClient(List(), client))(
         storage,
+        None,
         SpecHelpers.ctx,
         createRhoMiddleware()
       )
@@ -451,6 +452,7 @@ object SchemaServiceSpec {
       storage <- InMemory.getInMemory[IO](SpecHelpers.exampleState)
       service = SchemaService.asRoutes(patchesAllowed, Webhook.WebhookClient(List(), client))(
         storage,
+        None,
         SpecHelpers.ctx,
         createRhoMiddleware()
       )
