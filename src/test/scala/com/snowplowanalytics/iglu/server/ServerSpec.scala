@@ -161,7 +161,7 @@ object ServerSpec {
         None,
         dbPoolConfig
       )
-  val config = Config(storageConfig, httpConfig, Some(false), Some(true), None, None)
+  val config = Config(storageConfig, httpConfig, Some(false), Some(true), None, None, None)
 
   private val runServer = Server.buildServer(config).flatMap(_.resource)
   private val client    = BlazeClientBuilder[IO](global).resource
