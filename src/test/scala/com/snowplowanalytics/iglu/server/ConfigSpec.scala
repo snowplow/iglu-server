@@ -15,6 +15,7 @@
 package com.snowplowanalytics.iglu.server
 
 import java.nio.file.Paths
+import java.util.UUID
 
 import org.http4s.implicits._
 
@@ -60,7 +61,7 @@ class ConfigSpec extends org.specs2.Specification {
           Some(5),
           pool
         ),
-      Config.Http("0.0.0.0", 8080, Some(10), Config.ThreadPool.Global),
+      Config.Http("0.0.0.0", 8080, Some(10), None, Config.ThreadPool.Global),
       Some(true),
       Some(true),
       Some(
@@ -69,7 +70,8 @@ class ConfigSpec extends org.specs2.Specification {
           Webhook.SchemaPublished(uri"https://example2.com/endpoint", Some(List("com", "org.acme", "org.snowplow")))
         )
       ),
-      Some(Config.Swagger(Some("/custom/prefix")))
+      Some(Config.Swagger(Some("/custom/prefix"))),
+      None
     )
     val result = Config.serverCommand.parse(input.split(" ").toList).leftMap(_.toString).flatMap(_.read)
     result must beRight(expected)
@@ -79,14 +81,16 @@ class ConfigSpec extends org.specs2.Specification {
     val config     = getClass.getResource("/valid-dummy-config.conf").toURI
     val configPath = Paths.get(config)
     val input      = s"--config $configPath"
-    val expected = Config(
-      Config.StorageConfig.Dummy,
-      Config.Http("0.0.0.0", 8080, None, Config.ThreadPool.Fixed(2)),
-      Some(true),
-      None,
-      None,
-      None
-    )
+    val expected =
+      Config(
+        Config.StorageConfig.Dummy,
+        Config.Http("0.0.0.0", 8080, None, None, Config.ThreadPool.Fixed(2)),
+        Some(true),
+        None,
+        None,
+        None,
+        None
+      )
     val result = Config.serverCommand.parse(input.split(" ").toList).leftMap(_.toString).flatMap(_.read)
     result must beRight(expected)
   }
@@ -105,7 +109,7 @@ class ConfigSpec extends org.specs2.Specification {
           Some(5),
           Config.StorageConfig.ConnectionPool.NoPool(Config.ThreadPool.Fixed(2))
         ),
-      Config.Http("0.0.0.0", 8080, None, Config.ThreadPool.Global),
+      Config.Http("0.0.0.0", 8080, None, None, Config.ThreadPool.Global),
       Some(true),
       Some(true),
       Some(
@@ -114,7 +118,8 @@ class ConfigSpec extends org.specs2.Specification {
           Webhook.SchemaPublished(uri"https://example2.com/endpoint", Some(List("com", "org.acme", "org.snowplow")))
         )
       ),
-      Some(Config.Swagger(Some("/custom/prefix")))
+      Some(Config.Swagger(Some("/custom/prefix"))),
+      Some(UUID.fromString("a71aa7d9-6cde-40f7-84b1-046d65dedf9e"))
     )
 
     val expected = json"""{
@@ -138,6 +143,7 @@ class ConfigSpec extends org.specs2.Specification {
         "interface" : "0.0.0.0",
         "port" : 8080,
         "idleTimeout": null,
+        "maxConnections": null,
         "threadPool": "global"
       },
       "debug" : true,
@@ -163,7 +169,8 @@ class ConfigSpec extends org.specs2.Specification {
       ],
       "swagger": {
         "baseUrl": "/custom/prefix"
-      }
+      },
+      "masterApiKey": "******"
     }"""
 
     input.asJson must beEqualTo(expected)
@@ -187,8 +194,9 @@ class ConfigSpec extends org.specs2.Specification {
           None,
           pool
         ),
-      Config.Http("0.0.0.0", 8080, None, Config.ThreadPool.Fixed(4)),
+      Config.Http("0.0.0.0", 8080, None, None, Config.ThreadPool.Fixed(4)),
       Some(false),
+      None,
       None,
       None,
       None
