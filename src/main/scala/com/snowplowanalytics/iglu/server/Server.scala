@@ -36,6 +36,7 @@ import org.http4s.server.Router
 import org.http4s.server.blaze.BlazeServerBuilder
 import org.http4s.server.middleware.{AutoSlash, CORS, CORSConfig, Logger}
 import org.http4s.syntax.string._
+import org.http4s.server.{defaults => Http4sDefaults}
 
 import org.http4s.rho.{AuthedContext, RhoMiddleware}
 import org.http4s.rho.bits.PathAST.{PathMatch, TypedPath}
@@ -171,27 +172,24 @@ object Server {
       storage <- Storage.initialize[IO](config.database)
       cache   <- CachingMiddleware.initResponseCache[IO](1000, CacheTtl)
       blocker <- Blocker[IO]
-      builder = BlazeServerBuilder
-        .apply[IO](ExecutionContext.global)
-        .bindHttp(config.repoServer.port, config.repoServer.interface)
-        .withHttpApp(
-          httpApp(
-            storage,
-            config.masterApiKey,
-            config.debug.getOrElse(false),
-            config.patchesAllowed.getOrElse(false),
-            webhookClient,
-            cache,
-            config.swagger,
-            blocker
-          )
+    } yield BlazeServerBuilder
+      .apply[IO](ExecutionContext.global)
+      .bindHttp(config.repoServer.port, config.repoServer.interface)
+      .withHttpApp(
+        httpApp(
+          storage,
+          config.masterApiKey,
+          config.debug.getOrElse(false),
+          config.patchesAllowed.getOrElse(false),
+          webhookClient,
+          cache,
+          config.swagger,
+          blocker
         )
-        .withExecutionContext(httpPool)
-      builderWithIdle = config.repoServer.idleTimeout match {
-        case Some(t) => builder.withIdleTimeout(t.seconds)
-        case None    => builder
-      }
-    } yield builderWithIdle
+      )
+      .withExecutionContext(httpPool)
+      .withIdleTimeout(config.repoServer.idleTimeout.map(_.seconds).getOrElse(Http4sDefaults.IdleTimeout))
+      .withMaxConnections(config.repoServer.maxConnections.getOrElse(Http4sDefaults.MaxConnections))
 
   def run(config: Config)(implicit cs: ContextShift[IO], timer: Timer[IO]): Stream[IO, ExitCode] =
     Stream.resource(buildServer(config)).flatMap(_.serve)

@@ -209,7 +209,13 @@ object Config {
     * @param interface The server's host.
     * @param port The server's port.
     */
-  case class Http(interface: String, port: Int, idleTimeout: Option[Int], threadPool: ThreadPool = ThreadPool.Fixed(4))
+  case class Http(
+    interface: String,
+    port: Int,
+    idleTimeout: Option[Int],
+    maxConnections: Option[Int],
+    threadPool: ThreadPool = ThreadPool.Fixed(4)
+  )
 
   implicit def httpConfigHint =
     ProductHint[Http](ConfigFieldMapping(CamelCase, CamelCase))

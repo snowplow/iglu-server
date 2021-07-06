@@ -61,7 +61,7 @@ class ConfigSpec extends org.specs2.Specification {
           Some(5),
           pool
         ),
-      Config.Http("0.0.0.0", 8080, Some(10), Config.ThreadPool.Global),
+      Config.Http("0.0.0.0", 8080, Some(10), None, Config.ThreadPool.Global),
       Some(true),
       Some(true),
       Some(
@@ -84,7 +84,7 @@ class ConfigSpec extends org.specs2.Specification {
     val expected =
       Config(
         Config.StorageConfig.Dummy,
-        Config.Http("0.0.0.0", 8080, None, Config.ThreadPool.Fixed(2)),
+        Config.Http("0.0.0.0", 8080, None, None, Config.ThreadPool.Fixed(2)),
         Some(true),
         None,
         None,
@@ -109,7 +109,7 @@ class ConfigSpec extends org.specs2.Specification {
           Some(5),
           Config.StorageConfig.ConnectionPool.NoPool(Config.ThreadPool.Fixed(2))
         ),
-      Config.Http("0.0.0.0", 8080, None, Config.ThreadPool.Global),
+      Config.Http("0.0.0.0", 8080, None, None, Config.ThreadPool.Global),
       Some(true),
       Some(true),
       Some(
@@ -143,6 +143,7 @@ class ConfigSpec extends org.specs2.Specification {
         "interface" : "0.0.0.0",
         "port" : 8080,
         "idleTimeout": null,
+        "maxConnections": null,
         "threadPool": "global"
       },
       "debug" : true,
@@ -193,7 +194,7 @@ class ConfigSpec extends org.specs2.Specification {
           None,
           pool
         ),
-      Config.Http("0.0.0.0", 8080, None, Config.ThreadPool.Fixed(4)),
+      Config.Http("0.0.0.0", 8080, None, None, Config.ThreadPool.Fixed(4)),
       Some(false),
       None,
       None,
