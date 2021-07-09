@@ -146,8 +146,11 @@ object ServerSpec {
   implicit val cs: ContextShift[IO] = IO.contextShift(global)
   implicit val timer: Timer[IO]     = IO.timer(global)
 
-  val dbPoolConfig = Config.StorageConfig.ConnectionPool.Hikari(None, None, None, None)
-  val httpConfig   = Config.Http("0.0.0.0", 8080, None, None, Config.ThreadPool.Cached)
+  val dbPoolConfig = Config
+    .StorageConfig
+    .ConnectionPool
+    .Hikari(None, None, None, None, Config.ThreadPool.Cached, Config.ThreadPool.Cached)
+  val httpConfig = Config.Http("0.0.0.0", 8080, None, None, Config.ThreadPool.Cached)
   val storageConfig =
     Config
       .StorageConfig
@@ -161,7 +164,7 @@ object ServerSpec {
         None,
         dbPoolConfig
       )
-  val config = Config(storageConfig, httpConfig, Some(false), Some(true), None, None, None)
+  val config = Config(storageConfig, httpConfig, false, true, Nil, Config.Swagger(""), None)
 
   private val runServer = Server.buildServer(config).flatMap(_.resource)
   private val client    = BlazeClientBuilder[IO](global).resource

@@ -35,7 +35,7 @@ class ConfigSpec extends org.specs2.Specification {
 
   def e1 = {
     val input    = "--config foo.hocon"
-    val expected = Config.ServerCommand.Run(Paths.get("foo.hocon"))
+    val expected = Config.ServerCommand.Run(Some(Paths.get("foo.hocon")))
     val result   = Config.serverCommand.parse(input.split(" ").toList)
     result must beRight(expected)
   }
@@ -62,15 +62,13 @@ class ConfigSpec extends org.specs2.Specification {
           pool
         ),
       Config.Http("0.0.0.0", 8080, Some(10), None, Config.ThreadPool.Global),
-      Some(true),
-      Some(true),
-      Some(
-        List(
-          Webhook.SchemaPublished(uri"https://example.com/endpoint", Some(List.empty)),
-          Webhook.SchemaPublished(uri"https://example2.com/endpoint", Some(List("com", "org.acme", "org.snowplow")))
-        )
+      true,
+      true,
+      List(
+        Webhook.SchemaPublished(uri"https://example.com/endpoint", Some(List.empty)),
+        Webhook.SchemaPublished(uri"https://example2.com/endpoint", Some(List("com", "org.acme", "org.snowplow")))
       ),
-      Some(Config.Swagger(Some("/custom/prefix"))),
+      Config.Swagger("/custom/prefix"),
       None
     )
     val result = Config.serverCommand.parse(input.split(" ").toList).leftMap(_.toString).flatMap(_.read)
@@ -85,10 +83,10 @@ class ConfigSpec extends org.specs2.Specification {
       Config(
         Config.StorageConfig.Dummy,
         Config.Http("0.0.0.0", 8080, None, None, Config.ThreadPool.Fixed(2)),
-        Some(true),
-        None,
-        None,
-        None,
+        true,
+        false,
+        Nil,
+        Config.Swagger(""),
         None
       )
     val result = Config.serverCommand.parse(input.split(" ").toList).leftMap(_.toString).flatMap(_.read)
@@ -110,15 +108,13 @@ class ConfigSpec extends org.specs2.Specification {
           Config.StorageConfig.ConnectionPool.NoPool(Config.ThreadPool.Fixed(2))
         ),
       Config.Http("0.0.0.0", 8080, None, None, Config.ThreadPool.Global),
-      Some(true),
-      Some(true),
-      Some(
-        List(
-          Webhook.SchemaPublished(uri"https://example.com/endpoint", Some(List.empty)),
-          Webhook.SchemaPublished(uri"https://example2.com/endpoint", Some(List("com", "org.acme", "org.snowplow")))
-        )
+      true,
+      true,
+      List(
+        Webhook.SchemaPublished(uri"https://example.com/endpoint", Some(List.empty)),
+        Webhook.SchemaPublished(uri"https://example2.com/endpoint", Some(List("com", "org.acme", "org.snowplow")))
       ),
-      Some(Config.Swagger(Some("/custom/prefix"))),
+      Config.Swagger("/custom/prefix"),
       Some(UUID.fromString("a71aa7d9-6cde-40f7-84b1-046d65dedf9e"))
     )
 
@@ -195,10 +191,10 @@ class ConfigSpec extends org.specs2.Specification {
           pool
         ),
       Config.Http("0.0.0.0", 8080, None, None, Config.ThreadPool.Fixed(4)),
-      Some(false),
-      None,
-      None,
-      None,
+      false,
+      false,
+      Nil,
+      Config.Swagger(""),
       None
     )
     val result = Config.serverCommand.parse(input.split(" ").toList).leftMap(_.toString).flatMap(_.read)
