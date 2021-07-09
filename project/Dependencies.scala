@@ -26,8 +26,8 @@ object Dependencies {
     val Doobie     = "0.13.2"
     val Decline    = "1.4.0"
     val Log4Cats   = "1.3.0"
-    val Circe      = "0.13.0"
-    val CirceJava8 = "0.11.1"
+    val Circe      = "0.14.1"
+    val CirceFs2   = "0.13.0"
     val Refined    = "0.9.24"
     val PureConfig = "0.15.0"
     val SwaggerUi  = "3.48.0"
@@ -51,11 +51,10 @@ object Dependencies {
     "org.http4s"            %% "http4s-dsl"            % V.Http4s,
     "org.http4s"            %% "rho-swagger"           % V.Rho,
     "io.circe"              %% "circe-generic"         % V.Circe,
-    "io.circe"              %% "circe-java8"           % V.CirceJava8,
     "io.circe"              %% "circe-jawn"            % V.Circe,
     "io.circe"              %% "circe-literal"         % V.Circe,
     "io.circe"              %% "circe-refined"         % V.Circe,
-    "io.circe"              %% "circe-fs2"             % V.Circe,
+    "io.circe"              %% "circe-fs2"             % V.CirceFs2,
     "eu.timepit"            %% "refined"               % V.Refined,
     "com.github.pureconfig" %% "pureconfig"            % V.PureConfig,
     "com.github.pureconfig" %% "pureconfig-http4s"     % V.PureConfig,

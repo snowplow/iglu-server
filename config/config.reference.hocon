@@ -1,0 +1,94 @@
+{
+  # Http server settings
+  "repoServer": {
+    "interface": "0.0.0.0"
+    "port": 8080
+
+    # Configure execution context used by BlazeServer for executing Futures.
+    "threadPool": "cached" # use a CachedThreadPool
+    # "threadPool": "global" # the global ExecutionContext
+    # "threadpool": {
+    #   "type": "fixed" # A fixed size thread pool
+    #   "size": 4
+    # }
+
+    # Number of seconds a connection can remain idle before the connection is timed out and disconnected.  Default 60 seconds.
+    "idleTimeout": 60
+
+    # The maximum number of client connections that may be active at any time. Default 1024.
+    "maxConnections": 1024
+  }
+
+  # Required backend storage configuration
+  "database": {
+    # type 'postgres' contains configuration options for the postgres instance the server is using
+    # type 'dummy' is in-memory only storage
+    "type": "postgres"
+
+    # postgres-specific options
+    "host": "postgres"
+    "port": 5432 # optional
+    "dbname": "igludb"
+    "username": "postgres"
+    "password": "iglusecret"
+    "driver": "org.postgresql.Driver" # optional
+
+
+    # Configure a connection pool
+    pool: {
+      # type 'hikari' configures a HikariCP connection pool. This is recommended for production deployments.
+      "type": "hikari"
+      "maximumPoolSize":   5        # optional, maximum number of connections in the pool
+      "connectionTimeout": 30000    # optional, millis
+      "maxLifetime":       1800000  # optional, millis
+      "minimumIdle":       5        # optional, minimum number of idle connections
+
+      # Configure the thread pool used for awaiting connection to the database
+      connectionPool: {
+        "type": "fixed"
+        "size": 4
+      }
+
+      # Configure the thread pool used for blocking JDBC operations
+      "transactionPool": "cached"
+      
+
+      # type 'nopool' is an alternative to 'hikari'. It means no upper bound on the number of connections.
+      # type = "nopool"
+      # Optionally configure execution context used for blocking operations. Default is 'cached'.
+      # threadPool = "cached"
+
+    }
+  }
+
+  # optional configuration for swagger api documentation
+  "swagger": {
+    # optional 'baseUrl': customise the api base url. Helpful for when running iglu-server behind a proxy server.
+    "baseUrl": "/custom/prefix"
+  }
+
+  # Enable additional debug endpoint to output all internal state
+  "debug": true
+
+  # If true, schemas sent to the /api/schemas endpoint will overwrite existing ones rather than
+  # be skipped if a schema with the same key already exists. Optional, default is False.
+  "patchesAllowed": false
+
+  # Optional webhooks configuration
+  "webhooks": {
+    # Enable webhooks that will be called when a schema is published or updated
+    # with a vendor that matches the specified prefixes
+    "schemaPublished": [
+      # {
+      #   uri = "https://example.com/endpoint"
+      # },
+      # {
+      #   uri = "https://example2.com/endpoint",
+      #   vendorPrefixes = ["com", "org.acme", "org.snowplow"]
+      # }
+    ]
+  }
+
+  # Optional. Set a master api key with permission to read/write any schema, and add other api keys.
+  "masterApiKey": ${?IGLU_MASTER_API_KEY}
+}
