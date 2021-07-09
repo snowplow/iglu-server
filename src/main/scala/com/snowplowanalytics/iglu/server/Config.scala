@@ -49,10 +49,10 @@ import generated.BuildInfo.version
 case class Config(
   database: Config.StorageConfig,
   repoServer: Config.Http,
-  debug: Option[Boolean],
-  patchesAllowed: Option[Boolean],
-  webhooks: Option[List[Webhook]],
-  swagger: Option[Config.Swagger],
+  debug: Boolean,
+  patchesAllowed: Boolean,
+  webhooks: List[Webhook],
+  swagger: Config.Swagger,
   masterApiKey: Option[UUID]
 )
 
@@ -105,15 +105,15 @@ object Config {
     /** Frequently used HikariCP settings */
     sealed trait ConnectionPool extends Product with Serializable
     object ConnectionPool {
-      case class NoPool(threadPool: ThreadPool = ThreadPool.Cached) extends ConnectionPool
+      case class NoPool(threadPool: ThreadPool) extends ConnectionPool
       case class Hikari(
         connectionTimeout: Option[Int],
         maxLifetime: Option[Int],
         minimumIdle: Option[Int],
         maximumPoolSize: Option[Int],
         // Provided by doobie
-        connectionPool: ThreadPool = ThreadPool.Fixed(2),
-        transactionPool: ThreadPool = ThreadPool.Cached
+        connectionPool: ThreadPool,
+        transactionPool: ThreadPool
       ) extends ConnectionPool
 
       implicit val circePoolEncoder: Encoder[ConnectionPool] =
@@ -137,19 +137,15 @@ object Config {
       implicit val poolRead: ConfigReader[ConnectionPool] =
         ConfigReader.fromCursor { cur =>
           for {
-            objCur <- cur.asObjectCursor
-            typeCur = objCur.atKeyOrUndefined("type")
-            pool <- if (typeCur.isUndefined) Right(ConfigReader[NoPool].from(cur).getOrElse(ConnectionPool.NoPool()))
-            else
-              for {
-                typeStr <- typeCur.asString
-                result <- typeStr.toLowerCase match {
-                  case "hikari" =>
-                    ConfigReader[Hikari].from(cur)
-                  case "nopool" =>
-                    ConfigReader[NoPool].from(cur)
-                }
-              } yield result
+            objCur  <- cur.asObjectCursor
+            typeCur <- objCur.atKey("type")
+            typeStr <- typeCur.asString
+            pool <- typeStr.toLowerCase match {
+              case "hikari" =>
+                ConfigReader[Hikari].from(cur)
+              case "nopool" =>
+                ConfigReader[NoPool].from(cur)
+            }
           } yield pool
         }
     }
@@ -170,7 +166,7 @@ object Config {
       password: String,
       driver: String,
       maxPoolSize: Option[Int], // deprecated
-      pool: ConnectionPool = ConnectionPool.NoPool(ThreadPool.Cached)
+      pool: ConnectionPool
     ) extends StorageConfig {
 
       /** Backward-compatibility */
@@ -214,7 +210,7 @@ object Config {
     port: Int,
     idleTimeout: Option[Int],
     maxConnections: Option[Int],
-    threadPool: ThreadPool = ThreadPool.Fixed(4)
+    threadPool: ThreadPool
   )
 
   implicit def httpConfigHint =
@@ -274,17 +270,40 @@ object Config {
     }
 
   sealed trait ServerCommand {
-    def config: Path
-    def read: Either[String, Config] =
-      ConfigSource.default(ConfigSource.file(config)).load[Config].leftMap(_.toList.map(_.description).mkString("\n"))
+    def config: Option[Path]
+    def read: Either[String, Config] = {
+      val fileConfig = config.fold(ConfigSource.empty)(ConfigSource.file(_))
+      namespaced(ConfigSource.default(namespaced(fileConfig.withFallback(namespaced(ConfigSource.default)))))
+        .load[Config]
+        .leftMap { errors =>
+          val msg = config.fold("Error resolving configuration without a file")(path =>
+            s"Error resolving configuration from $path"
+          )
+          (msg :: errors.toList.map(_.description)).mkString("\n")
+        }
+    }
+
+    /** Optionally give precedence to configs wrapped in a "iglu" block. To help avoid polluting config namespace */
+    private def namespaced(configObjSource: ConfigObjectSource): ConfigObjectSource =
+      ConfigObjectSource {
+        for {
+          configObj <- configObjSource.value()
+          conf = configObj.toConfig
+        } yield {
+          if (conf.hasPath(Namespace))
+            conf.getConfig(Namespace).withFallback(conf.withoutPath(Namespace))
+          else
+            conf
+        }
+      }
   }
 
   object ServerCommand {
-    case class Run(config: Path)                                 extends ServerCommand
-    case class Setup(config: Path, migrate: Option[MigrateFrom]) extends ServerCommand
+    case class Run(config: Option[Path])                                 extends ServerCommand
+    case class Setup(config: Option[Path], migrate: Option[MigrateFrom]) extends ServerCommand
   }
 
-  val configOpt = Opts.option[Path]("config", "Path to server configuration HOCON")
+  val configOpt = Opts.option[Path]("config", "Path to server configuration HOCON").orNone
   val migrateOpt = Opts
     .option[String]("migrate", "Migrate the DB from a particular version")
     .mapValidated { s =>
@@ -299,7 +318,7 @@ object Config {
   val serverCommand =
     Command[ServerCommand](generated.BuildInfo.name, generated.BuildInfo.version)(runCommand.orElse(setupCommand))
 
-  case class Swagger(baseUrl: Option[String])
+  case class Swagger(baseUrl: String)
 
   object Swagger {
     implicit val swaggerReader: ConfigReader[Swagger] = ConfigReader.forProduct1("baseUrl")(Swagger.apply)
@@ -307,4 +326,7 @@ object Config {
     implicit val swaggerEncoder: Encoder[Swagger] =
       deriveEncoder[Swagger]
   }
+
+  // Used as an option prefix when reading system properties.
+  val Namespace = "iglu"
 }
