@@ -1,0 +1,10 @@
+{
+  "database": {
+    "host": "postgres"
+    "dbname": "igludb"
+    "username": "postgres"
+    "password": ${IGLU_DB_PASSWORD}
+  }
+
+  "masterApiKey": ${?IGLU_MASTER_API_KEY}
+}
