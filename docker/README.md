@@ -28,7 +28,7 @@ IGLU_MASTER_API_KEY=35cba2e2-7f16-422d-b780-e43b84270fcc docker-compose up -d
 
 ```
 
-Or alternatively edit the `masterApiKey` field in [the sample hocon file](../config.hocon.sample).
+Or alternatively edit the `masterApiKey` field in [the sample hocon file](../config/config.minimal.hocon).
 
 ### Initialise the database
 

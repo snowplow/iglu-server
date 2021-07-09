@@ -17,19 +17,20 @@ services:
     environment:
       POSTGRES_DB: igludb
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: iglusecret
+      POSTGRES_PASSWORD: ${IGLU_DB_PASSWORD:-iglusecret}
   iglu-server:
     container_name: iglu-server
     image: snowplow/iglu-server:${IGLU_VERSION:-0.6.2}
     command: --config /snowplow/config/config.hocon
     environment:
       IGLU_MASTER_API_KEY: ${IGLU_MASTER_API_KEY:-5fb4713d-73ad-4163-93a9-2b82f0177c5b}
+      IGLU_DB_PASSWORD: ${IGLU_DB_PASSWORD:-iglusecret}
     depends_on:
       - postgres
     ports:
       - "8080:8080"
     volumes:
-      - "../config.hocon.sample:/snowplow/config/config.hocon"
+      - "../config/config.minimal.hocon:/snowplow/config/config.hocon"
     logging:
       options:
         max-size: 1G
