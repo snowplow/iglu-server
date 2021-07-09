@@ -22,7 +22,6 @@ import io.circe._
 import io.circe.syntax._
 import io.circe.{Decoder, Encoder, Json}
 import io.circe.syntax._
-import io.circe.java8.time._
 import io.circe.generic.semiauto._
 
 import doobie._
