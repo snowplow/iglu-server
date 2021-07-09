@@ -76,7 +76,7 @@ object Server {
       .withBodyStream(Utils.toBytes(IgluResponse.EndpointNotFound: IgluResponse))
       .withContentType(`Content-Type`(MediaType.application.json))
 
-  def addSwagger(storage: Storage[IO], masterKey: Option[UUID], config: Option[Config.Swagger])(
+  def addSwagger(storage: Storage[IO], masterKey: Option[UUID], config: Config.Swagger)(
     service: (String, RoutesConstructor)
   ) = {
     val (base, constructor) = service
@@ -84,7 +84,7 @@ object Server {
       jsonApiPath = TypedPath(PathMatch("swagger.json")),
       swaggerMetadata = SwaggerMetadata(
         apiInfo = Info(title = "Iglu Server API", version = version),
-        basePath = Some(config.flatMap(_.baseUrl).getOrElse("").stripSuffix("/") ++ base),
+        basePath = Some(config.baseUrl.stripSuffix("/") ++ base),
         securityDefinitions = Map("Iglu API key" -> ApiKeyAuthDefinition("apikey", In.HEADER)),
         security = List(SecurityRequirement("Iglu API key", Nil))
       ),
@@ -101,7 +101,7 @@ object Server {
     patchesAllowed: Boolean,
     webhook: Webhook.WebhookClient[IO],
     cache: CachingMiddleware.ResponseCache[IO],
-    swaggerConfig: Option[Config.Swagger],
+    swaggerConfig: Config.Swagger,
     blocker: Blocker
   )(implicit cs: ContextShift[IO]): HttpApp[IO] = {
     val serverRoutes = httpRoutes(storage, masterKey, debug, patchesAllowed, webhook, cache, swaggerConfig, blocker)
@@ -115,7 +115,7 @@ object Server {
     patchesAllowed: Boolean,
     webhook: Webhook.WebhookClient[IO],
     cache: CachingMiddleware.ResponseCache[IO],
-    swaggerConfig: Option[Config.Swagger],
+    swaggerConfig: Config.Swagger,
     blocker: Blocker
   )(implicit cs: ContextShift[IO]): List[(String, HttpRoutes[IO])] = {
     val services: List[(String, RoutesConstructor)] = List(
@@ -168,18 +168,18 @@ object Server {
       _        <- Resource.eval(logger.info(s"Initializing server with following configuration: ${config.asJson.noSpaces}"))
       httpPool <- createThreadPool[IO](config.repoServer.threadPool)
       client   <- BlazeClientBuilder[IO](httpPool).resource
-      webhookClient = Webhook.WebhookClient(config.webhooks.getOrElse(Nil), client)
+      webhookClient = Webhook.WebhookClient(config.webhooks, client)
       storage <- Storage.initialize[IO](config.database)
       cache   <- CachingMiddleware.initResponseCache[IO](1000, CacheTtl)
       blocker <- Blocker[IO]
-    } yield BlazeServerBuilder(httpPool)
+    } yield BlazeServerBuilder[IO](httpPool)
       .bindHttp(config.repoServer.port, config.repoServer.interface)
       .withHttpApp(
         httpApp(
           storage,
           config.masterApiKey,
-          config.debug.getOrElse(false),
-          config.patchesAllowed.getOrElse(false),
+          config.debug,
+          config.patchesAllowed,
           webhookClient,
           cache,
           config.swagger,
