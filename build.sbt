@@ -51,8 +51,8 @@ lazy val root = (project in file("."))
       "-Ywarn-unused:privates",            // Warn if a private member is unused.
       "-Ywarn-value-discard"               // Warn when non-Unit expression results are unused.
     ),
-    cancelable in Global := true,
-    scalacOptions in (Compile, console) --= Seq("-Ywarn-unused:imports", "-Xfatal-warnings")
+    Global / cancelable := true,
+    Compile / console / scalacOptions --= Seq("-Ywarn-unused:imports", "-Xfatal-warnings")
   )
   .settings(BuildSettings.dockerSettings)
   .enablePlugins(JavaAppPackaging)
