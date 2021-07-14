@@ -58,6 +58,8 @@ case class Config(
 
 object Config {
 
+  implicit def hint[T] = ProductHint[T](ConfigFieldMapping(CamelCase, CamelCase))
+
   sealed trait ThreadPool extends Product with Serializable
   object ThreadPool {
     case object Global          extends ThreadPool
@@ -129,8 +131,6 @@ object Config {
             deriveEncoder[Hikari].apply(h)
         }
 
-      implicit val nopoolHint   = ProductHint[NoPool](ConfigFieldMapping(CamelCase, CamelCase))
-      implicit val hikariHint   = ProductHint[Hikari](ConfigFieldMapping(CamelCase, CamelCase))
       implicit val noPoolReader = deriveReader[NoPool]
       implicit val hikariReader = deriveReader[Hikari]
 
@@ -213,9 +213,6 @@ object Config {
     threadPool: ThreadPool
   )
 
-  implicit def httpConfigHint =
-    ProductHint[Http](ConfigFieldMapping(CamelCase, CamelCase))
-
   implicit val httpConfigCirceEncoder: Encoder[Http] =
     deriveEncoder[Http]
 
@@ -225,7 +222,7 @@ object Config {
       uriCursor <- objCur.atKey("uri")
       uri       <- ConfigReader[org.http4s.Uri].from(uriCursor)
 
-      prefixes <- objCur.atKeyOrUndefined("vendor-prefixes") match {
+      prefixes <- objCur.atKeyOrUndefined("vendorPrefixes") match {
         case keyCur if keyCur.isUndefined => List.empty.asRight
         case keyCur                       => keyCur.asList.flatMap(_.traverse(cur => cur.asString))
       }
@@ -252,7 +249,7 @@ object Config {
   implicit val pureWebhooksReader: ConfigReader[List[Webhook]] = ConfigReader.fromCursor { cur =>
     for {
       objCur                 <- cur.asObjectCursor
-      schemaPublishedCursors <- objCur.atKeyOrUndefined("schema-published").asList
+      schemaPublishedCursors <- objCur.atKeyOrUndefined("schemaPublished").asList
       webhooks               <- schemaPublishedCursors.traverse(cur => pureWebhookReader.from(cur))
     } yield webhooks
   }
