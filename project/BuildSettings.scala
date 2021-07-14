@@ -25,18 +25,18 @@ object BuildSettings {
 
   lazy val dockerSettings = Seq(
     dockerBaseImage := "adoptopenjdk:11-jre-hotspot-focal",
-    maintainer in Docker := "Snowplow Analytics Ltd. <support@snowplowanalytics.com>",
+    Docker / maintainer := "Snowplow Analytics Ltd. <support@snowplowanalytics.com>",
     dockerUpdateLatest := true,
     dockerRepository := Some("snowplow"),
-    daemonUserUid in Docker := None,
-    daemonUser in Docker := "daemon",
-    defaultLinuxInstallLocation in Docker := "/opt/snowplow",
+    Docker / daemonUserUid := None,
+    Docker / daemonUser := "daemon",
+    Docker / defaultLinuxInstallLocation := "/opt/snowplow",
     dockerCmd := Seq("--help")
   )
 
   lazy val assemblySettings = Seq(
-    assemblyJarName in assembly := { s"${name.value}-${version.value}.jar" },
-    assemblyMergeStrategy in assembly := {
+    assembly / assemblyJarName := { s"${name.value}-${version.value}.jar" },
+    assembly / assemblyMergeStrategy := {
       case x if x.endsWith("module-info.class") => MergeStrategy.first
       case x if x.endsWith("nowarn.class") => MergeStrategy.first
       case x =>
