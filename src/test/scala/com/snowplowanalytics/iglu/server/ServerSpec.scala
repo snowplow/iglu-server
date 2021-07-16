@@ -76,11 +76,11 @@ class ServerSpec extends Specification {
     val reqs = List(
       Request[IO](Method.PUT, uri"http://localhost:8080/api/schemas/com.acme/first/jsonschema/1-0-0")
         .withEntity(json"""{"properties": {}}""")
-        .withHeaders(Header("apikey", InMemory.DummyMasterKey.toString)),
+        .withHeaders(Header("apikey", InMemory.DummySuperKey.toString)),
       Request[IO](Method.GET, uri"http://localhost:8080/api/schemas/")
-        .withHeaders(Header("apikey", InMemory.DummyMasterKey.toString)),
+        .withHeaders(Header("apikey", InMemory.DummySuperKey.toString)),
       Request[IO](Method.GET, uri"http://localhost:8080/api/schemas/com.acme/first/jsonschema/1-0-0")
-        .withHeaders(Header("apikey", InMemory.DummyMasterKey.toString)),
+        .withHeaders(Header("apikey", InMemory.DummySuperKey.toString)),
       Request[IO](Method.GET, uri"http://localhost:8080/api/schemas/com.acme/first/jsonschema/1-0-0")
     )
 
@@ -117,9 +117,9 @@ class ServerSpec extends Specification {
     val reqs = List(
       Request[IO](Method.POST, uri"http://localhost:8080/api/schemas".withQueryParam("isPublic", "true"))
         .withEntity(schema)
-        .withHeaders(Header("apikey", InMemory.DummyMasterKey.toString)),
+        .withHeaders(Header("apikey", InMemory.DummySuperKey.toString)),
       Request[IO](Method.DELETE, uri"http://localhost:8080/api/schemas/com.acme/first/jsonschema/1-0-0")
-        .withHeaders(Header("apikey", InMemory.DummyMasterKey.toString)),
+        .withHeaders(Header("apikey", InMemory.DummySuperKey.toString)),
       Request[IO](Method.GET, uri"http://localhost:8080/api/schemas/")
     )
 
@@ -177,7 +177,7 @@ object ServerSpec {
   val specification = Resource.make {
     Storage.initialize[IO](storageConfig).use(s => s.asInstanceOf[Postgres[IO]].drop) *>
       Server.setup(ServerSpec.config, None).void *>
-      Storage.initialize[IO](storageConfig).use(_.addPermission(InMemory.DummyMasterKey, Permission.Master))
+      Storage.initialize[IO](storageConfig).use(_.addPermission(InMemory.DummySuperKey, Permission.Super))
   }(_ => Storage.initialize[IO](storageConfig).use(s => s.asInstanceOf[Postgres[IO]].drop))
 
   def execute[A](action: IO[A]): A =

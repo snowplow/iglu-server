@@ -76,7 +76,7 @@ object Server {
       .withBodyStream(Utils.toBytes(IgluResponse.EndpointNotFound: IgluResponse))
       .withContentType(`Content-Type`(MediaType.application.json))
 
-  def addSwagger(storage: Storage[IO], masterKey: Option[UUID], config: Config.Swagger)(
+  def addSwagger(storage: Storage[IO], superKey: Option[UUID], config: Config.Swagger)(
     service: (String, RoutesConstructor)
   ) = {
     val (base, constructor) = service
@@ -91,12 +91,12 @@ object Server {
       swaggerFormats = Swagger.Formats
     )
 
-    base -> constructor(storage, masterKey, PermissionContext, swagger)
+    base -> constructor(storage, superKey, PermissionContext, swagger)
   }
 
   def httpApp(
     storage: Storage[IO],
-    masterKey: Option[UUID],
+    superKey: Option[UUID],
     debug: Boolean,
     patchesAllowed: Boolean,
     webhook: Webhook.WebhookClient[IO],
@@ -104,13 +104,13 @@ object Server {
     swaggerConfig: Config.Swagger,
     blocker: Blocker
   )(implicit cs: ContextShift[IO]): HttpApp[IO] = {
-    val serverRoutes = httpRoutes(storage, masterKey, debug, patchesAllowed, webhook, cache, swaggerConfig, blocker)
+    val serverRoutes = httpRoutes(storage, superKey, debug, patchesAllowed, webhook, cache, swaggerConfig, blocker)
     Kleisli[IO, Request[IO], Response[IO]](req => Router(serverRoutes: _*).run(req).getOrElse(NotFound))
   }
 
   def httpRoutes(
     storage: Storage[IO],
-    masterKey: Option[UUID],
+    superKey: Option[UUID],
     debug: Boolean,
     patchesAllowed: Boolean,
     webhook: Webhook.WebhookClient[IO],
@@ -128,7 +128,7 @@ object Server {
 
     val debugRoute  = "/api/debug" -> DebugService.asRoutes(storage, ioSwagger.createRhoMiddleware())
     val staticRoute = "/static" -> StaticService.routes(blocker)
-    val routes      = staticRoute :: services.map(addSwagger(storage, masterKey, swaggerConfig))
+    val routes      = staticRoute :: services.map(addSwagger(storage, superKey, swaggerConfig))
     val corsConfig = CORSConfig(
       anyOrigin = true,
       anyMethod = false,
@@ -177,7 +177,7 @@ object Server {
       .withHttpApp(
         httpApp(
           storage,
-          config.masterApiKey,
+          config.superApiKey,
           config.debug,
           config.patchesAllowed,
           webhookClient,

@@ -46,7 +46,7 @@ import generated.BuildInfo.version
   *                       be skipped if a schema with the same key already exists
   * @param webhooks       List of webhooks triggered by specific actions or endpoints
   * @param swagger        Configures the swagger api documentation
-  * @param masterApiKey   Add an api key with permission to read/write any schema, and manage api keys.
+  * @param superApiKey    Add an api key with permission to read/write any schema, and manage api keys.
   */
 case class Config(
   database: Config.StorageConfig,
@@ -55,7 +55,7 @@ case class Config(
   patchesAllowed: Boolean,
   webhooks: List[Webhook],
   swagger: Config.Swagger,
-  masterApiKey: Option[UUID]
+  superApiKey: Option[UUID]
 )
 
 object Config {
@@ -265,8 +265,8 @@ object Config {
     deriveEncoder[Config].mapJson { json =>
       json.mapObject { o =>
         JsonObject.fromMap(o.toMap.map {
-          case ("masterApiKey", v) if !v.isNull => ("masterApiKey", Json.fromString("******"))
-          case (k, v)                           => (k, v)
+          case ("superApiKey", v) if !v.isNull => ("superApiKey", Json.fromString("******"))
+          case (k, v)                          => (k, v)
         })
       }
     }

@@ -89,6 +89,6 @@
     ]
   }
 
-  # Optional. Set a master api key with permission to read/write any schema, and add other api keys.
-  "masterApiKey": ${?IGLU_MASTER_API_KEY}
+  # Optional. Set a super api key with permission to read/write any schema, and add other api keys.
+  "superApiKey": ${?IGLU_SUPER_API_KEY}
 }

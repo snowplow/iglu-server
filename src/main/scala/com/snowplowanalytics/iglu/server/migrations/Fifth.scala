@@ -189,7 +189,7 @@ object Fifth {
         case (id, prefix, perm) =>
           val vendor = Permission.Vendor.parse(prefix)
           val (schemaAction, keyAction) = perm match {
-            case "super" => (Permission.Master.schema, Permission.Master.key)
+            case "super" => (Permission.Super.schema, Permission.Super.key)
             case "read"  => (Some(Permission.SchemaAction.Read), Set.empty[Permission.KeyAction])
             case "write" => (Some(Permission.SchemaAction.CreateVendor), Set.empty[Permission.KeyAction])
             case _       => (Some(Permission.SchemaAction.Read), Set.empty[Permission.KeyAction]) // Should not happen

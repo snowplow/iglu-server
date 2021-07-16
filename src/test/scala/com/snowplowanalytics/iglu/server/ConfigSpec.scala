@@ -175,7 +175,7 @@ class ConfigSpec extends org.specs2.Specification {
       "swagger": {
         "baseUrl": "/custom/prefix"
       },
-      "masterApiKey": "******"
+      "superApiKey": "******"
     }"""
 
     input.asJson must beEqualTo(expected)
