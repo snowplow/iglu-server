@@ -128,8 +128,8 @@ object Storage {
                 ds.setPoolName("iglu-hikaricp-pool")
 
                 ds.setMaximumPoolSize(p.maximumPoolSize)
-                pool.connectionTimeout.foreach(t => ds.setConnectionTimeout(t.toLong))
-                pool.maxLifetime.foreach(t => ds.setMaxLifetime(t.toLong))
+                pool.connectionTimeout.foreach(t => ds.setConnectionTimeout(t.toMillis))
+                pool.maxLifetime.foreach(t => ds.setMaxLifetime(t.toMillis))
                 pool.minimumIdle.foreach(t => ds.setMinimumIdle(t))
               }
             }
