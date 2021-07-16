@@ -22,6 +22,8 @@ import org.http4s.implicits._
 import io.circe.syntax._
 import io.circe.literal._
 
+import scala.concurrent.duration.DurationLong
+
 import cats.syntax.either._
 
 class ConfigSpec extends org.specs2.Specification {
@@ -47,7 +49,14 @@ class ConfigSpec extends org.specs2.Specification {
     val pool = Config
       .StorageConfig
       .ConnectionPool
-      .Hikari(Some(5000), Some(1000), Some(5), Some(3), Config.ThreadPool.Fixed(4), Config.ThreadPool.Cached)
+      .Hikari(
+        Some(5000.millis),
+        Some(1000.millis),
+        Some(5),
+        Some(3),
+        Config.ThreadPool.Fixed(4),
+        Config.ThreadPool.Cached
+      )
     val expected = Config(
       Config
         .StorageConfig
@@ -61,7 +70,7 @@ class ConfigSpec extends org.specs2.Specification {
           Some(5),
           pool
         ),
-      Config.Http("0.0.0.0", 8080, Some(10), None, Config.ThreadPool.Global),
+      Config.Http("0.0.0.0", 8080, Some(10.seconds), None, Config.ThreadPool.Global),
       true,
       true,
       List(
