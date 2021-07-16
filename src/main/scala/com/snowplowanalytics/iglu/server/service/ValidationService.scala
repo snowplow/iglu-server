@@ -99,12 +99,12 @@ object ValidationService {
 
   def asRoutes(
     db: Storage[IO],
-    masterKey: Option[UUID],
+    superKey: Option[UUID],
     ctx: AuthedContext[IO, Permission],
     rhoMiddleware: RhoMiddleware[IO]
   ): HttpRoutes[IO] = {
     val service = new ValidationService[IO](io, ctx, db).toRoutes(rhoMiddleware)
-    PermissionMiddleware.wrapService(db, masterKey, ctx, service)
+    PermissionMiddleware.wrapService(db, superKey, ctx, service)
   }
 
   type LintReport[A] = ValidatedNel[Message, A]

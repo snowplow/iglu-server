@@ -93,11 +93,11 @@ object MetaService {
     patchesAllowed: Boolean
   )(
     db: Storage[IO],
-    masterKey: Option[UUID],
+    superKey: Option[UUID],
     ctx: AuthedContext[IO, Permission],
     rhoMiddleware: RhoMiddleware[IO]
   ): HttpRoutes[IO] = {
     val service = new MetaService(debug, patchesAllowed, swaggerSyntax, ctx, db).toRoutes(rhoMiddleware)
-    PermissionMiddleware.wrapService(db, masterKey, ctx, service)
+    PermissionMiddleware.wrapService(db, superKey, ctx, service)
   }
 }

@@ -25,8 +25,8 @@ import com.snowplowanalytics.iglu.server.storage.InMemory
 
 class AuthServiceSpec extends org.specs2.Specification {
   def is = s2"""
-  /keygen generates read-only API key pair for master key in storage and JSON payload $e1
-  /keygen generates read-only API key pair for master key in config file and JSON payload $e2
+  /keygen generates read-only API key pair for super key in storage and JSON payload $e1
+  /keygen generates read-only API key pair for super key in config file and JSON payload $e2
   /keygen does not work with deprecated form API $e3
   /keygen doesn't authorize without apikey header $e4
   /keygen doesn't authorize with unkown apikey in header $e5
@@ -39,7 +39,7 @@ class AuthServiceSpec extends org.specs2.Specification {
     val req = Request(
       Method.POST,
       Uri.uri("/keygen"),
-      headers = Headers.of(Header("apikey", SpecHelpers.masterKey.toString)),
+      headers = Headers.of(Header("apikey", SpecHelpers.superKey.toString)),
       body = Stream.emits("""{"vendorPrefix": "me.chuwy"}""").evalMap(c => IO.pure(c.toByte))
     )
 
@@ -57,12 +57,12 @@ class AuthServiceSpec extends org.specs2.Specification {
   def e2 = {
     import model._
 
-    val masterApiKey = UUID.fromString("a480e86f-3e74-4ebb-87cc-ac205f9ab69c")
+    val superApiKey = UUID.fromString("a480e86f-3e74-4ebb-87cc-ac205f9ab69c")
 
     val req = Request(
       Method.POST,
       Uri.uri("/keygen"),
-      headers = Headers.of(Header("apikey", masterApiKey.toString)),
+      headers = Headers.of(Header("apikey", superApiKey.toString)),
       body = Stream.emits("""{"vendorPrefix": "me.chuwy"}""").evalMap(c => IO.pure(c.toByte))
     )
 
@@ -72,7 +72,7 @@ class AuthServiceSpec extends org.specs2.Specification {
       Set()
     )
 
-    val response   = AuthServiceSpec.state(req, Some(masterApiKey))
+    val response   = AuthServiceSpec.state(req, Some(superApiKey))
     val (_, state) = response.unsafeRunSync()
     state.permission must (haveValues(expected))
   }
@@ -83,7 +83,7 @@ class AuthServiceSpec extends org.specs2.Specification {
     val req = Request(
       Method.POST,
       Uri.uri("/keygen"),
-      headers = Headers.of(Header("apikey", SpecHelpers.masterKey.toString)),
+      headers = Headers.of(Header("apikey", SpecHelpers.superKey.toString)),
       body = Stream.emits("""vendor_prefix=ru.chuwy""").evalMap(c => IO.pure(c.toByte))
     ).withContentType(headers.`Content-Type`(MediaType.application.`x-www-form-urlencoded`))
 
@@ -116,8 +116,8 @@ class AuthServiceSpec extends org.specs2.Specification {
 
   def e5 = {
 
-    val masterApiKey = UUID.fromString("9d9515d3-decf-4733-b3de-60b73a6b2e2d")
-    val unknownKey   = UUID.fromString("83e86bed-8793-4a8a-b4f1-5edfe23ffc15")
+    val superApiKey = UUID.fromString("9d9515d3-decf-4733-b3de-60b73a6b2e2d")
+    val unknownKey  = UUID.fromString("83e86bed-8793-4a8a-b4f1-5edfe23ffc15")
 
     val req =
       Request(
@@ -127,7 +127,7 @@ class AuthServiceSpec extends org.specs2.Specification {
         body = Stream.emits("""{"vendorPrefix": "me.chuwy"}""").evalMap(c => IO.pure(c.toByte))
       )
 
-    val response           = AuthServiceSpec.state(req, Some(masterApiKey))
+    val response           = AuthServiceSpec.state(req, Some(superApiKey))
     val (responses, state) = response.unsafeRunSync()
     val stateHaventChanged = state must beEqualTo(SpecHelpers.exampleState)
     val unauthorized       = responses.map(_.status) must beEqualTo(List(Status.Forbidden))
@@ -139,7 +139,7 @@ class AuthServiceSpec extends org.specs2.Specification {
     val req = Request[IO](
       Method.DELETE,
       Uri.uri("/keygen").withQueryParam("key", SpecHelpers.readKey.toString),
-      headers = Headers.of(Header("apikey", SpecHelpers.masterKey.toString))
+      headers = Headers.of(Header("apikey", SpecHelpers.superKey.toString))
     )
 
     val response           = AuthServiceSpec.state(req)
@@ -152,8 +152,8 @@ class AuthServiceSpec extends org.specs2.Specification {
 }
 
 object AuthServiceSpec {
-  def state(req: Request[IO], masterApiKey: Option[UUID] = None): IO[(List[Response[IO]], InMemory.State)] =
-    SpecHelpers.state(storage => AuthService.asRoutes(storage, masterApiKey, SpecHelpers.ctx, createRhoMiddleware()))(
+  def state(req: Request[IO], superApiKey: Option[UUID] = None): IO[(List[Response[IO]], InMemory.State)] =
+    SpecHelpers.state(storage => AuthService.asRoutes(storage, superApiKey, SpecHelpers.ctx, createRhoMiddleware()))(
       List(req)
     )
 }

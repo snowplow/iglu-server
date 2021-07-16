@@ -6,5 +6,5 @@
     "password": ${IGLU_DB_PASSWORD}
   }
 
-  "masterApiKey": ${?IGLU_MASTER_API_KEY}
+  "superApiKey": ${?IGLU_SUPER_API_KEY}
 }

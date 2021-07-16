@@ -108,11 +108,11 @@ class SchemaService[F[+_]: Sync](
 
   def deleteSchema(vendor: String, name: String, format: String, version: SchemaVer.Full, permission: Permission) =
     permission match {
-      case Permission.Master if patchesAllowed =>
+      case Permission.Super if patchesAllowed =>
         db.deleteSchema(SchemaMap(vendor, name, format, version)) *> Ok(
           IgluResponse.Message("Schema deleted"): IgluResponse
         )
-      case Permission.Master =>
+      case Permission.Super =>
         MethodNotAllowed(IgluResponse.Message("DELETE is forbidden on production registry"): IgluResponse)
       case _ => Unauthorized(IgluResponse.Message("Not enough permissions"): IgluResponse)
     }
@@ -216,12 +216,12 @@ object SchemaService {
     webhook: Webhook.WebhookClient[IO]
   )(
     db: Storage[IO],
-    masterKey: Option[UUID],
+    superKey: Option[UUID],
     ctx: AuthedContext[IO, Permission],
     rhoMiddleware: RhoMiddleware[IO]
   ): HttpRoutes[IO] = {
     val service = new SchemaService(swaggerSyntax, ctx, db, patchesAllowed, webhook).toRoutes(rhoMiddleware)
-    PermissionMiddleware.wrapService(db, masterKey, ctx, service)
+    PermissionMiddleware.wrapService(db, superKey, ctx, service)
   }
 
   def isSchemaAllowed[F[_]: Sync](
