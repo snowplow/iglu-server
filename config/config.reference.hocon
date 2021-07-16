@@ -12,8 +12,8 @@
     #   "size": 4
     # }
 
-    # Number of seconds a connection can remain idle before the connection is timed out and disconnected.  Default 60 seconds.
-    "idleTimeout": 60
+    # How long a connection can remain idle before the connection is timed out and disconnected.  Default 60 seconds.
+    "idleTimeout": 60 seconds
 
     # The maximum number of client connections that may be active at any time. Default 1024.
     "maxConnections": 1024
@@ -38,10 +38,10 @@
     pool: {
       # type 'hikari' configures a HikariCP connection pool. This is recommended for production deployments.
       "type": "hikari"
-      "maximumPoolSize":   5        # optional, maximum number of connections in the pool
-      "connectionTimeout": 30000    # optional, millis
-      "maxLifetime":       1800000  # optional, millis
-      "minimumIdle":       5        # optional, minimum number of idle connections
+      "maximumPoolSize":   5            # optional, maximum number of connections in the pool
+      "connectionTimeout": 30 seconds   # optional
+      "maxLifetime":       1800 seconds # optional, millis
+      "minimumIdle":       5            # optional, minimum number of idle connections
 
       # Configure the thread pool used for awaiting connection to the database
       connectionPool: {

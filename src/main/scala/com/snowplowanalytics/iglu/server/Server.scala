@@ -186,7 +186,7 @@ object Server {
           blocker
         )
       )
-      .withIdleTimeout(config.repoServer.idleTimeout.map(_.seconds).getOrElse(Http4sDefaults.IdleTimeout))
+      .withIdleTimeout(config.repoServer.idleTimeout.getOrElse(Http4sDefaults.IdleTimeout))
       .withMaxConnections(config.repoServer.maxConnections.getOrElse(Http4sDefaults.MaxConnections))
 
   def run(config: Config)(implicit cs: ContextShift[IO], timer: Timer[IO]): Stream[IO, ExitCode] =

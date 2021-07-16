@@ -31,6 +31,8 @@ import pureconfig.generic.semiauto._
 import pureconfig.module.http4s._
 import migrations.MigrateFrom
 
+import scala.concurrent.duration.FiniteDuration
+
 import generated.BuildInfo.version
 
 /**
@@ -59,6 +61,9 @@ case class Config(
 object Config {
 
   implicit def hint[T] = ProductHint[T](ConfigFieldMapping(CamelCase, CamelCase))
+
+  implicit val finiteDurationEncoder: Encoder[FiniteDuration] =
+    implicitly[Encoder[String]].contramap(_.toString)
 
   sealed trait ThreadPool extends Product with Serializable
   object ThreadPool {
@@ -109,8 +114,8 @@ object Config {
     object ConnectionPool {
       case class NoPool(threadPool: ThreadPool) extends ConnectionPool
       case class Hikari(
-        connectionTimeout: Option[Int],
-        maxLifetime: Option[Int],
+        connectionTimeout: Option[FiniteDuration],
+        maxLifetime: Option[FiniteDuration],
         minimumIdle: Option[Int],
         maximumPoolSize: Option[Int],
         // Provided by doobie
@@ -208,7 +213,7 @@ object Config {
   case class Http(
     interface: String,
     port: Int,
-    idleTimeout: Option[Int],
+    idleTimeout: Option[FiniteDuration],
     maxConnections: Option[Int],
     threadPool: ThreadPool
   )
