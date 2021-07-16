@@ -109,7 +109,7 @@ case class InMemory[F[_]](ref: Ref[F, InMemory.State]) extends Storage[F] {
 
 object InMemory {
 
-  val DummyMasterKey: UUID = UUID.fromString("48b267d7-cd2b-4f22-bae4-0f002008b5ad")
+  val DummySuperKey: UUID = UUID.fromString("48b267d7-cd2b-4f22-bae4-0f002008b5ad")
 
   case class State(
     schemas: Map[SchemaMap, Schema],
@@ -121,10 +121,10 @@ object InMemory {
     val empty: State = State(Map.empty, Map.empty, Map.empty)
 
     /** Dev state */
-    val withMasterKey: State =
+    val withSuperKey: State =
       State(
         Map.empty[SchemaMap, Schema],
-        Map(DummyMasterKey -> Permission.Master),
+        Map(DummySuperKey -> Permission.Super),
         Map.empty[DraftId, SchemaDraft]
       )
   }
@@ -133,7 +133,7 @@ object InMemory {
     for { db <- Ref.of(fixture) } yield InMemory[F](db)
 
   def empty[F[_]: Sync]: F[Storage[F]] =
-    for { db <- Ref.of(State.withMasterKey) } yield InMemory[F](db)
+    for { db <- Ref.of(State.withSuperKey) } yield InMemory[F](db)
 
   /** Equal to `get`, but doesn't lose the precise return type */
   def getInMemory[F[_]: Sync](fixture: State): F[InMemory[F]] =

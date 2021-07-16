@@ -14,7 +14,7 @@ docker-compose up -d
 
 ### API keys
 
-Iglu server must be configured with a master api key, which has permissions to add other api keys, and to read/write any schema.
+Iglu server must be configured with a super api key, which has permissions to add other api keys, and to read/write any schema.
 By default, the docker-compose file uses the following api key:
 
 ```
@@ -28,7 +28,7 @@ IGLU_MASTER_API_KEY=35cba2e2-7f16-422d-b780-e43b84270fcc docker-compose up -d
 
 ```
 
-Or alternatively edit the `masterApiKey` field in [the sample hocon file](../config/config.minimal.hocon).
+Or alternatively edit the `superApiKey` field in [the sample hocon file](../config/config.minimal.hocon).
 
 ### Initialise the database
 

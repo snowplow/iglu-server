@@ -86,12 +86,12 @@ object DraftService {
 
   def asRoutes(
     db: Storage[IO],
-    masterKey: Option[UUID],
+    superKey: Option[UUID],
     ctx: AuthedContext[IO, Permission],
     rhoMiddleware: RhoMiddleware[IO]
   ): HttpRoutes[IO] = {
     val service = new DraftService(io, db, ctx).toRoutes(rhoMiddleware)
-    PermissionMiddleware.wrapService(db, masterKey, ctx, service)
+    PermissionMiddleware.wrapService(db, superKey, ctx, service)
   }
 
   /** Extract schemas from database, available for particular permission */

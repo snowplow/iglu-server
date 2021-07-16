@@ -183,7 +183,7 @@ object Permission {
   val Noop = Permission(Vendor.noop, None, Set.empty)
 
   /** Admin permission, allowed to create any schemas and keys */
-  val Master = Permission(Vendor.wildcard, Some(SchemaAction.CreateVendor), KeyAction.All)
+  val Super = Permission(Vendor.wildcard, Some(SchemaAction.CreateVendor), KeyAction.All)
 
   /** Read any schema */
   val ReadOnlyAny = Permission(Vendor.wildcard, Some(SchemaAction.Read), Set.empty)

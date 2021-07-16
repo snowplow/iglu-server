@@ -178,7 +178,7 @@ class SchemaServiceSpec extends org.specs2.Specification {
 
   def e8 = {
     val req: Request[IO] =
-      Request(Method.GET, uri"/").withHeaders(Headers.of(Header("apikey", SpecHelpers.masterKey.toString)))
+      Request(Method.GET, uri"/").withHeaders(Headers.of(Header("apikey", SpecHelpers.superKey.toString)))
 
     val result = for {
       response <- SchemaServiceSpec.request(List(req), false)
@@ -213,10 +213,10 @@ class SchemaServiceSpec extends org.specs2.Specification {
     val reqs: List[Request[IO]] = List(
       Request[IO](Method.PUT, uri"/com.acme/nonexistent/jsonschema/1-0-0")
         .withContentType(headers.`Content-Type`(MediaType.application.json))
-        .withHeaders(Headers.of(Header("apikey", SpecHelpers.masterKey.toString)))
+        .withHeaders(Headers.of(Header("apikey", SpecHelpers.superKey.toString)))
         .withBodyStream(exampleSchema),
       Request[IO](Method.GET, uri"/com.acme/nonexistent/jsonschema/1-0-0")
-        .withHeaders(Headers.of(Header("apikey", SpecHelpers.masterKey.toString)))
+        .withHeaders(Headers.of(Header("apikey", SpecHelpers.superKey.toString)))
     )
 
     val (requests, state) = SchemaServiceSpec.state(reqs, false).unsafeRunSync()
@@ -263,14 +263,14 @@ class SchemaServiceSpec extends org.specs2.Specification {
     val reqs: List[Request[IO]] = List(
       Request[IO](Method.PUT, Uri.uri("/com.acme/nonexistent/jsonschema/1-0-0"))
         .withContentType(headers.`Content-Type`(MediaType.application.json))
-        .withHeaders(Headers.of(Header("apikey", SpecHelpers.masterKey.toString)))
+        .withHeaders(Headers.of(Header("apikey", SpecHelpers.superKey.toString)))
         .withBodyStream(exampleSchema),
       Request[IO](Method.PUT, Uri.uri("/com.acme/nonexistent/jsonschema/1-0-0"))
         .withContentType(headers.`Content-Type`(MediaType.application.json))
-        .withHeaders(Headers.of(Header("apikey", SpecHelpers.masterKey.toString)))
+        .withHeaders(Headers.of(Header("apikey", SpecHelpers.superKey.toString)))
         .withBodyStream(exampleSchemaUpdated),
       Request[IO](Method.GET, Uri.uri("/com.acme/nonexistent/jsonschema/1-0-0"))
-        .withHeaders(Headers.of(Header("apikey", SpecHelpers.masterKey.toString)))
+        .withHeaders(Headers.of(Header("apikey", SpecHelpers.superKey.toString)))
     )
 
     val (requests, state) = SchemaServiceSpec.state(reqs, false).unsafeRunSync()
@@ -302,7 +302,7 @@ class SchemaServiceSpec extends org.specs2.Specification {
 
     val req = Request[IO](Method.PUT, Uri.uri("/com.acme/nonexistent/jsonschema/1-2-0"))
       .withContentType(headers.`Content-Type`(MediaType.application.json))
-      .withHeaders(Headers.of(Header("apikey", SpecHelpers.masterKey.toString)))
+      .withHeaders(Headers.of(Header("apikey", SpecHelpers.superKey.toString)))
       .withBodyStream(exampleSchema)
 
     val result = for {
@@ -351,14 +351,14 @@ class SchemaServiceSpec extends org.specs2.Specification {
     val reqs: List[Request[IO]] = List(
       Request[IO](Method.PUT, Uri.uri("/com.acme/nonexistent/jsonschema/1-0-0"))
         .withContentType(headers.`Content-Type`(MediaType.application.json))
-        .withHeaders(Headers.of(Header("apikey", SpecHelpers.masterKey.toString)))
+        .withHeaders(Headers.of(Header("apikey", SpecHelpers.superKey.toString)))
         .withBodyStream(exampleSchema),
       Request[IO](Method.PUT, Uri.uri("/com.acme/nonexistent/jsonschema/1-0-0"))
         .withContentType(headers.`Content-Type`(MediaType.application.json))
-        .withHeaders(Headers.of(Header("apikey", SpecHelpers.masterKey.toString)))
+        .withHeaders(Headers.of(Header("apikey", SpecHelpers.superKey.toString)))
         .withBodyStream(exampleSchemaUpdated),
       Request[IO](Method.GET, Uri.uri("/com.acme/nonexistent/jsonschema/1-0-0"))
-        .withHeaders(Headers.of(Header("apikey", SpecHelpers.masterKey.toString)))
+        .withHeaders(Headers.of(Header("apikey", SpecHelpers.superKey.toString)))
     )
 
     val (requests, state) = SchemaServiceSpec.state(reqs, true).unsafeRunSync()
@@ -396,26 +396,26 @@ class SchemaServiceSpec extends org.specs2.Specification {
     val reqs: List[Request[IO]] = List(
       Request[IO](Method.PUT, uri"/com.acme/nonexistent/jsonschema/1-0-0")
         .withContentType(headers.`Content-Type`(MediaType.application.json))
-        .withHeaders(Headers.of(Header("apikey", SpecHelpers.masterKey.toString)))
+        .withHeaders(Headers.of(Header("apikey", SpecHelpers.superKey.toString)))
         .withBodyStream(exampleSchema),
       Request[IO](Method.PUT, uri"/com.acme/nonexistent/jsonschema/1-0-1")
         .withContentType(headers.`Content-Type`(MediaType.application.json))
-        .withHeaders(Headers.of(Header("apikey", SpecHelpers.masterKey.toString)))
+        .withHeaders(Headers.of(Header("apikey", SpecHelpers.superKey.toString)))
         .withBodyStream(exampleSchema),
       Request[IO](Method.PUT, uri"/com.acme/nonexistent/jsonschema/2-0-0")
         .withContentType(headers.`Content-Type`(MediaType.application.json))
-        .withHeaders(Headers.of(Header("apikey", SpecHelpers.masterKey.toString)))
+        .withHeaders(Headers.of(Header("apikey", SpecHelpers.superKey.toString)))
         .withBodyStream(exampleSchema),
       Request[IO](Method.PUT, uri"/com.acme/nonexistent/jsonschema/1-0-2")
         .withContentType(headers.`Content-Type`(MediaType.application.json))
-        .withHeaders(Headers.of(Header("apikey", SpecHelpers.masterKey.toString)))
+        .withHeaders(Headers.of(Header("apikey", SpecHelpers.superKey.toString)))
         .withBodyStream(exampleSchema),
       Request[IO](Method.PUT, uri"/com.acme/nonexistent/jsonschema/1-1-0")
         .withContentType(headers.`Content-Type`(MediaType.application.json))
-        .withHeaders(Headers.of(Header("apikey", SpecHelpers.masterKey.toString)))
+        .withHeaders(Headers.of(Header("apikey", SpecHelpers.superKey.toString)))
         .withBodyStream(exampleSchema),
       Request[IO](Method.GET, uri"/com.acme/nonexistent/jsonschema/1")
-        .withHeaders(Headers.of(Header("apikey", SpecHelpers.masterKey.toString)))
+        .withHeaders(Headers.of(Header("apikey", SpecHelpers.superKey.toString)))
     )
 
     val expected =
