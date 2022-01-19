@@ -91,4 +91,12 @@
 
   # Optional. Set a super api key with permission to read/write any schema, and add other api keys.
   "superApiKey": ${?IGLU_SUPER_API_KEY}
+
+  # Configures how long the server should pause after receiving a sigterm before starting the server shutdown.
+  # During this period the server continues to accept new connections and respond to requests.
+  preTerminationPeriod = 1 seconds
+
+  # During the preTerminationPeriod, the server can be configured to return 503s on the /health endpoint
+  # Can be helpful for removing the server from a load balancer's targets.
+  preTerminationUnhealthy = false
 }
