@@ -26,7 +26,7 @@ object Main extends IOApp {
       config  <- EitherT.fromEither[IO](command.read)
       result <- command match {
         case _: Config.ServerCommand.Run =>
-          EitherT.liftF[IO, String, ExitCode](Server.run(config).compile.lastOrError)
+          EitherT.liftF[IO, String, ExitCode](Server.run(config))
         case Config.ServerCommand.Setup(_, migration) =>
           EitherT.liftF[IO, String, ExitCode](Server.setup(config, migration))
       }
