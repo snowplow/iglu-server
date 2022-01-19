@@ -41,14 +41,21 @@ class MetaService[F[+_]: Sync](
   patchesAllowed: Boolean,
   swagger: SwaggerSyntax[F],
   ctx: AuthedContext[F, Permission],
-  db: Storage[F]
+  db: Storage[F],
+  isHealthy: F[Boolean]
 ) extends RhoRoutes[F] {
   import swagger._
 
   private val ok = Ok("OK").map(_.withContentType(`Content-Type`(MediaType.text.plain, Charset.`UTF-8`)))
 
   "This route always responds with OK string" **
-    GET / "health" |>> ok
+    GET / "health" |>> isHealthy.flatMap {
+    case true => ok
+    case false =>
+      ServiceUnavailable("Service Unavailable").map(
+        _.withContentType(`Content-Type`(MediaType.text.plain, Charset.`UTF-8`))
+      )
+  }
 
   "This route responds with OK string if database is available" **
     GET / "health" / "db" |>> {
@@ -90,14 +97,15 @@ object MetaService {
 
   def asRoutes(
     debug: Boolean,
-    patchesAllowed: Boolean
+    patchesAllowed: Boolean,
+    isHealthy: IO[Boolean]
   )(
     db: Storage[IO],
     superKey: Option[UUID],
     ctx: AuthedContext[IO, Permission],
     rhoMiddleware: RhoMiddleware[IO]
   ): HttpRoutes[IO] = {
-    val service = new MetaService(debug, patchesAllowed, swaggerSyntax, ctx, db).toRoutes(rhoMiddleware)
+    val service = new MetaService(debug, patchesAllowed, swaggerSyntax, ctx, db, isHealthy).toRoutes(rhoMiddleware)
     PermissionMiddleware.wrapService(db, superKey, ctx, service)
   }
 }

@@ -35,6 +35,8 @@ import com.snowplowanalytics.iglu.server.model.{IgluResponse, Permission}
 import com.snowplowanalytics.iglu.server.storage.InMemory
 import com.snowplowanalytics.iglu.server.codecs.JsonCodecs._
 
+import scala.concurrent.duration.DurationLong
+
 // Integration test requiring a database
 // docker run --name igludb -e POSTGRES_PASSWORD=iglusecret -e POSTGRES_DB=testdb -p 5432:5432 -d postgres
 class ServerSpec extends Specification {
@@ -164,9 +166,9 @@ object ServerSpec {
         None,
         dbPoolConfig
       )
-  val config = Config(storageConfig, httpConfig, false, true, Nil, Config.Swagger(""), None)
+  val config = Config(storageConfig, httpConfig, false, true, Nil, Config.Swagger(""), None, 10.seconds, false)
 
-  private val runServer = Server.buildServer(config).flatMap(_.resource)
+  private val runServer = Server.buildServer(config, IO.pure(true)).flatMap(_.resource)
   private val client    = BlazeClientBuilder[IO](global).resource
   private val env       = client <* runServer
 

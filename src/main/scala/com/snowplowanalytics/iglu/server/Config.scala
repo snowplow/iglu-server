@@ -47,6 +47,8 @@ import generated.BuildInfo.version
   * @param webhooks       List of webhooks triggered by specific actions or endpoints
   * @param swagger        Configures the swagger api documentation
   * @param superApiKey    Add an api key with permission to read/write any schema, and manage api keys.
+  * @param preTerminationPeriod Period between receiving a SIGINT and starting to terminate the server
+  * @param preTerminationUnhealthy Whether the health endpoint returns 503s in the preTermination period
   */
 case class Config(
   database: Config.StorageConfig,
@@ -55,7 +57,9 @@ case class Config(
   patchesAllowed: Boolean,
   webhooks: List[Webhook],
   swagger: Config.Swagger,
-  superApiKey: Option[UUID]
+  superApiKey: Option[UUID],
+  preTerminationPeriod: FiniteDuration,
+  preTerminationUnhealthy: Boolean
 )
 
 object Config {

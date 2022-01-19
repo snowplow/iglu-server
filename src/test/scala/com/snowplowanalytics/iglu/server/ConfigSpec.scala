@@ -78,7 +78,9 @@ class ConfigSpec extends org.specs2.Specification {
         Webhook.SchemaPublished(uri"https://example2.com/endpoint", Some(List("com", "org.acme", "org.snowplow")))
       ),
       Config.Swagger("/custom/prefix"),
-      None
+      None,
+      42.seconds,
+      true
     )
     val result = Config.serverCommand.parse(input.split(" ").toList).leftMap(_.toString).flatMap(_.read)
     result must beRight(expected)
@@ -96,7 +98,9 @@ class ConfigSpec extends org.specs2.Specification {
         false,
         Nil,
         Config.Swagger(""),
-        None
+        None,
+        10.seconds,
+        false
       )
     val result = Config.serverCommand.parse(input.split(" ").toList).leftMap(_.toString).flatMap(_.read)
     result must beRight(expected)
@@ -124,7 +128,9 @@ class ConfigSpec extends org.specs2.Specification {
         Webhook.SchemaPublished(uri"https://example2.com/endpoint", Some(List("com", "org.acme", "org.snowplow")))
       ),
       Config.Swagger("/custom/prefix"),
-      Some(UUID.fromString("a71aa7d9-6cde-40f7-84b1-046d65dedf9e"))
+      Some(UUID.fromString("a71aa7d9-6cde-40f7-84b1-046d65dedf9e")),
+      10.seconds,
+      true
     )
 
     val expected = json"""{
@@ -175,7 +181,9 @@ class ConfigSpec extends org.specs2.Specification {
       "swagger": {
         "baseUrl": "/custom/prefix"
       },
-      "superApiKey": "******"
+      "superApiKey": "******",
+      "preTerminationPeriod": "10 seconds",
+      "preTerminationUnhealthy": true
     }"""
 
     input.asJson must beEqualTo(expected)
@@ -204,7 +212,9 @@ class ConfigSpec extends org.specs2.Specification {
       false,
       Nil,
       Config.Swagger(""),
-      None
+      None,
+      10.seconds,
+      false
     )
     val result = Config.serverCommand.parse(input.split(" ").toList).leftMap(_.toString).flatMap(_.read)
     result must beRight(expected)

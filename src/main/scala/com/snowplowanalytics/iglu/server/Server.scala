@@ -21,13 +21,15 @@ import scala.concurrent.duration._
 import scala.concurrent.ExecutionContext
 
 import cats.data.Kleisli
-import cats.effect.{Blocker, ContextShift, ExitCode, IO, Resource, Sync, Timer}
+import cats.effect.{Blocker, ContextShift, ExitCase, ExitCode, IO, Resource, Sync, Timer}
+import cats.effect.concurrent.Ref
 
 import io.circe.syntax._
 
 import org.typelevel.log4cats.slf4j.Slf4jLogger
 
 import fs2.Stream
+import fs2.concurrent.SignallingRef
 
 import org.http4s.{Headers, HttpApp, HttpRoutes, MediaType, Request, Response, Status}
 import org.http4s.headers.`Content-Type`
@@ -102,9 +104,11 @@ object Server {
     webhook: Webhook.WebhookClient[IO],
     cache: CachingMiddleware.ResponseCache[IO],
     swaggerConfig: Config.Swagger,
-    blocker: Blocker
+    blocker: Blocker,
+    isHealthy: IO[Boolean]
   )(implicit cs: ContextShift[IO]): HttpApp[IO] = {
-    val serverRoutes = httpRoutes(storage, superKey, debug, patchesAllowed, webhook, cache, swaggerConfig, blocker)
+    val serverRoutes =
+      httpRoutes(storage, superKey, debug, patchesAllowed, webhook, cache, swaggerConfig, blocker, isHealthy)
     Kleisli[IO, Request[IO], Response[IO]](req => Router(serverRoutes: _*).run(req).getOrElse(NotFound))
   }
 
@@ -116,10 +120,11 @@ object Server {
     webhook: Webhook.WebhookClient[IO],
     cache: CachingMiddleware.ResponseCache[IO],
     swaggerConfig: Config.Swagger,
-    blocker: Blocker
+    blocker: Blocker,
+    isHealthy: IO[Boolean]
   )(implicit cs: ContextShift[IO]): List[(String, HttpRoutes[IO])] = {
     val services: List[(String, RoutesConstructor)] = List(
-      "/api/meta"       -> MetaService.asRoutes(debug, patchesAllowed),
+      "/api/meta"       -> MetaService.asRoutes(debug, patchesAllowed, isHealthy),
       "/api/schemas"    -> SchemaService.asRoutes(patchesAllowed, webhook),
       "/api/auth"       -> AuthService.asRoutes,
       "/api/validation" -> ValidationService.asRoutes,
@@ -162,7 +167,8 @@ object Server {
     }
 
   def buildServer(
-    config: Config
+    config: Config,
+    isHealthy: IO[Boolean]
   )(implicit cs: ContextShift[IO], timer: Timer[IO]): Resource[IO, BlazeServerBuilder[IO]] =
     for {
       _        <- Resource.eval(logger.info(s"Initializing server with following configuration: ${config.asJson.noSpaces}"))
@@ -171,7 +177,7 @@ object Server {
       webhookClient = Webhook.WebhookClient(config.webhooks, client)
       storage <- Storage.initialize[IO](config.database)
       cache   <- CachingMiddleware.initResponseCache[IO](1000, CacheTtl)
-      blocker <- Blocker[IO]
+      blocker <- Blocker[IO],
     } yield BlazeServerBuilder[IO](httpPool)
       .bindHttp(config.repoServer.port, config.repoServer.interface)
       .withHttpApp(
@@ -183,14 +189,38 @@ object Server {
           webhookClient,
           cache,
           config.swagger,
-          blocker
+          blocker,
+          isHealthy
         )
       )
       .withIdleTimeout(config.repoServer.idleTimeout.getOrElse(Http4sDefaults.IdleTimeout))
       .withMaxConnections(config.repoServer.maxConnections.getOrElse(Http4sDefaults.MaxConnections))
 
-  def run(config: Config)(implicit cs: ContextShift[IO], timer: Timer[IO]): Stream[IO, ExitCode] =
-    Stream.resource(buildServer(config)).flatMap(_.serve)
+  def run(config: Config)(implicit cs: ContextShift[IO], timer: Timer[IO]): IO[ExitCode] =
+    for {
+      signal    <- SignallingRef[IO, Boolean](false)
+      ref       <- Ref[IO].of(ExitCode.Success)
+      isHealthy <- Ref[IO].of(true)
+      stream = Stream.resource(buildServer(config, isHealthy.get)).flatMap(_.serveWhile(signal, ref))
+      exitCode <- stream.compile.lastOrError.start.bracketCase(_.join) {
+        case (_, ExitCase.Completed)    => IO.unit
+        case (_, ExitCase.Error(e))     => IO.raiseError(e)
+        case (fiber, ExitCase.Canceled) =>
+          // We received a SIGINT
+          for {
+            _ <- logger.warn("Received shutdown signal")
+            _ <- if (config.preTerminationUnhealthy) {
+              logger.warn(s"Setting health endpoint to unhealthy") *> isHealthy.set(false)
+            } else IO.unit
+            _ <- logger.warn(s"Sleeping for ${config.preTerminationPeriod}")
+            _ <- IO.sleep(config.preTerminationPeriod)
+            _ <- logger.warn("Terminating the server")
+            _ <- signal.set(true)
+            _ <- fiber.join
+            _ <- logger.warn("Server terminated")
+          } yield ()
+      }
+    } yield exitCode
 
   def setup(config: Config, migrate: Option[MigrateFrom])(implicit cs: ContextShift[IO]): IO[ExitCode] =
     config.database match {
