@@ -17,6 +17,7 @@ package service
 
 import java.util.UUID
 
+import cats.data.Validated
 import cats.effect._
 import cats.implicits._
 
@@ -30,8 +31,9 @@ import org.http4s.rho.swagger.SwaggerSyntax
 import org.http4s.rho.swagger.syntax.{io => swaggerSyntax}
 
 import com.snowplowanalytics.iglu.core.{SchemaMap, SchemaVer, SelfDescribingSchema}
-import com.snowplowanalytics.iglu.core.circe.CirceIgluCodecs._
+import com.snowplowanalytics.iglu.core.circe.implicits._
 
+import com.snowplowanalytics.iglu.schemaddl.jsonschema.Linter
 import com.snowplowanalytics.iglu.server.codecs._
 import com.snowplowanalytics.iglu.server.storage.Storage
 import com.snowplowanalytics.iglu.server.middleware.PermissionMiddleware
@@ -143,7 +145,13 @@ class SchemaService[F[+_]: Sync](
   }
 
   def publishSchema(isPublic: Boolean, permission: Permission, schema: SelfDescribingSchema[Json]) =
-    addSchema(permission, schema, isPublic)
+    if (permission.canCreateSchema(schema.self.schemaKey.vendor)) {
+      ValidationService.validateJsonSchema(schema.normalize) match {
+        case Validated.Invalid(report) if report.exists(_.level == Linter.Level.Error) =>
+          BadRequest(IgluResponse.SchemaValidationReport(report): IgluResponse)
+        case _ => addSchema(schema, isPublic)
+      }
+    } else Forbidden(IgluResponse.Forbidden: IgluResponse)
 
   def putSchema(
     vendor: String,
@@ -156,10 +164,10 @@ class SchemaService[F[+_]: Sync](
   ) = json match {
     case SchemaBody.BodyOnly(body) =>
       val schemaMap = SchemaMap(vendor, name, format, version)
-      addSchema(permission, SelfDescribingSchema(schemaMap, body), isPublic)
+      publishSchema(isPublic, permission, SelfDescribingSchema(schemaMap, body))
     case SchemaBody.SelfDescribing(schema) =>
       val schemaMapUri = SchemaMap(vendor, name, format, version)
-      if (schemaMapUri == schema.self) addSchema(permission, schema, isPublic)
+      if (schemaMapUri == schema.self) publishSchema(isPublic, permission, schema)
       else BadRequest(IgluResponse.SchemaMismatch(schemaMapUri.schemaKey, schema.self.schemaKey): IgluResponse)
   }
 
@@ -183,25 +191,23 @@ class SchemaService[F[+_]: Sync](
       case schemas => Ok(schemas)
     }
 
-  private def addSchema(permission: Permission, schema: SelfDescribingSchema[Json], isPublic: Boolean) =
-    if (permission.canCreateSchema(schema.self.schemaKey.vendor))
-      for {
-        allowed <- isSchemaAllowed(db, schema.self, patchesAllowed, isPublic)
-        response <- allowed match {
-          case Right(_) =>
-            for {
-              existing <- db.getSchema(schema.self).map(_.isDefined)
-              _ <- if (existing) db.updateSchema(schema.self, schema.schema, isPublic)
-              else db.addSchema(schema.self, schema.schema, isPublic)
-              payload = IgluResponse.SchemaUploaded(existing, schema.self.schemaKey): IgluResponse
-              _        <- webhooks.schemaPublished(schema.self.schemaKey, existing)
-              response <- if (existing) Ok(payload) else Created(payload)
-            } yield response
-          case Left(error) =>
-            Conflict(IgluResponse.Message(error): IgluResponse)
-        }
-      } yield response
-    else Forbidden(IgluResponse.Forbidden: IgluResponse)
+  private def addSchema(schema: SelfDescribingSchema[Json], isPublic: Boolean) =
+    for {
+      allowed <- isSchemaAllowed(db, schema.self, patchesAllowed, isPublic)
+      response <- allowed match {
+        case Right(_) =>
+          for {
+            existing <- db.getSchema(schema.self).map(_.isDefined)
+            _ <- if (existing) db.updateSchema(schema.self, schema.schema, isPublic)
+            else db.addSchema(schema.self, schema.schema, isPublic)
+            payload = IgluResponse.SchemaUploaded(existing, schema.self.schemaKey): IgluResponse
+            _        <- webhooks.schemaPublished(schema.self.schemaKey, existing)
+            response <- if (existing) Ok(payload) else Created(payload)
+          } yield response
+        case Left(error) =>
+          Conflict(IgluResponse.Message(error): IgluResponse)
+      }
+    } yield response
 }
 
 object SchemaService {
