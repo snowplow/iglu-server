@@ -54,6 +54,7 @@ class SchemaServiceSpec extends org.specs2.Specification {
     Prohibits adding new schema if previous version does not exist $e12
     PUT request adds schema $e2
     PUT request updates existing schema if patches are allowed $e13
+    Prohibits adding new schema if it is not valid $e16
   """
 
   def e1 = {
@@ -427,6 +428,42 @@ class SchemaServiceSpec extends org.specs2.Specification {
     } yield last
 
     result.unsafeRunSync() must beEqualTo(expected)
+  }
+
+  def e16 = {
+    val selfDescribingSchema =
+      json"""
+        {
+          "$$schema": "http://iglucentral.com/schemas/com.snowplowanalytics.self-desc/schema/jsonschema/1-0-0#",
+          "self": {
+            "vendor": "com.acme",
+            "name": "nonexistent",
+            "format": "jsonschema",
+            "version": "1-0-0"
+          },
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false,
+          "required": ["xyz"]
+        }"""
+    val exampleSchema = Stream.emits(selfDescribingSchema.noSpaces.stripMargin.getBytes).covary[IO]
+
+    val req = Request[IO](Method.PUT, Uri.uri("/com.acme/nonexistent/jsonschema/1-0-0"))
+      .withContentType(headers.`Content-Type`(MediaType.application.json))
+      .withHeaders(Headers.of(Header("apikey", SpecHelpers.superKey.toString)))
+      .withBodyStream(exampleSchema)
+
+    val result = for {
+      response <- SchemaServiceSpec.request(List(req), false)
+      body     <- response.as[Json]
+    } yield (response.status, body)
+
+    val (status, body) = result.unsafeRunSync()
+    (status must beEqualTo(Status.BadRequest)).and(
+      body.noSpaces must contain(
+        "Elements specified as required [xyz] don't exist in schema properties"
+      )
+    )
   }
 }
 
