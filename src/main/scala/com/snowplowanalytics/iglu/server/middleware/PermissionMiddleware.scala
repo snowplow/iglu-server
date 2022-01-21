@@ -21,6 +21,7 @@ import cats.Applicative
 import cats.data.{Kleisli, OptionT}
 import cats.effect.Sync
 import cats.syntax.either._
+import cats.syntax.functor._
 import cats.syntax.eq._
 
 import org.http4s.{HttpRoutes, Request, Response, Status}
@@ -63,8 +64,7 @@ object PermissionMiddleware {
   ): HttpRoutes[F] =
     PermissionMiddleware[F](db, superKey).apply(ctx.toService(service))
 
-  private val SchemaNotFoundBody = Utils.toBytes(IgluResponse.SchemaNotFound: IgluResponse)
-  private val PermissionsIssue   = Utils.toBytes(IgluResponse.Message("Not enough permissions"): IgluResponse)
+  private val ApiKeyIssue = Utils.toBytes(IgluResponse.Message("Invalid UUID for ApiKey"): IgluResponse)
 
   /** Authenticate request against storage */
   private def auth[F[_]: Sync](storage: Storage[F], superKey: Option[UUID])(
@@ -78,27 +78,18 @@ object PermissionMiddleware {
           case Some(uuid) if uuid === apiKey =>
             OptionT.pure(Permission.Super)
           case _ =>
-            OptionT(storage.getPermission(apiKey))
+            // An unknown api key is treated the same as a missing api key.
+            // This prevents leaking information about what api keys exist.
+            OptionT.liftF(storage.getPermission(apiKey).map(_.getOrElse(Permission.Noop)))
         }
       case Some(_) =>
         OptionT.none
     }
 
-  /** Handle invalid apikey as BadRequest, everything else as NotFound
-    * (because we don't reveal presence of private resources)
-    * Function is called only on Some(_)
+  /** This handler is only called if a UUID cannot be extracted from the apiKey header
+    *
+    *  The service itself handles the case when permissions are not sufficient.
     */
   private def badRequestHandler[F[_]](implicit F: Applicative[F]): Request[F] => F[Response[F]] =
-    s =>
-      getApiKey(s) match {
-        case Some(Left(error)) =>
-          val body = Utils.toBytes[F, IgluResponse](
-            IgluResponse.Message(s"Error parsing apikey HTTP header. ${error.getMessage}")
-          )
-          F.pure(Response[F](Status.BadRequest, body = body))
-        case _ if s.uri.renderString.contains("keygen") => // Horrible way to check if we're not using SchemaService
-          F.pure(Response[F](Status.Forbidden, body = PermissionsIssue))
-        case Some(Right(_)) =>
-          F.pure(Response[F](Status.NotFound, body = SchemaNotFoundBody))
-      }
+    _ => F.pure(Response[F](Status.BadRequest, body = ApiKeyIssue))
 }
