@@ -19,7 +19,7 @@ object Dependencies {
   object V {
     val IgluCore   = "1.0.1"
     val SchemaDdl  = "0.14.4"
-    val IgluClient = "1.1.0"
+    val IgluClient = "1.1.1"
 
     val Http4s     = "0.21.22"
     val Rho        = "0.21.0"
