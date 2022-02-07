@@ -1,3 +1,15 @@
+Version 0.8.0 (2022-02-07)
+--------------------------
+Update copyright notices to 2022 (#84)
+Bump swagger-ui to 4.2.1 (#82)
+Bump iglu-scala-client to 1.1.1 (#81)
+Bump iglu-core-circe to 1.0.1 (#80)
+Bump schema-ddl to 0.14.4 (#79)
+Improve unauthenticated error message on the post schema endpoint (#77)
+Schema service should reject invalid schemas (#78)
+Graceful shutdown (#83)
+Fix api key environment variable in docker-compose file (#76)
+
 Version 0.7.0 (2021-08-03)
 --------------------------
 Rename to "Super" for api keys (#72)
