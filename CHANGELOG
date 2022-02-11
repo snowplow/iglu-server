@@ -1,3 +1,8 @@
+Version 0.8.1 (2022-02-14)
+--------------------------
+Change docker base image to eclipse/temurin:11-jre-focal (#87)
+Bump postgresql to 42.2.25 (#86)
+
 Version 0.8.0 (2022-02-07)
 --------------------------
 Update copyright notices to 2022 (#84)
