@@ -24,7 +24,7 @@ import com.typesafe.sbt.packager.docker.DockerPlugin.autoImport._
 object BuildSettings {
 
   lazy val dockerSettings = Seq(
-    dockerBaseImage := "adoptopenjdk:11-jre-hotspot-focal",
+    dockerBaseImage := "eclipse-temurin:11-jre-focal",
     Docker / maintainer := "Snowplow Analytics Ltd. <support@snowplowanalytics.com>",
     dockerUpdateLatest := true,
     dockerRepository := Some("snowplow"),
