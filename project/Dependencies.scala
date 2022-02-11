@@ -33,6 +33,7 @@ object Dependencies {
     val SwaggerUi  = "4.2.1"
     val Slf4j      = "1.7.30"
     val ScalaCache = "0.28.0"
+    val Postgresql = "42.2.25"
 
     val Specs2     = "4.5.1"
     val Logback    = "1.2.3"
@@ -67,6 +68,7 @@ object Dependencies {
 
     "org.webjars"           %  "swagger-ui"            % V.SwaggerUi,
     "org.slf4j"             %  "slf4j-simple"          % V.Slf4j,
+    "org.postgresql"        %  "postgresql"            % V.Postgresql,
     "org.tpolecat"          %% "doobie-specs2"         % V.Doobie     % Test,
     "org.specs2"            %% "specs2-core"           % V.Specs2     % Test,
     "org.specs2"            %% "specs2-cats"           % V.Specs2     % Test
