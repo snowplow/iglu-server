@@ -224,15 +224,15 @@ object Server {
 
   def setup(config: Config, migrate: Option[MigrateFrom])(implicit cs: ContextShift[IO]): IO[ExitCode] =
     config.database match {
-      case pg @ Config.StorageConfig.Postgres(_, _, dbname, _, _, _, _, _) =>
+      case pg: Config.StorageConfig.Postgres =>
         val xa = getTransactor(pg)
         val action = migrate match {
           case Some(migration) =>
             migration.perform.transact(xa) *>
-              logger.warn(s"All tables were migrated in $dbname from $migration")
+              logger.warn(s"All tables were migrated in ${pg.dbname} from $migration")
           case None =>
             Bootstrap.initialize[IO](xa) *>
-              logger.warn(s"Tables were initialized in $dbname")
+              logger.warn(s"Tables were initialized in ${pg.dbname}")
         }
         action.as(ExitCode.Success)
       case Config.StorageConfig.Dummy =>

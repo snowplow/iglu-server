@@ -175,7 +175,8 @@ object Config {
       password: String,
       driver: String,
       maxPoolSize: Option[Int], // deprecated
-      pool: ConnectionPool
+      pool: ConnectionPool,
+      enableStartupChecks: Boolean
     ) extends StorageConfig {
 
       /** Backward-compatibility */
@@ -186,7 +187,7 @@ object Config {
     }
 
     val postgresReader: ConfigReader[Postgres] =
-      ConfigReader.forProduct8(
+      ConfigReader.forProduct9(
         "host",
         "port",
         "dbname",
@@ -194,7 +195,8 @@ object Config {
         "password",
         "driver",
         "maxPoolSize",
-        "pool"
+        "pool",
+        "enableStartupChecks"
       )(StorageConfig.Postgres.apply)
 
     implicit val storageConfigCirceEncoder: Encoder[StorageConfig] =

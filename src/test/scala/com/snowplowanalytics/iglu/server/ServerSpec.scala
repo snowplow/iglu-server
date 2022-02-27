@@ -164,7 +164,8 @@ object ServerSpec {
         "iglusecret",
         "org.postgresql.Driver",
         None,
-        dbPoolConfig
+        dbPoolConfig,
+        true
       )
   val config = Config(storageConfig, httpConfig, false, true, Nil, Config.Swagger(""), None, 10.seconds, false)
 

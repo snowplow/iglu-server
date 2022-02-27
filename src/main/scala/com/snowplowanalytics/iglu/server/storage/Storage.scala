@@ -20,7 +20,7 @@ import java.util.UUID
 import fs2.Stream
 
 import cats.Monad
-import cats.effect.{Blocker, Bracket, Clock, ContextShift, Effect, Resource, Sync}
+import cats.effect.{Blocker, Bracket, BracketThrow, Clock, ContextShift, Effect, Resource, Sync}
 import cats.implicits._
 
 import io.circe.Json
@@ -29,6 +29,7 @@ import doobie.hikari._
 import doobie.util.transactor.Transactor
 
 import org.typelevel.log4cats.slf4j.Slf4jLogger
+import org.typelevel.log4cats.Logger
 
 import com.snowplowanalytics.iglu.core.SchemaMap
 import com.snowplowanalytics.iglu.server.Config.StorageConfig
@@ -100,13 +101,18 @@ object Storage {
           password,
           driver,
           _,
-          Config.StorageConfig.ConnectionPool.NoPool(ec)
+          Config.StorageConfig.ConnectionPool.NoPool(ec),
+          enableStartupChecks
           ) =>
         val url = s"jdbc:postgresql://$host:$port/$name"
         for {
           blocker <- Server.createThreadPool(ec).map(Blocker.liftExecutionContext)
-          xa: Transactor[F] = Transactor.fromDriverManager[F](driver, url, username, password, blocker)
-        } yield Postgres[F](xa, logger)
+          storage <- buildAndCheckPostgres(
+            Transactor.fromDriverManager[F](driver, url, username, password, blocker),
+            logger,
+            enableStartupChecks
+          )
+        } yield storage
       case p @ StorageConfig.Postgres(
             host,
             port,
@@ -115,7 +121,8 @@ object Storage {
             password,
             driver,
             _,
-            pool: Config.StorageConfig.ConnectionPool.Hikari
+            pool: Config.StorageConfig.ConnectionPool.Hikari,
+            enableStartupChecks
           ) =>
         val url = s"jdbc:postgresql://$host:$port/$name"
         for {
@@ -134,8 +141,19 @@ object Storage {
               }
             }
           }
-          storage <- Resource.eval(Postgres(xa, logger).ping)
+          storage <- buildAndCheckPostgres(xa, logger, enableStartupChecks)
         } yield storage
     }
   }
+
+  private def buildAndCheckPostgres[F[_]: BracketThrow](
+    xa: Transactor[F],
+    logger: Logger[F],
+    enableChecks: Boolean
+  ): Resource[F, Postgres[F]] = {
+    val pg   = Postgres(xa, logger)
+    val pung = if (enableChecks) pg.ping else Monad[F].unit
+    Resource.eval(pung.as(pg))
+  }
+
 }

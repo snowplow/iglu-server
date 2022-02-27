@@ -59,6 +59,10 @@
       # threadPool = "cached"
 
     }
+
+    # Optional, whether to ping postgres during startup, and fail immediately if postgres is not available.
+    # True is a good option for production pipelines, so the instance is not considered healthy until the postgres connection is healthy.
+    "enableStartupChecks": true
   }
 
   # optional configuration for swagger api documentation

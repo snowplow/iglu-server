@@ -68,7 +68,8 @@ class ConfigSpec extends org.specs2.Specification {
           "sp_password",
           "org.postgresql.Driver",
           Some(5),
-          pool
+          pool,
+          false
         ),
       Config.Http("0.0.0.0", 8080, Some(10.seconds), None, Config.ThreadPool.Global),
       true,
@@ -118,7 +119,8 @@ class ConfigSpec extends org.specs2.Specification {
           "sp_password",
           "org.postgresql.Driver",
           Some(5),
-          Config.StorageConfig.ConnectionPool.NoPool(Config.ThreadPool.Fixed(2))
+          Config.StorageConfig.ConnectionPool.NoPool(Config.ThreadPool.Fixed(2)),
+          true
         ),
       Config.Http("0.0.0.0", 8080, None, None, Config.ThreadPool.Global),
       true,
@@ -148,7 +150,8 @@ class ConfigSpec extends org.specs2.Specification {
             "type" : "fixed"
           }
         },
-        "password" : "******"
+        "password" : "******",
+        "enableStartupChecks": true
       },
       "repoServer" : {
         "interface" : "0.0.0.0",
@@ -205,7 +208,8 @@ class ConfigSpec extends org.specs2.Specification {
           "sp_password",
           "org.postgresql.Driver",
           None,
-          pool
+          pool,
+          true
         ),
       Config.Http("0.0.0.0", 8080, None, None, Config.ThreadPool.Fixed(4)),
       false,
