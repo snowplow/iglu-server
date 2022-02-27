@@ -1,3 +1,9 @@
+Version 0.8.2 (2022-02-28)
+--------------------------
+Fix swagger-ui behind a reverse proxy (#89)
+Build docker images for amd64 and arm64 architectures (#92)
+Option to disable startup checks (#91)
+
 Version 0.8.1 (2022-02-14)
 --------------------------
 Change docker base image to eclipse/temurin:11-jre-focal (#87)
