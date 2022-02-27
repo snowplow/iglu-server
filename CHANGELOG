@@ -1,3 +1,7 @@
+Version 0.8.2 (2022-02-28)
+--------------------------
+Fix swagger-ui behind a reverse proxy (#89)
+
 Version 0.8.1 (2022-02-14)
 --------------------------
 Change docker base image to eclipse/temurin:11-jre-focal (#87)
