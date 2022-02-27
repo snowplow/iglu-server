@@ -80,10 +80,35 @@ jobs:
       uses: actions/setup-java@v1
       with:
         java-version: 11
+    - name: Get current version
+      id: ver
+      run: echo "::set-output name=tag::${GITHUB_REF#refs/tags/}"
     - name: Docker login
       run: docker login -u $DOCKER_USERNAME -p $DOCKER_PASSWORD
       env:
         DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
         DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
-    - name: Build and publish Docker image
-      run: sbt docker:publish
+    - name: Stage the Docker build
+      run: sbt docker:stage
+    - name: Docker metadata
+      id: meta
+      uses: docker/metadata-action@v3
+      with:
+        images: snowplow/iglu-server
+        tags: |
+          type=raw,value=latest,enable=${{ !contains(steps.ver.outputs.tag, 'rc') }}
+          type=raw,value=${{ steps.ver.outputs.tag }}
+        flavor: |
+          latest=false
+    - name: Set up QEMU
+      uses: docker/setup-qemu-action@v1
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v1
+    - name: Push image
+      uses: docker/build-push-action@v2
+      with:
+        context: target/docker/stage
+        file: target/docker/stage/Dockerfile
+        platforms: linux/amd64,linux/arm64/v8
+        tags: ${{ steps.meta.outputs.tags }}
+        push: true
