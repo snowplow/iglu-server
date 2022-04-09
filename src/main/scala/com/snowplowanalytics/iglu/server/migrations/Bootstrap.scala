@@ -24,12 +24,22 @@ import com.snowplowanalytics.iglu.server.storage.Postgres
 
 object Bootstrap {
   val keyActionCreate =
-    sql"""CREATE TYPE key_action AS ENUM ('CREATE', 'DELETE')"""
+    sql"""DO 'BEGIN
+    PERFORM ''key_action''::regtype;
+EXCEPTION
+    WHEN undefined_object THEN
+        CREATE TYPE key_action AS ENUM (''CREATE'', ''DELETE'');
+END';"""
 
   val schemaActionCreate =
-    sql"""CREATE TYPE schema_action AS ENUM ('READ', 'BUMP', 'CREATE', 'CREATE_VENDOR')"""
+    sql"""DO 'BEGIN
+    PERFORM ''schema_action''::regtype;
+EXCEPTION
+    WHEN undefined_object THEN
+        CREATE TYPE schema_action AS ENUM (''READ'', ''BUMP'', ''CREATE'', ''CREATE_VENDOR'');
+END';"""
 
-  val permissionsCreate = (fr"CREATE TABLE" ++ Postgres.PermissionsTable ++ fr"""(
+  val permissionsCreate = (fr"CREATE TABLE IF NOT EXISTS" ++ Postgres.PermissionsTable ++ fr"""(
         apikey              UUID            NOT NULL,
         vendor              VARCHAR(128),
         wildcard            BOOL            NOT NULL,
@@ -38,7 +48,7 @@ object Bootstrap {
         PRIMARY KEY (apikey)
       );""")
 
-  val schemasCreate = (fr"CREATE TABLE" ++ Postgres.SchemasTable ++ fr"""(
+  val schemasCreate = (fr"CREATE TABLE IF NOT EXISTS" ++ Postgres.SchemasTable ++ fr"""(
         vendor      VARCHAR(128)  NOT NULL,
         name        VARCHAR(128)  NOT NULL,
         format      VARCHAR(128)  NOT NULL,
@@ -53,7 +63,7 @@ object Bootstrap {
         body        JSON          NOT NULL
       )""")
 
-  val draftsCreate = (fr"CREATE TABLE" ++ Postgres.DraftsTable ++ fr"""(
+  val draftsCreate = (fr"CREATE TABLE IF NOT EXISTS" ++ Postgres.DraftsTable ++ fr"""(
         vendor      VARCHAR(128) NOT NULL,
         name        VARCHAR(128) NOT NULL,
         format      VARCHAR(128) NOT NULL,
