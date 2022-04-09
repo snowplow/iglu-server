@@ -24,20 +24,20 @@ import com.snowplowanalytics.iglu.server.storage.Postgres
 
 object Bootstrap {
   val keyActionCreate =
-    sql"""DO \$\$ BEGIN
-    PERFORM 'key_action'::regtype;
+    sql"""DO 'BEGIN
+    PERFORM ''key_action''::regtype;
 EXCEPTION
     WHEN undefined_object THEN
-        CREATE TYPE key_action AS ENUM ('CREATE', 'DELETE');
-END \$\$;"""
+        CREATE TYPE key_action AS ENUM (''CREATE'', ''DELETE'');
+END';"""
 
   val schemaActionCreate =
-    sql"""DO \$\$ BEGIN
-    PERFORM 'schema_action'::regtype;
+    sql"""DO 'BEGIN
+    PERFORM ''schema_action''::regtype;
 EXCEPTION
     WHEN undefined_object THEN
-        CREATE TYPE schema_action AS ENUM ('READ', 'BUMP', 'CREATE', 'CREATE_VENDOR');
-END \$\$;"""
+        CREATE TYPE schema_action AS ENUM (''READ'', ''BUMP'', ''CREATE'', ''CREATE_VENDOR'');
+END';"""
 
   val permissionsCreate = (fr"CREATE TABLE IF NOT EXISTS" ++ Postgres.PermissionsTable ++ fr"""(
         apikey              UUID            NOT NULL,
