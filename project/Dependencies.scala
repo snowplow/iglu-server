@@ -31,7 +31,7 @@ object Dependencies {
     val Refined    = "0.9.24"
     val PureConfig = "0.15.0"
     val SwaggerUi  = "4.10.3"
-    val Slf4j      = "1.7.30"
+    val Slf4j      = "1.7.36"
     val ScalaCache = "0.28.0"
     val Postgresql = "42.2.25"
     val Jackson    = "2.12.6.1"
