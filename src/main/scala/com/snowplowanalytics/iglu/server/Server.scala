@@ -31,14 +31,15 @@ import org.typelevel.log4cats.slf4j.Slf4jLogger
 import fs2.Stream
 import fs2.concurrent.SignallingRef
 
-import org.http4s.{Headers, HttpApp, HttpRoutes, MediaType, Request, Response, Status}
+import org.http4s.{Headers, HttpApp, HttpRoutes, MediaType, Method, Request, Response, Status}
 import org.http4s.headers.`Content-Type`
 import org.http4s.client.blaze.BlazeClientBuilder
 import org.http4s.server.Router
 import org.http4s.server.blaze.BlazeServerBuilder
-import org.http4s.server.middleware.{AutoSlash, CORS, CORSConfig, Logger}
+import org.http4s.server.middleware.{AutoSlash, CORS, Logger}
 import org.http4s.syntax.string._
 import org.http4s.server.{defaults => Http4sDefaults}
+import org.http4s.util.{CaseInsensitiveString => CIString}
 
 import org.http4s.rho.{AuthedContext, RhoMiddleware}
 import org.http4s.rho.bits.PathAST.{PathMatch, TypedPath}
@@ -134,19 +135,18 @@ object Server {
     val debugRoute  = "/api/debug" -> DebugService.asRoutes(storage, ioSwagger.createRhoMiddleware())
     val staticRoute = "/static" -> StaticService.routes(blocker)
     val routes      = staticRoute :: services.map(addSwagger(storage, superKey, swaggerConfig))
-    val corsConfig = CORSConfig(
-      anyOrigin = true,
-      anyMethod = false,
-      allowedMethods = Some(Set("GET", "POST", "PUT", "OPTIONS", "DELETE")),
-      allowedHeaders = Some(Set("content-type", "apikey")),
-      allowCredentials = false,
-      maxAge = 1.day.toSeconds
-    )
+    val corsPolicy = CORS
+      .policy
+      .withAllowOriginHostCi(_ => true)
+      .withAllowCredentials(false)
+      .withAllowMethodsIn(Set(Method.GET, Method.POST, Method.PUT, Method.OPTIONS, Method.DELETE))
+      .withAllowHeadersIn(Set(CIString("content-type"), CIString("apikey")))
+      .withMaxAge(1.day)
 
     (if (debug) debugRoute :: routes else routes).map {
       case (endpoint, route) =>
         // Apply middleware
-        val httpRoutes        = CachingMiddleware(cache)(BadRequestHandler(CORS(AutoSlash(route), corsConfig)))
+        val httpRoutes        = CachingMiddleware(cache)(BadRequestHandler(corsPolicy(AutoSlash(route))))
         val redactHeadersWhen = (Headers.SensitiveHeaders + "apikey".ci).contains _
         (endpoint, Logger.httpRoutes[IO](true, true, redactHeadersWhen, Some(logger.debug(_)))(httpRoutes))
     }
