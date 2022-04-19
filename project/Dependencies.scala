@@ -30,7 +30,7 @@ object Dependencies {
     val CirceFs2   = "0.13.0"
     val Refined    = "0.9.24"
     val PureConfig = "0.15.0"
-    val SwaggerUi  = "4.2.1"
+    val SwaggerUi  = "4.10.3"
     val Slf4j      = "1.7.30"
     val ScalaCache = "0.28.0"
     val Postgresql = "42.2.25"
