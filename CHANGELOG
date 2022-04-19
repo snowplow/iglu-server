@@ -1,3 +1,13 @@
+Version 0.8.4 (2022-04-20)
+--------------------------
+Bump postgresql driver to 42.3.4 (#101)
+Bump slf4j-simple to 1.7.36 (#100)
+Bump swagger-ui to 4.10.3 (#99)
+Bump http4s to 0.21.33 (#97)
+Bump doobie to 0.13.4 (#98)
+Bump jackson-databind to 2.12.6.1 (#96)
+Disallow credentials in CORS requests (#103)
+
 Version 0.8.3 (2022-04-13)
 --------------------------
 Allow setup to be executed multiple times without failure (#94)
