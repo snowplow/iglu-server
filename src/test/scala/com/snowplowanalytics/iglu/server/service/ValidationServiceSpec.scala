@@ -266,7 +266,7 @@ class ValidationServiceSpec extends org.specs2.Specification {
       "report" : [
         {
           "message" : "$$.properties.inner.misplacedProperty: is not defined in the schema and the schema does not allow additional properties",
-          "level" : "ERROR",
+          "level" : "WARNING",
           "pointer" : "/properties/inner"
         }
       ]
