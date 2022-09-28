@@ -35,6 +35,7 @@ object Dependencies {
     val ScalaCache = "0.28.0"
     val Postgresql = "42.3.4"
     val Jackson    = "2.12.6.1"
+    val Snakeyaml  = "1.31"
 
     val Specs2     = "4.5.1"
     val Logback    = "1.2.3"
@@ -71,8 +72,10 @@ object Dependencies {
     "org.slf4j"                  % "slf4j-simple"      % V.Slf4j,
     "org.postgresql"             % "postgresql"        % V.Postgresql,
     "com.fasterxml.jackson.core" % "jackson-databind"  % V.Jackson, // override transitive version to address security vulnerabilities
+    "org.yaml"                   % "snakeyaml"         % V.Snakeyaml, // override transitive version to address security vulnerabilities
 
-    "org.tpolecat"          %% "doobie-specs2"         % V.Doobie     % Test,
+
+  "org.tpolecat"          %% "doobie-specs2"         % V.Doobie     % Test,
     "org.specs2"            %% "specs2-core"           % V.Specs2     % Test,
     "org.specs2"            %% "specs2-cats"           % V.Specs2     % Test
   )
