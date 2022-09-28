@@ -33,7 +33,7 @@ object Dependencies {
     val SwaggerUi  = "4.10.3"
     val Slf4j      = "1.7.36"
     val ScalaCache = "0.28.0"
-    val Postgresql = "42.3.4"
+    val Postgresql = "42.4.1"
     val Jackson    = "2.12.6.1"
     val Snakeyaml  = "1.31"
 
@@ -75,7 +75,7 @@ object Dependencies {
     "org.yaml"                   % "snakeyaml"         % V.Snakeyaml, // override transitive version to address security vulnerabilities
 
 
-  "org.tpolecat"          %% "doobie-specs2"         % V.Doobie     % Test,
+    "org.tpolecat"          %% "doobie-specs2"         % V.Doobie     % Test,
     "org.specs2"            %% "specs2-core"           % V.Specs2     % Test,
     "org.specs2"            %% "specs2-cats"           % V.Specs2     % Test
   )
