@@ -1,3 +1,8 @@
+Version 0.8.6 (2022-09-29)
+--------------------------
+Bump postgresql driver to 42.4.1 (#109)
+Bump snakeyaml to 1.31 (#109)
+
 Version 0.8.5 (2022-04-27)
 --------------------------
 Bump Schema Ddl to 0.14.5 (#105)

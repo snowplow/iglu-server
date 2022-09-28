@@ -26,10 +26,10 @@ limitations under the License.
 [roadmap-image]: https://d3i6fms1cm1j0i.cloudfront.net/github/images/roadmap.png
 [contributing-image]: https://d3i6fms1cm1j0i.cloudfront.net/github/images/contributing.png
 
-[techdocs]: https://docs.snowplowanalytics.com/docs/pipeline-components-and-applications/iglu/
-[setup]: https://docs.snowplowanalytics.com/docs/pipeline-components-and-applications/iglu/setting-up-iglu/step-2-setup-an-iglu-repository/2-4-iglu-server/
+[techdocs]: https://docs.snowplow.io/docs/pipeline-components-and-applications/iglu/
+[setup]: https://docs.snowplow.io/docs/pipeline-components-and-applications/iglu/iglu-repositories/iglu-server/setup/
 [roadmap]: https://github.com/snowplow/snowplow/projects/7
-[contributing]: https://docs.snowplowanalytics.com/docs/contributing/
+[contributing]: https://docs.snowplow.io/docs/contributing/
 
 [license]: http://www.apache.org/licenses/LICENSE-2.0
 
