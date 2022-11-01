@@ -33,21 +33,26 @@ class WebhookSpec extends org.specs2.Specification {
     val response = WebhookSpec
       .webhookClient
       .schemaPublished(SchemaKey("com.acme", "event", "jsonschema", SchemaVer.Full(1, 0, 0)), true)
-    response.unsafeRunSync() mustEqual List(().asRight, ().asRight)
+    response.unsafeRunSync() mustEqual List(().asRight, ().asRight, ().asRight)
   }
 
   def e2 = {
     val response = WebhookSpec
       .badWebhookClient
       .schemaPublished(SchemaKey("com.acme", "event", "jsonschema", SchemaVer.Full(1, 0, 0)), true)
-    response.unsafeRunSync() mustEqual List("502".asLeft, "502".asLeft)
+    response.unsafeRunSync() mustEqual List("502".asLeft, "502".asLeft, "502".asLeft)
   }
 }
 
 object WebhookSpec {
   val webhooks = List(
-    Webhook.SchemaPublished(Uri.uri("https://example.com/endpoint"), None),
-    Webhook.SchemaPublished(Uri.uri("https://example2.com/endpoint"), Some(List("com", "org.acme", "org.snowplow")))
+    Webhook.SchemaPublished(Uri.uri("https://example.com/endpoint"), None, usePost = false),
+    Webhook.SchemaPublished(
+      Uri.uri("https://example2.com/endpoint"),
+      Some(List("com", "org.acme", "org.snowplow")),
+      usePost = false
+    ),
+    Webhook.SchemaPublished(Uri.uri("https://example3.com/endpoint"), None, usePost = true)
   )
 
   val client: Client[IO] = Client.fromHttpApp(HttpApp[IO](r => Response[IO]().withEntity(r.body).pure[IO]))
