@@ -237,7 +237,12 @@ object Config {
         case keyCur if keyCur.isUndefined => List.empty.asRight
         case keyCur                       => keyCur.asList.flatMap(_.traverse(cur => cur.asString))
       }
-    } yield Webhook.SchemaPublished(uri, Some(prefixes))
+
+      usePost <- objCur.atKeyOrUndefined("usePost") match {
+        case keyCur if keyCur.isUndefined => None.asRight
+        case keyCur                       => ConfigReader[Option[Boolean]].from(keyCur)
+      }
+    } yield Webhook.SchemaPublished(uri, Some(prefixes), usePost.getOrElse(false))
   }
 
   implicit val pureStorageReader: ConfigReader[StorageConfig] = ConfigReader.fromCursor { cur =>

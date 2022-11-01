@@ -75,8 +75,13 @@ class ConfigSpec extends org.specs2.Specification {
       true,
       true,
       List(
-        Webhook.SchemaPublished(uri"https://example.com/endpoint", Some(List.empty)),
-        Webhook.SchemaPublished(uri"https://example2.com/endpoint", Some(List("com", "org.acme", "org.snowplow")))
+        Webhook.SchemaPublished(uri"https://example.com/endpoint", Some(List.empty), usePost = false),
+        Webhook.SchemaPublished(
+          uri"https://example2.com/endpoint",
+          Some(List("com", "org.acme", "org.snowplow")),
+          usePost = false
+        ),
+        Webhook.SchemaPublished(uri"https://example3.com/endpoint", Some(List.empty), usePost = true)
       ),
       Config.Swagger("/custom/prefix"),
       None,
@@ -126,8 +131,12 @@ class ConfigSpec extends org.specs2.Specification {
       true,
       true,
       List(
-        Webhook.SchemaPublished(uri"https://example.com/endpoint", Some(List.empty)),
-        Webhook.SchemaPublished(uri"https://example2.com/endpoint", Some(List("com", "org.acme", "org.snowplow")))
+        Webhook.SchemaPublished(uri"https://example.com/endpoint", Some(List.empty), usePost = false),
+        Webhook.SchemaPublished(
+          uri"https://example2.com/endpoint",
+          Some(List("com", "org.acme", "org.snowplow")),
+          usePost = false
+        )
       ),
       Config.Swagger("/custom/prefix"),
       Some(UUID.fromString("a71aa7d9-6cde-40f7-84b1-046d65dedf9e")),
@@ -167,7 +176,8 @@ class ConfigSpec extends org.specs2.Specification {
           "SchemaPublished" : {
             "uri" : "https://example.com/endpoint",
             "vendorPrefixes" : [
-            ]
+            ],
+            "usePost": false
           }
         },
         {
@@ -177,7 +187,8 @@ class ConfigSpec extends org.specs2.Specification {
               "com",
               "org.acme",
               "org.snowplow"
-            ]
+            ],
+            "usePost": false
           }
         }
       ],

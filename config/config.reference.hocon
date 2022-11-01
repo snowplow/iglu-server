@@ -81,7 +81,8 @@
   # Optional webhooks configuration
   "webhooks": {
     # Enable webhooks that will be called when a schema is published or updated
-    # with a vendor that matches the specified prefixes
+    # with a vendor that matches the specified prefixes, allowing to use the
+    # http GET (by default) or POST method.
     "schemaPublished": [
       # {
       #   uri = "https://example.com/endpoint"
@@ -90,6 +91,10 @@
       #   uri = "https://example2.com/endpoint",
       #   vendorPrefixes = ["com", "org.acme", "org.snowplow"]
       # }
+      # {
+      #   uri = "https://example.com/endpoint",
+      #   usePost = true
+      # },
     ]
   }
 
