@@ -80,16 +80,23 @@ jobs:
       uses: actions/setup-java@v1
       with:
         java-version: 11
-    - name: Get current version
-      id: ver
-      run: echo "::set-output name=tag::${GITHUB_REF#refs/tags/}"
     - name: Docker login
       run: docker login -u $DOCKER_USERNAME -p $DOCKER_PASSWORD
       env:
         DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
         DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+    - name: Get current version
+      id: ver
+      run: echo "::set-output name=tag::${GITHUB_REF#refs/tags/}"
+    - name: Get app base directory (distroless)
+      id: baseDirectoryDistroless
+      run: |
+        export BASE_DIRECTORY_DISTROLESS=$(sbt "project igluServerDistroless" baseDirectory -Dsbt.log.noformat=true | sed -n '/\[info\]/ s/\[info\] //p' | tail -1 | tr -d '\n')
+        echo "::set-output name=directory::$BASE_DIRECTORY_DISTROLESS"
     - name: Stage the Docker build
-      run: sbt docker:stage
+      run: sbt "project igluServer" docker:stage
+    - name: Stage the Docker distroless build
+      run: sbt "project igluServerDistroless" docker:stage
     - name: Docker metadata
       id: meta
       uses: docker/metadata-action@v3
@@ -97,7 +104,19 @@ jobs:
         images: snowplow/iglu-server
         tags: |
           type=raw,value=latest,enable=${{ !contains(steps.ver.outputs.tag, 'rc') }}
+          type=raw,value=latest-focal,enable=${{ !contains(steps.ver.outputs.tag, 'rc') }}
           type=raw,value=${{ steps.ver.outputs.tag }}
+          type=raw,value=${{ steps.ver.outputs.tag }}-focal
+        flavor: |
+          latest=false
+    - name: Docker metadata distroless
+      id: meta-distroless
+      uses: docker/metadata-action@v3
+      with:
+        images: snowplow/iglu-server
+        tags: |
+          type=raw,value=latest-distroless,enable=${{ !contains(steps.ver.outputs.tag, 'rc') }}
+          type=raw,value=${{ steps.ver.outputs.tag }}-distroless
         flavor: |
           latest=false
     - name: Set up QEMU
@@ -108,7 +127,13 @@ jobs:
       uses: docker/build-push-action@v2
       with:
         context: target/docker/stage
-        file: target/docker/stage/Dockerfile
         platforms: linux/amd64,linux/arm64/v8
         tags: ${{ steps.meta.outputs.tags }}
+        push: true
+    - name: Push distroless image
+      uses: docker/build-push-action@v2
+      with:
+        context: ${{ steps.baseDirectoryDistroless.outputs.directory }}/target/docker/stage
+        platforms: linux/amd64,linux/arm64/v8
+        tags: ${{ steps.meta-distroless.outputs.tags }}
         push: true
