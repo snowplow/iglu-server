@@ -1,3 +1,9 @@
+Version 0.8.7 (2022-11-22)
+--------------------------
+Use sbt-snowplow-release and publish distroless version (#115)
+Bump jackson-databind to 2.13.4.2 (#112)
+Allow to use POST in the webhooks (#117)
+
 Version 0.8.6 (2022-09-29)
 --------------------------
 Bump postgresql driver to 42.4.1 (#109)
