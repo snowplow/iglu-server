@@ -24,7 +24,6 @@ import sbtbuildinfo.BuildInfoPlugin.autoImport.{BuildInfoKey, buildInfoKeys, bui
 
 import com.typesafe.sbt.packager.Keys.maintainer
 import com.typesafe.sbt.packager.linux.LinuxPlugin.autoImport._
-import com.typesafe.sbt.packager.docker.DockerPlugin.autoImport._
 
 object BuildSettings {
 
@@ -41,10 +40,6 @@ object BuildSettings {
       BuildInfoKey.constant("SwaggerUI", Dependencies.V.SwaggerUi)    // Necessary for StaticService
     ),
     buildInfoPackage := "com.snowplowanalytics.iglu.server.generated"
-  )
-
-  lazy val dockerSettings = Seq(
-    dockerCmd := Seq("--help")
   )
 
   lazy val assemblySettings = Seq(
