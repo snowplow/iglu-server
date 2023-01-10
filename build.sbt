@@ -1,3 +1,14 @@
+
+/**
+* Currently we have some libs that depend on circe 0.14.x and some that depend on 0.13.x.
+* These reported binary incompatibilities can only be removed once we have bumped cats-effect to version 3.
+* For now, we ignore the reported binary incompatibilities because testing shows it is safe.
+*/
+ThisBuild / libraryDependencySchemes ++= Seq(
+  "io.circe" %% "circe-jawn" % "always",
+  "io.circe" %% "circe-core" % "always",
+)
+
 lazy val allSettings = BuildSettings.projectSettings ++
   BuildSettings.buildInfoSettings ++
   BuildSettings.dockerSettings ++
