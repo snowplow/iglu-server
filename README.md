@@ -10,7 +10,7 @@ A RESTful schema registry, allowing users to publish, test and serve schemas via
 
 ## Copyright and license
 
-Iglu Server is copyright 2014-2022 Snowplow Analytics Ltd.
+Iglu Server is copyright 2014-2023 Snowplow Analytics Ltd.
 
 Licensed under the **[Apache License, Version 2.0][license]** (the "License");
 you may not use this software except in compliance with the License.
