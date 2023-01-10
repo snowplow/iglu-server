@@ -1,3 +1,14 @@
+Version 0.9.0 (2023-01-10)
+--------------------------
+Update copyright to 2023 (#127)
+Bump jackson-databind to 2.14.1 (#126)
+Bump postgresql driver to 42.5.1 (#125)
+Bump swagger-ui to 4.15.5 (#124)
+Bump circe to 0.14.3 (#123)
+Bump http4s to 0.21.34 (#122)
+Bump iglu-scala-core to 1.1.2 (#121)
+Validation service report error on invalid schema names (#119)
+
 Version 0.8.7 (2022-11-22)
 --------------------------
 Use sbt-snowplow-release and publish distroless version (#115)
