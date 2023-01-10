@@ -52,6 +52,7 @@ object BuildSettings {
     assembly / assemblyMergeStrategy := {
       case x if x.endsWith("module-info.class") => MergeStrategy.first
       case x if x.endsWith("nowarn.class") => MergeStrategy.first
+      case PathList("scala", "jdk", "CollectionConverters$.class") => MergeStrategy.first
       case x =>
         val oldStrategy = (assembly / assemblyMergeStrategy).value
         oldStrategy(x)
