@@ -11,7 +11,6 @@ ThisBuild / libraryDependencySchemes ++= Seq(
 
 lazy val allSettings = BuildSettings.projectSettings ++
   BuildSettings.buildInfoSettings ++
-  BuildSettings.dockerSettings ++
   BuildSettings.assemblySettings ++
   BuildSettings.dynVerSettings ++
   BuildSettings.testsSettings ++
