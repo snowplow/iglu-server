@@ -39,6 +39,7 @@ class ValidationServiceSpec extends org.specs2.Specification {
   POST /validate/schema/jsonschema reports about non-self-describing JSON schema $e4
   POST /validate/schema/jsonschema reports malformed request for non-json body $e5
   POST /validate/schema/jsonschema reports malformed JSON Schema on unknown properties $e11
+  POST /validate/schema/jsonschema reports about invalid schema name $e12
 
   POST /validate/instance reports invalid instance for the root of an instance $e6
   POST /validate/instance reports valid instance $e7
@@ -61,7 +62,6 @@ class ValidationServiceSpec extends org.specs2.Specification {
     val expected             = json"""{
       "message":"The schema does not conform to a JSON Schema v4 specification",
       "report":[
-        {"message":"self is unknown keyword for vanilla $$schema, use http://iglucentral.com/schemas/com.snowplowanalytics.self-desc/schema/jsonschema/1-0-0#", "level":"ERROR", "pointer":"/"},
         {"message":"The schema is missing the \"description\" property","level":"INFO","pointer":"/"},
         {"message":"At the root level, the schema should have a \"type\" property set to \"object\" and have a \"properties\" property","level":"WARNING","pointer":"/"},
         {"message":"No $$schema field in top-level of schema","level":"ERROR","pointer":"/"},
@@ -120,7 +120,6 @@ class ValidationServiceSpec extends org.specs2.Specification {
     val expected             = json"""{
       "message":"The schema does not conform to a JSON Schema v4 specification",
       "report":[
-        {"message":"self is unknown keyword for vanilla $$schema, use http://iglucentral.com/schemas/com.snowplowanalytics.self-desc/schema/jsonschema/1-0-0#", "level":"ERROR", "pointer":"/"},
         {"message":"No $$schema field in top-level of schema","level":"ERROR","pointer":"/"},
         {"message":"JSON Schema is not self-describing","level":"ERROR","pointer":"/"}
       ]
@@ -279,6 +278,42 @@ class ValidationServiceSpec extends org.specs2.Specification {
     val response = sendRequest(request)
 
     response must beEqualTo(expected)
+  }
+
+  def e12 = {
+    val selfDescribingSchema = json"""
+        {
+          "$$schema": "http://iglucentral.com/schemas/com.snowplowanalytics.self-desc/schema/jsonschema/1-0-0#",
+          "self": {
+            "vendor": "com.acme",
+            "name": "name with spaces",
+            "format": "jsonschema",
+            "version": "1-0-0"
+          },
+          "type": "object",
+          "description": "schema whose name has spaces",
+          "properties": { }
+        }"""
+
+    val expected = json"""{
+      "message" : "The schema does not conform to a JSON Schema v4 specification",
+      "report" : [
+        {
+          "message" : "$$.self.name: does not match the regex pattern ^[a-zA-Z0-9-_]+$$",
+          "level" : "ERROR",
+          "pointer" : "/self/name"
+        }
+      ]
+    }"""
+
+    val request = Request[IO](Method.POST, uri"/validate/schema/jsonschema")
+      .withContentType(headers.`Content-Type`(MediaType.application.json))
+      .withBodyStream(toBytes(selfDescribingSchema))
+
+    val response = sendRequest(request)
+
+    response must beEqualTo(expected)
+
   }
 }
 
