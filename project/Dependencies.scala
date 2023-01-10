@@ -26,7 +26,7 @@ object Dependencies {
     val Doobie     = "0.13.4"
     val Decline    = "1.4.0"
     val Log4Cats   = "1.3.0"
-    val Circe      = "0.14.1"
+    val Circe      = "0.14.3"
     val CirceFs2   = "0.13.0"
     val Refined    = "0.9.24"
     val PureConfig = "0.15.0"
