@@ -17,18 +17,14 @@ package com.snowplowanalytics.iglu.server.storage
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 import java.time.Instant
-
 import fs2.Stream
-
 import cats.Monad
 import cats.implicits._
+import cats.data.NonEmptyList
 import cats.effect.{Bracket, Clock, Sync}
 import cats.effect.concurrent.Ref
-
 import io.circe.Json
-
-import com.snowplowanalytics.iglu.core.SchemaMap
-
+import com.snowplowanalytics.iglu.core.{SchemaKey, SchemaMap, SchemaVer}
 import com.snowplowanalytics.iglu.server.model.{Permission, Schema, SchemaDraft}
 import com.snowplowanalytics.iglu.server.model.SchemaDraft.DraftId
 
@@ -56,7 +52,7 @@ case class InMemory[F[_]](ref: Ref[F, InMemory.State]) extends Storage[F] {
       addedAtMillis <- C.realTime(TimeUnit.MILLISECONDS)
       addedAt = Instant.ofEpochMilli(addedAtMillis)
       meta    = Schema.Metadata(addedAt, addedAt, isPublic)
-      schema  = Schema(schemaMap, meta, body)
+      schema  = Schema(schemaMap, meta, body, None)
       _ <- ref.update(_.copy(schemas = db.schemas.updated(schemaMap, schema)))
     } yield ()
 
@@ -104,6 +100,28 @@ case class InMemory[F[_]](ref: Ref[F, InMemory.State]) extends Storage[F] {
     for {
       db <- ref.get
       _  <- ref.update(_.copy(permission = db.permission - apikey))
+    } yield ()
+
+  def addSupersededByColumn(implicit F: Bracket[F, Throwable]): F[Unit] =
+    Bracket[F, Throwable].unit
+
+  def updateSupersedingVersion(
+    vendor: String,
+    name: String,
+    superseded: NonEmptyList[SchemaVer.Full],
+    supersededBy: SchemaVer.Full
+  )(implicit F: Bracket[F, Throwable]): F[Unit] =
+    for {
+      db <- ref.get
+      schemas = superseded.toList.foldRight(db.schemas) {
+        case (v, m) =>
+          val supersededSchemaKey = SchemaMap(SchemaKey(vendor, name, "jsonschema", v))
+          m.updated(
+            supersededSchemaKey,
+            m(supersededSchemaKey).copy(supersededBy = Some(supersededBy))
+          )
+      }
+      _ <- ref.update(_.copy(schemas = schemas))
     } yield ()
 }
 

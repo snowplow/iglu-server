@@ -58,18 +58,21 @@ object SpecHelpers {
     Schema(
       SchemaMap("com.acme", "event", "jsonschema", SchemaVer.Full(1, 0, 0)),
       Schema.Metadata(now, now, true),
-      schemaZero
+      schemaZero,
+      None
     ),
     Schema(
       SchemaMap("com.acme", "event", "jsonschema", SchemaVer.Full(1, 0, 1)),
       Schema.Metadata(now, now, true),
-      schemaOne
+      schemaOne,
+      None
     ),
     // private
     Schema(
       SchemaMap("com.acme", "secret", "jsonschema", SchemaVer.Full(1, 0, 0)),
       Schema.Metadata(now, now, false),
-      schemaPrivate
+      schemaPrivate,
+      None
     )
   ).map(s => (s.schemaMap, s)).toMap
 

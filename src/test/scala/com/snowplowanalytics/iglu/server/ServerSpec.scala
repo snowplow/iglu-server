@@ -14,6 +14,7 @@
  */
 package com.snowplowanalytics.iglu.server
 
+import cats.data.NonEmptyList
 import cats.implicits._
 import cats.effect.{ContextShift, IO, Resource, Timer}
 
@@ -32,8 +33,11 @@ import com.snowplowanalytics.iglu.core.circe.implicits._
 
 import com.snowplowanalytics.iglu.server.storage.{Postgres, Storage}
 import com.snowplowanalytics.iglu.server.model.{IgluResponse, Permission}
+import com.snowplowanalytics.iglu.server.model.Schema.SupersedingInfo
 import com.snowplowanalytics.iglu.server.storage.InMemory
 import com.snowplowanalytics.iglu.server.codecs.JsonCodecs._
+import com.snowplowanalytics.iglu.server.model.SchemaSpec.testSchema
+import com.snowplowanalytics.iglu.server.service.SchemaServiceSpec._
 
 import scala.concurrent.duration.DurationLong
 
@@ -46,12 +50,13 @@ class ServerSpec extends Specification {
   Return 404 for unknown endpoint $e2
   Create a new private schema via PUT, return it with proper apikey, hide for no apikey $e3
   Create a new public schema via POST, get it from /schemas, delete it $e4
+  Create schemas with superseding info correctly $e5
   ${action(System.clearProperty("org.slf4j.simpleLogger.defaultLogLevel"))}
   """
   import ServerSpec._
 
   def e1 = {
-    val req      = Request[IO](Method.GET, uri"http://localhost:8080/api/schemas/com.acme/event/jsonschema/1-0-0")
+    val req      = Request[IO](Method.GET, uri"/com.acme/event/jsonschema/1-0-0")
     val expected = TestResponse(404, IgluResponse.SchemaNotFound)
 
     val action = for {
@@ -76,14 +81,13 @@ class ServerSpec extends Specification {
 
   def e3 = {
     val reqs = List(
-      Request[IO](Method.PUT, uri"http://localhost:8080/api/schemas/com.acme/first/jsonschema/1-0-0")
+      Request[IO](Method.PUT, uri"/com.acme/first/jsonschema/1-0-0")
         .withEntity(json"""{"properties": {}}""")
         .withHeaders(Header("apikey", InMemory.DummySuperKey.toString)),
-      Request[IO](Method.GET, uri"http://localhost:8080/api/schemas/")
+      Request[IO](Method.GET, uri"/").withHeaders(Header("apikey", InMemory.DummySuperKey.toString)),
+      Request[IO](Method.GET, uri"/com.acme/first/jsonschema/1-0-0")
         .withHeaders(Header("apikey", InMemory.DummySuperKey.toString)),
-      Request[IO](Method.GET, uri"http://localhost:8080/api/schemas/com.acme/first/jsonschema/1-0-0")
-        .withHeaders(Header("apikey", InMemory.DummySuperKey.toString)),
-      Request[IO](Method.GET, uri"http://localhost:8080/api/schemas/com.acme/first/jsonschema/1-0-0")
+      Request[IO](Method.GET, uri"/com.acme/first/jsonschema/1-0-0")
     )
 
     val expected = List(
@@ -117,12 +121,12 @@ class ServerSpec extends Specification {
     ).normalize
 
     val reqs = List(
-      Request[IO](Method.POST, uri"http://localhost:8080/api/schemas".withQueryParam("isPublic", "true"))
+      Request[IO](Method.POST, uri"/".withQueryParam("isPublic", "true"))
         .withEntity(schema)
         .withHeaders(Header("apikey", InMemory.DummySuperKey.toString)),
-      Request[IO](Method.DELETE, uri"http://localhost:8080/api/schemas/com.acme/first/jsonschema/1-0-0")
+      Request[IO](Method.DELETE, uri"/com.acme/first/jsonschema/1-0-0")
         .withHeaders(Header("apikey", InMemory.DummySuperKey.toString)),
-      Request[IO](Method.GET, uri"http://localhost:8080/api/schemas/")
+      Request[IO](Method.GET, uri"/")
     )
 
     val expected = List(
@@ -132,6 +136,104 @@ class ServerSpec extends Specification {
       ),
       TestResponse(200, json"""{"message":"Schema deleted"}"""),
       TestResponse(200, json"""[]""")
+    )
+
+    val action = for {
+      responses <- ServerSpec.executeRequests(reqs)
+      results   <- responses.traverse(res => TestResponse.build[Json](res))
+    } yield results
+
+    execute(action) must beEqualTo(expected)
+  }
+
+  def e5 = {
+    val (schema100, schemaKey100) = testSchema(SchemaVer.Full(1, 0, 0))
+    val (schema101, schemaKey101) = testSchema(SchemaVer.Full(1, 0, 1))
+    val (schema102, schemaKey102) = testSchema(
+      version = SchemaVer.Full(1, 0, 2),
+      supersedingInfo = SupersedingInfo
+        .Superseded(
+          NonEmptyList.of(
+            SchemaVer.Full(1, 0, 1)
+          )
+        )
+        .some
+    )
+    val (schema103, schemaKey103) = testSchema(
+      version = SchemaVer.Full(1, 0, 3),
+      supersedingInfo = SupersedingInfo
+        .Superseded(
+          NonEmptyList.of(
+            SchemaVer.Full(1, 0, 2)
+          )
+        )
+        .some
+    )
+    val (schema100SupersededBy, _) = testSchema(
+      version = SchemaVer.Full(1, 0, 0),
+      supersedingInfo = SupersedingInfo.SupersededBy(SchemaVer.Full(1, 0, 1)).some
+    )
+    val (expectedSchema100, _) = testSchema(
+      version = SchemaVer.Full(1, 0, 0),
+      supersedingInfo = SupersedingInfo.SupersededBy(SchemaVer.Full(1, 0, 3)).some
+    )
+    val (expectedSchema101, _) = testSchema(
+      version = SchemaVer.Full(1, 0, 1),
+      supersedingInfo = SupersedingInfo.SupersededBy(SchemaVer.Full(1, 0, 3)).some
+    )
+    val (expectedSchema102, _) = testSchema(
+      version = SchemaVer.Full(1, 0, 2),
+      supersedingInfo = SupersedingInfo.SupersededBy(SchemaVer.Full(1, 0, 3)).some
+    )
+    val (expectedSchema103, _) = testSchema(version = SchemaVer.Full(1, 0, 3))
+
+    val reqs = List(
+      Request[IO](Method.POST, uri"/")
+        .withEntity(schema100)
+        .withHeaders(Header("apikey", InMemory.DummySuperKey.toString)),
+      Request[IO](Method.POST, uri"/")
+        .withEntity(schema101)
+        .withHeaders(Header("apikey", InMemory.DummySuperKey.toString)),
+      Request[IO](Method.POST, uri"/")
+        .withEntity(schema102)
+        .withHeaders(Header("apikey", InMemory.DummySuperKey.toString)),
+      Request[IO](Method.POST, uri"/")
+        .withEntity(schema103)
+        .withHeaders(Header("apikey", InMemory.DummySuperKey.toString)),
+      Request[IO](Method.POST, uri"/")
+        .withEntity(schema100SupersededBy)
+        .withHeaders(Header("apikey", InMemory.DummySuperKey.toString)),
+      Request[IO](Method.GET, schemaKey100.uri).withHeaders(Header("apikey", InMemory.DummySuperKey.toString)),
+      Request[IO](Method.GET, schemaKey101.uri).withHeaders(Header("apikey", InMemory.DummySuperKey.toString)),
+      Request[IO](Method.GET, schemaKey102.uri).withHeaders(Header("apikey", InMemory.DummySuperKey.toString)),
+      Request[IO](Method.GET, schemaKey103.uri).withHeaders(Header("apikey", InMemory.DummySuperKey.toString))
+    )
+
+    val expected = List(
+      TestResponse(
+        201,
+        json"""{"message": "Schema created", "updated": false, "location": "iglu:com.acme/nonexistent/jsonschema/1-0-0", "status": 201}"""
+      ),
+      TestResponse(
+        201,
+        json"""{"message": "Schema created", "updated": false, "location": "iglu:com.acme/nonexistent/jsonschema/1-0-1", "status": 201}"""
+      ),
+      TestResponse(
+        201,
+        json"""{"message": "Schema created", "updated": false, "location": "iglu:com.acme/nonexistent/jsonschema/1-0-2", "status": 201}"""
+      ),
+      TestResponse(
+        201,
+        json"""{"message": "Schema created", "updated": false, "location": "iglu:com.acme/nonexistent/jsonschema/1-0-3", "status": 201}"""
+      ),
+      TestResponse(
+        200,
+        json"""{"message": "Schema updated", "updated": true, "location": "iglu:com.acme/nonexistent/jsonschema/1-0-0", "status": 200}"""
+      ),
+      TestResponse(200, expectedSchema100),
+      TestResponse(200, expectedSchema101),
+      TestResponse(200, expectedSchema102),
+      TestResponse(200, expectedSchema103)
     )
 
     val action = for {
@@ -174,8 +276,13 @@ object ServerSpec {
   private val env       = client <* runServer
 
   /** Execute requests against fresh server (only one execution per test is allowed) */
-  def executeRequests(requests: List[Request[IO]]): IO[List[Response[IO]]] =
-    env.use(client => requests.traverse(client.run(_).use(IO.pure)))
+  def executeRequests(requests: List[Request[IO]]): IO[List[Response[IO]]] = {
+    val r = requests.map { r =>
+      if (r.uri.host.isDefined) r
+      else r.withUri(uri"http://localhost:8080/api/schemas".addPath(r.uri.path))
+    }
+    env.use(client => r.traverse(client.run(_).use(IO.pure)))
+  }
 
   val specification = Resource.make {
     Storage.initialize[IO](storageConfig).use(s => s.asInstanceOf[Postgres[IO]].drop) *>

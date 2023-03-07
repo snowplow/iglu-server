@@ -22,6 +22,7 @@ import fs2.Stream
 import cats.Monad
 import cats.effect.{Blocker, Bracket, BracketThrow, Clock, ContextShift, Effect, Resource, Sync}
 import cats.implicits._
+import cats.data.NonEmptyList
 
 import io.circe.Json
 
@@ -31,7 +32,7 @@ import doobie.util.transactor.Transactor
 import org.typelevel.log4cats.slf4j.Slf4jLogger
 import org.typelevel.log4cats.Logger
 
-import com.snowplowanalytics.iglu.core.SchemaMap
+import com.snowplowanalytics.iglu.core.{SchemaMap, SchemaVer}
 import com.snowplowanalytics.iglu.server.Config.StorageConfig
 import com.snowplowanalytics.iglu.server.model.{Permission, Schema, SchemaDraft}
 import com.snowplowanalytics.iglu.server.model.SchemaDraft.DraftId
@@ -79,6 +80,15 @@ trait Storage[F[_]] {
       _ <- addPermission(keyPair.write, Permission.Write.copy(vendor = vendor))
     } yield ()
   def deletePermission(id: UUID)(implicit F: Bracket[F, Throwable]): F[Unit]
+
+  def addSupersededByColumn(implicit F: Bracket[F, Throwable]): F[Unit]
+
+  def updateSupersedingVersion(
+    vendor: String,
+    name: String,
+    superseded: NonEmptyList[SchemaVer.Full],
+    supersededBy: SchemaVer.Full
+  )(implicit F: Bracket[F, Throwable]): F[Unit]
 }
 
 object Storage {

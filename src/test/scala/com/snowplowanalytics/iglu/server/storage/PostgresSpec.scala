@@ -18,6 +18,7 @@ package storage
 import java.util.UUID
 import io.circe.Json
 
+import cats.data.NonEmptyList
 import cats.syntax.traverse._
 import cats.instances.list._
 import cats.effect.IO
@@ -121,6 +122,19 @@ class PostgresSpec extends Specification with BeforeAll with IOChecker {
 
     "typecheck getDrafts" in {
       check(Postgres.Sql.getDrafts)
+    }
+
+    "typecheck updateSupersedingVersion" in {
+      check(
+        Postgres
+          .Sql
+          .updateSupersedingVersion(
+            "vendor",
+            "name",
+            NonEmptyList.of(SchemaVer.Full(1, 0, 0), SchemaVer.Full(1, 0, 2)),
+            SchemaVer.Full(1, 0, 3)
+          )
+      )
     }
   }
 }

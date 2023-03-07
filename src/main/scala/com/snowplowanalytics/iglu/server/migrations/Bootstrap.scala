@@ -60,7 +60,9 @@ END';"""
         updated_at  TIMESTAMP     NOT NULL,
         is_public   BOOLEAN       NOT NULL,
 
-        body        JSON          NOT NULL
+        body        JSON          NOT NULL,
+
+        superseded_by VARCHAR(128) NULL
       )""")
 
   val draftsCreate = (fr"CREATE TABLE IF NOT EXISTS" ++ Postgres.DraftsTable ++ fr"""(

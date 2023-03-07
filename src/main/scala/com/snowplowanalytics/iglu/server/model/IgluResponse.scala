@@ -58,6 +58,8 @@ object IgluResponse {
   case class SchemaValidationReport(report: NonEmptyList[LinterMessage])     extends IgluResponse
   case class InstanceValidationReport(report: NonEmptyList[ValidatorReport]) extends IgluResponse
 
+  case class SupersedingVersionUpdated(schemeKey: SchemaKey) extends IgluResponse
+
   implicit val responsesEncoder: Encoder[IgluResponse] =
     Encoder.instance {
       case SchemaNotFound =>
@@ -114,6 +116,13 @@ object IgluResponse {
           List(
             "message" -> DataInvalidationMessage.asJson,
             "report"  -> report.asJson
+          )
+        )
+      case SupersedingVersionUpdated(schemaKey) =>
+        Json.fromFields(
+          List(
+            "message"   -> "Superseding schema version of existing schema is updated".asJson,
+            "schemaKey" -> schemaKey.toSchemaUri.asJson
           )
         )
     }

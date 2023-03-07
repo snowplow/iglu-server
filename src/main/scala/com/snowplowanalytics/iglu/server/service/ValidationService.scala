@@ -75,7 +75,7 @@ class ValidationService[F[+_]: Sync](swagger: SwaggerSyntax[F], ctx: AuthedConte
         for {
           schema <- db.getSchema(SchemaMap(key))
           response <- schema match {
-            case Some(Schema(_, meta, schemaBody)) if meta.isPublic || authInfo.canRead(key.vendor) =>
+            case Some(Schema(_, meta, schemaBody, _)) if meta.isPublic || authInfo.canRead(key.vendor) =>
               CirceValidator.validate(data, schemaBody) match {
                 case Left(ValidatorError.InvalidData(report)) =>
                   Ok(IgluResponse.InstanceValidationReport(report): IgluResponse)
