@@ -137,3 +137,15 @@ jobs:
         platforms: linux/amd64,linux/arm64/v8
         tags: ${{ steps.meta-distroless.outputs.tags }}
         push: true
+    - name: Build local distroless image, which is needed to run Snyk
+      if: ${{ !contains(steps.ver.outputs.tag, 'rc') }}
+      run: sbt "project igluServerDistroless" docker:publishLocal
+    - name: Run Snyk to check for vulnerabilities
+      uses: snyk/actions/docker@master
+      if: ${{ !contains(steps.ver.outputs.tag, 'rc') }}
+      with:
+        image: "${{ steps.packageName.outputs.package_name }}:${{ steps.ver.outputs.tag }}-distroless"
+        args: "--app-vulns --org=data-processing-new"
+        command: monitor
+      env:
+        SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
