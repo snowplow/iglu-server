@@ -1,7 +1,12 @@
+Version 0.10.0 (2023-04-18)
+--------------------------
+Make it possible to get and set superseding schema info (#129)
+Bump sbt-snowplow-release to 0.3.1 (#133)
+
 Version 0.9.1 (2023-04-05)
 --------------------------
-Scan Docker images in Snyk Github action (close #131)
-Bump sbt-snowplow-release to 0.3.0 (close #132)
+Scan Docker images in Snyk Github action (#131)
+Bump sbt-snowplow-release to 0.3.0 (#132)
 
 Version 0.9.0 (2023-01-12)
 --------------------------
