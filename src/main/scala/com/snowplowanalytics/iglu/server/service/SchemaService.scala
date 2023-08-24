@@ -226,6 +226,8 @@ class SchemaService[F[+_]: Sync](
             _        <- updateSupersedingVersion(schema.self, Some(s))
             response <- Ok(IgluResponse.SupersedingVersionUpdated(schema.self.schemaKey): IgluResponse)
           } yield response
+        case (Left(Inconsistency.NextRevisionExists), _) =>
+          Conflict(IgluResponse.SchemaNonSequential: IgluResponse)
         case (_, Left(error)) =>
           Conflict(IgluResponse.Message(error): IgluResponse)
         case (Left(error), _) =>

@@ -39,6 +39,7 @@ object VersionCursor {
   sealed trait Inconsistency extends Product with Serializable
   object Inconsistency {
     case object PreviousMissing                                         extends Inconsistency
+    case object NextRevisionExists                                      extends Inconsistency
     case object AlreadyExists                                           extends Inconsistency
     case class Availability(isPublic: Boolean, previousPublic: Boolean) extends Inconsistency
 
@@ -46,6 +47,8 @@ object VersionCursor {
       Show.show {
         case PreviousMissing =>
           "Preceding SchemaVer in the group is missing, check that schemas published in proper order"
+        case NextRevisionExists =>
+          "Next revision in the group exists, check that schemas are published sequentially"
         case AlreadyExists =>
           "Schema already exists"
         case Availability(isPublic, previousPublic) =>
@@ -58,9 +61,10 @@ object VersionCursor {
     existing: List[SchemaVer.Full],
     patchesAllowed: Boolean
   ): Either[Inconsistency, Unit] =
-    if (existing.contains(version) && !patchesAllowed) Inconsistency.AlreadyExists.asLeft
-    else if (previousExists(existing, get(version))) ().asRight
-    else Inconsistency.PreviousMissing.asLeft
+    if (existing.contains(version))
+      Either.cond(patchesAllowed, (), Inconsistency.AlreadyExists)
+    else
+      isVersionAllowed(existing, get(version))
 
   def get(version: SchemaVer.Full): VersionCursor = version match {
     case SchemaVer.Full(1, 0, 0) => Initial
@@ -73,18 +77,25 @@ object VersionCursor {
     * Check if existing state allows new schema
     * It makes an assumption that `existing` is entirely consistent list without `current` schema
     */
-  private[model] def previousExists(existing: List[SchemaVer.Full], current: VersionCursor) =
+  private[model] def isVersionAllowed(
+    existing: List[SchemaVer.Full],
+    current: VersionCursor
+  ): Either[Inconsistency, Unit] =
     current match {
       case Initial => // We can always create a new schema group (vendor/name/1-0-0)
-        true
+        ().asRight
       case StartModel(m) =>
-        existing.map(_.model).contains(m - 1)
+        Either.cond(existing.map(_.model).contains(m - 1), (), Inconsistency.PreviousMissing)
       case StartRevision(m, r) =>
         val thisModel = existing.filter(_.model == m)
-        thisModel.map(_.revision).contains(r - 1)
+        Either.cond(thisModel.map(_.revision).contains(r - 1), (), Inconsistency.PreviousMissing)
       case NonInitial(version) =>
-        val thisModel    = existing.filter(_.model == version.model)
-        val thisRevision = thisModel.filter(_.revision == version.revision)
-        thisRevision.map(_.addition).contains(version.addition - 1)
+        val thisModel          = existing.filter(_.model == version.model)
+        val thisRevision       = thisModel.filter(_.revision == version.revision)
+        val sequentialAddition = thisRevision.map(_.addition).contains(version.addition - 1)
+        val nextRevision       = thisModel.map(_.revision).contains(version.revision + 1)
+        if (nextRevision) Inconsistency.NextRevisionExists.asLeft
+        else if (!sequentialAddition) Inconsistency.PreviousMissing.asLeft
+        else ().asRight
     }
 }
