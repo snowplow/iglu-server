@@ -40,6 +40,7 @@ object VersionCursor {
     case object PreviousMissing                                         extends Inconsistency
     case object SupersededMissing                                       extends Inconsistency
     case object SupersededInvalid                                       extends Inconsistency
+    case object NextRevisionExists                                      extends Inconsistency
     case object AlreadyExists                                           extends Inconsistency
     case class Availability(isPublic: Boolean, previousPublic: Boolean) extends Inconsistency
 
@@ -51,6 +52,8 @@ object VersionCursor {
           s"Superseded schema version(s) do not exist"
         case SupersededInvalid =>
           s"Superseded schema version(s) must be below the superseding version"
+        case NextRevisionExists =>
+          "Next revision in the group exists, check that schemas are published sequentially"
         case AlreadyExists =>
           "Schema already exists"
         case Availability(isPublic, previousPublic) =>
@@ -65,7 +68,7 @@ object VersionCursor {
     supersedes: List[SchemaVer.Full]
   ): Either[Inconsistency, Unit] =
     if (existing.contains(version) && !patchesAllowed) Inconsistency.AlreadyExists.asLeft
-    else if (!previousExists(existing, get(version))) Inconsistency.PreviousMissing.asLeft
+    else if (isVersionAllowed(existing, get(version)).isLeft) isVersionAllowed(existing, get(version))
     else if (supersedes.diff(existing).nonEmpty) Inconsistency.SupersededMissing.asLeft
     else if (supersedes.exists(Ordering[SchemaVer.Full].gt(_, version))) Inconsistency.SupersededInvalid.asLeft
     else ().asRight
@@ -81,18 +84,25 @@ object VersionCursor {
     * Check if existing state allows new schema
     * It makes an assumption that `existing` is entirely consistent list without `current` schema
     */
-  private[model] def previousExists(existing: List[SchemaVer.Full], current: VersionCursor) =
+  private[model] def isVersionAllowed(
+    existing: List[SchemaVer.Full],
+    current: VersionCursor
+  ): Either[Inconsistency, Unit] =
     current match {
       case Initial => // We can always create a new schema group (vendor/name/1-0-0)
-        true
+        ().asRight
       case StartModel(m) =>
-        existing.map(_.model).contains(m - 1)
+        Either.cond(existing.map(_.model).contains(m - 1), (), Inconsistency.PreviousMissing)
       case StartRevision(m, r) =>
         val thisModel = existing.filter(_.model == m)
-        thisModel.map(_.revision).contains(r - 1)
+        Either.cond(thisModel.map(_.revision).contains(r - 1), (), Inconsistency.PreviousMissing)
       case NonInitial(version) =>
-        val thisModel    = existing.filter(_.model == version.model)
-        val thisRevision = thisModel.filter(_.revision == version.revision)
-        thisRevision.map(_.addition).contains(version.addition - 1)
+        val thisModel          = existing.filter(_.model == version.model)
+        val thisRevision       = thisModel.filter(_.revision == version.revision)
+        val sequentialAddition = thisRevision.map(_.addition).contains(version.addition - 1)
+        val nextRevision       = thisModel.map(_.revision).contains(version.revision + 1)
+        if (nextRevision) Inconsistency.NextRevisionExists.asLeft
+        else if (!sequentialAddition) Inconsistency.PreviousMissing.asLeft
+        else ().asRight
     }
 }

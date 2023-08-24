@@ -34,15 +34,17 @@ trait IgluResponse extends Product with Serializable {
 
 object IgluResponse {
 
-  val NotFoundSchema            = "The schema is not found"
-  val NotAuthorized             = "Authentication error: not authorized"
-  val Mismatch                  = "Mismatch: the schema metadata does not match the payload and URI"
-  val DecodeError               = "Cannot decode JSON schema"
-  val SchemaInvalidationMessage = "The schema does not conform to a JSON Schema v4 specification"
-  val DataInvalidationMessage   = "The data for a field instance is invalid against its schema"
-  val NotFoundEndpoint          = "The endpoint does not exist"
+  val NotFoundSchema             = "The schema is not found"
+  val NotAuthorized              = "Authentication error: not authorized"
+  val Mismatch                   = "Mismatch: the schema metadata does not match the payload and URI"
+  val DecodeError                = "Cannot decode JSON schema"
+  val SchemaInvalidationMessage  = "The schema does not conform to a JSON Schema v4 specification"
+  val DataInvalidationMessage    = "The data for a field instance is invalid against its schema"
+  val NotFoundEndpoint           = "The endpoint does not exist"
+  val NonSequentialSchemaVersion = "The schema version is not sequential"
 
   case object SchemaNotFound                                                      extends IgluResponse
+  case object SchemaNonSequential                                                 extends IgluResponse
   case object EndpointNotFound                                                    extends IgluResponse
   case object InvalidSchema                                                       extends IgluResponse
   case class SchemaMismatch(uriSchemaKey: SchemaKey, payloadSchemaKey: SchemaKey) extends IgluResponse
@@ -96,6 +98,8 @@ object IgluResponse {
         )
       case InvalidSchema =>
         Json.fromFields(List("message" -> Json.fromString(DecodeError)))
+      case SchemaNonSequential =>
+        Json.fromFields(List("message" -> Json.fromString(NonSequentialSchemaVersion)))
       case SchemaValidationReport(report) =>
         Json.fromFields(
           List(
@@ -129,8 +133,9 @@ object IgluResponse {
 
   implicit val responsesDecoder: Decoder[IgluResponse] = Decoder.instance { cur =>
     cur.downField("message").as[String] match {
-      case Right(NotFoundSchema) => SchemaNotFound.asRight
-      case Right(NotAuthorized)  => Forbidden.asRight
+      case Right(NotFoundSchema)             => SchemaNotFound.asRight
+      case Right(NonSequentialSchemaVersion) => SchemaNonSequential.asRight
+      case Right(NotAuthorized)              => Forbidden.asRight
       case Right(Mismatch) =>
         for {
           uriSchemaKey     <- cur.downField("uriSchemaKey").as[SchemaKey]

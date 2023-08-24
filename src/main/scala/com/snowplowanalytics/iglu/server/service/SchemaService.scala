@@ -220,6 +220,8 @@ class SchemaService[F[+_]: Sync](
             _        <- webhooks.schemaPublished(schema.self.schemaKey, existing)
             response <- if (existing) Ok(payload) else Created(payload)
           } yield response
+        case Left(Inconsistency.NextRevisionExists) =>
+          Conflict(IgluResponse.SchemaNonSequential: IgluResponse)
         case Left(error) =>
           Conflict(IgluResponse.Message(error.show): IgluResponse)
       }
