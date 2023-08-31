@@ -17,7 +17,7 @@ package service
 
 import java.util.UUID
 
-import cats.data.{EitherT, NonEmptyList, Validated}
+import cats.data.{EitherT, Validated}
 import cats.effect._
 import cats.implicits._
 
@@ -236,54 +236,44 @@ class SchemaService[F[+_]: Sync](
 
   private def updateSupersedingVersion(
     currSchema: SchemaMap,
-    supersedingInfo: Option[(SupersedingInfo.Superseded, SupersedingInfo.SupersededBy)]
+    supersedingInfo: Option[SupersedingInfo.Pair]
   ): F[Unit] =
     supersedingInfo match {
       case None => Sync[F].unit
-      case Some((superseded, supersededBy)) =>
+      case Some(value) =>
         val s = currSchema.schemaKey
-        db.updateSupersedingVersion(s.vendor, s.name, superseded.versions, supersededBy.version)
+        db.updateSupersedingVersion(s.vendor, s.name, value)
     }
 
   private def checkSupersedingVersion(
     currSchema: SchemaMap,
     supersedingInfo: Option[SupersedingInfo]
-  ): F[Either[String, Option[(SupersedingInfo.Superseded, SupersedingInfo.SupersededBy)]]] =
+  ): F[Either[String, Option[SupersedingInfo.Pair]]] =
     supersedingInfo match {
-      case None => Sync[F].delay(Right(None))
-      case Some(supersedingInfo) =>
-        val (superseded, supersededBy) = supersedingInfo match {
-          case SupersedingInfo.SupersededBy(v) =>
-            // In here, we want to make sure that schema that is specified as 'supersededBy' exists in the db.
-            // Also, it is possible superseding schema is superseded by another schema. Therefore, we are
-            // trying to return its 'supersededBy' field. If it is None, we return the schema's own version
-            // because it means that it isn't superseded by another schema.
-            val superseded = NonEmptyList.of(currSchema.schemaKey.version)
-            val supersededBy = db.getSchema(SchemaMap(currSchema.schemaKey.copy(version = v))).map {
-              s: Option[Schema] => s.map(_.supersededBy.getOrElse(v))
-            }
-            (superseded, supersededBy)
-          case SupersedingInfo.Superseded(superseded) =>
-            // In here, currSchema is superseding schema. This case can be reached if the schema is created
-            // for the first time. Superseding schema check will be made before schema is created.
-            // Therefore, it is possible currSchema doesn't exist when this function is called.
-            // Therefore, if it is None, we return the schema's own version. If schema exists, we will follow
-            // the same procedure as above to find superseding schema version.
-            val currVersion = currSchema.schemaKey.version
-            val supersededBy = db.getSchema(SchemaMap(currSchema.schemaKey.copy(version = currVersion))).map {
-              s: Option[Schema] => s.flatMap(_.supersededBy).orElse(currVersion.some)
-            }
-            (superseded, supersededBy)
+      case Some(SupersedingInfo.Supersedes(supersededVersions)) =>
+        // A schema version can only supersede a lower version of the same schema.
+        val validOrdering = supersededVersions.forall { version =>
+          Ordering[SchemaVer.Full].gt(currSchema.schemaKey.version, version)
         }
-        val res = for {
-          supersededBy <- EitherT.fromOptionF(supersededBy, ifNone = "Superseding schema doesn't exist")
-          _ <- EitherT.cond[F](
-            superseded.map(superseded => Ordering[SchemaVer.Full].gt(supersededBy, superseded)).forall(identity),
-            right = (),
+        EitherT
+          .cond[F](
+            validOrdering,
+            right = SupersedingInfo.Pair(currSchema.schemaKey.version, supersededVersions).some,
             left = "There are superseded schema versions greater than superseding schema version"
           )
-        } yield Some((SupersedingInfo.Superseded(superseded), SupersedingInfo.SupersededBy(supersededBy)))
-        res.value
+          .value
+      case _ =>
+        // An incoming schema can have the `supersededBy` property set if it was copied from another Iglu Server.
+        // However, we ignore it for the purpose of updating the schema registry.
+        // In other words, `supersededBy` is only used for output, but not for input.
+        // This is because:
+        // 1) The schema version referred by `supersededBy` must already exit, but it is also newer
+        //    than the current schema version. Therefore, the current schema version already exists.
+        //    This means we would need to be patching it, which is not recommended.
+        // 2) When copying schemas from one Iglu Server to another (e.g. promoting schemas to PROD)
+        //    in version order, `supersededBy` will refer to a future schema which would not exist yet.
+        //    Therefore, we use `supersedes` instead to propagate this information.
+        Sync[F].delay(Right(None))
     }
 }
 

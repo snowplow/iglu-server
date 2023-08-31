@@ -28,7 +28,7 @@ import SpecHelpers.toBytes
 
 class ValidationServiceSpec extends org.specs2.Specification with StorageAgnosticSpec with InMemoryStorageSpec {
   def sendRequests(requests: List[Request[IO]]) =
-    sendRequestGetState(storage => ValidationService.asRoutes(storage, None, SpecHelpers.ctx, createRhoMiddleware()))(
+    sendRequestsGetState(storage => ValidationService.asRoutes(storage, None, SpecHelpers.ctx, createRhoMiddleware()))(
       _ => IO.unit
     )(
       requests

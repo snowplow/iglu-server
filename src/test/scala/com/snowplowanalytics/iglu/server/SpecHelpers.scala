@@ -74,6 +74,7 @@ object SpecHelpers {
 
   val exampleState = InMemory.State(
     schemas,
+    Map.empty,
     Map(
       superKey    -> Permission.Super,
       readKey     -> Permission.ReadOnlyAny,

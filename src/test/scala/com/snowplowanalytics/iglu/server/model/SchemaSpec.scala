@@ -15,18 +15,13 @@
 package com.snowplowanalytics.iglu.server.model
 
 import java.time.Instant
-
 import cats.data.NonEmptyList
 import cats.syntax.option._
-
 import io.circe._
 import io.circe.syntax._
 import io.circe.literal._
-
 import com.snowplowanalytics.iglu.core.{SchemaKey, SchemaMap, SchemaVer, SelfDescribingSchema}
-
-import com.snowplowanalytics.iglu.server.model.Schema.{Metadata, Repr}
-
+import com.snowplowanalytics.iglu.server.model.Schema.{Metadata, Repr, SupersedingInfo}
 import SchemaSpec.testSchema
 
 class SchemaSpec extends org.specs2.Specification {
@@ -74,7 +69,8 @@ class SchemaSpec extends org.specs2.Specification {
         json"""{"type": "object"}""",
         None
       )
-    val schemaWithSupersededBy = schemaWithoutSupersededBy.copy(supersededBy = Some(SchemaVer.Full(1, 0, 1)))
+    val schemaWithSupersededBy =
+      schemaWithoutSupersededBy.copy(supersedingInfo = Some(SupersedingInfo.SupersededBy(SchemaVer.Full(1, 0, 1))))
 
     val match1 = Schema.schemaEncoder(schemaWithSupersededBy) must beEqualTo(
       json"""
@@ -119,7 +115,7 @@ class SchemaSpec extends org.specs2.Specification {
   def e3 = {
     val superseding = Schema.SupersedingInfo.SupersededBy(SchemaVer.Full(1, 0, 1))
     val superseded =
-      Schema.SupersedingInfo.Superseded(NonEmptyList.of(SchemaVer.Full(1, 0, 1), SchemaVer.Full(1, 0, 2)))
+      Schema.SupersedingInfo.Supersedes(NonEmptyList.of(SchemaVer.Full(1, 0, 1), SchemaVer.Full(1, 0, 2)))
 
     val (schema1, schemaKey1) = testSchema(SchemaVer.Full(1, 0, 0))
     val (schema2, schemaKey2) = testSchema(
@@ -174,10 +170,10 @@ class SchemaSpec extends org.specs2.Specification {
       SchemaMap("me.chuwy", "test-schema", "jsonschema", SchemaVer.Full(1, 0, 0)),
       Metadata(Instant.parse("2019-01-12T22:12:54.777Z"), Instant.parse("2019-01-12T22:12:54.777Z"), true),
       json"""{"type": "object"}""",
-      Some(SchemaVer.Full(1, 0, 1))
+      Some(SupersedingInfo.SupersededBy(SchemaVer.Full(1, 0, 1)))
     )
     val reprWithSupersededBy    = Repr.Full(schema)
-    val reprWithoutSupersededBy = Repr.Full(schema.copy(supersededBy = None))
+    val reprWithoutSupersededBy = Repr.Full(schema.copy(supersedingInfo = None))
 
     val match1 = Schema.representationEncoder(reprWithSupersededBy).noSpaces must beEqualTo(
       json"""
@@ -224,7 +220,7 @@ class SchemaSpec extends org.specs2.Specification {
     )
     val reprWithSupersededBy = Repr.Canonical(
       schema,
-      Some(SchemaVer.Full(1, 0, 1))
+      Some(SupersedingInfo.SupersededBy(SchemaVer.Full(1, 0, 1)))
     )
     val reprWithoutSupersededBy = Repr.Canonical(schema, None)
 
@@ -270,7 +266,7 @@ object SchemaSpec {
       .map {
         case Schema.SupersedingInfo.SupersededBy(v) =>
           json"""{ "$$supersededBy": ${v.asString} }"""
-        case Schema.SupersedingInfo.Superseded(l) =>
+        case Schema.SupersedingInfo.Supersedes(l) =>
           json"""{ "$$supersedes": ${l.map(_.asString).asJson} }"""
       }
       .getOrElse(JsonObject.empty.asJson)

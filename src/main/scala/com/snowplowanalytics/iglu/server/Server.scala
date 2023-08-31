@@ -176,7 +176,7 @@ object Server {
       client   <- BlazeClientBuilder[IO](httpPool).resource
       webhookClient = Webhook.WebhookClient(config.webhooks, client)
       storage <- Storage.initialize[IO](config.database)
-      _       <- Resource.eval(storage.addSupersededByColumn)
+      _       <- Resource.eval(storage.runAutomaticMigrations)
       cache   <- CachingMiddleware.initResponseCache[IO](1000, CacheTtl)
       blocker <- Blocker[IO],
     } yield BlazeServerBuilder[IO](httpPool)

@@ -152,7 +152,7 @@ class ServerSpec extends Specification {
     val (schema102, schemaKey102) = testSchema(
       version = SchemaVer.Full(1, 0, 2),
       supersedingInfo = SupersedingInfo
-        .Superseded(
+        .Supersedes(
           NonEmptyList.of(
             SchemaVer.Full(1, 0, 1)
           )
@@ -162,16 +162,20 @@ class ServerSpec extends Specification {
     val (schema103, schemaKey103) = testSchema(
       version = SchemaVer.Full(1, 0, 3),
       supersedingInfo = SupersedingInfo
-        .Superseded(
+        .Supersedes(
           NonEmptyList.of(
             SchemaVer.Full(1, 0, 2)
           )
         )
         .some
     )
-    val (schema100SupersededBy, _) = testSchema(
+    val (schema100SupersededBy101, _) = testSchema(
       version = SchemaVer.Full(1, 0, 0),
       supersedingInfo = SupersedingInfo.SupersededBy(SchemaVer.Full(1, 0, 1)).some
+    )
+    val (schema102Supersedes100, _) = testSchema(
+      version = SchemaVer.Full(1, 0, 2),
+      supersedingInfo = SupersedingInfo.Supersedes(NonEmptyList.of(SchemaVer.Full(1, 0, 0))).some
     )
     val (expectedSchema100, _) = testSchema(
       version = SchemaVer.Full(1, 0, 0),
@@ -185,7 +189,18 @@ class ServerSpec extends Specification {
       version = SchemaVer.Full(1, 0, 2),
       supersedingInfo = SupersedingInfo.SupersededBy(SchemaVer.Full(1, 0, 3)).some
     )
-    val (expectedSchema103, _) = testSchema(version = SchemaVer.Full(1, 0, 3))
+    val (expectedSchema103, _) = testSchema(
+      version = SchemaVer.Full(1, 0, 3),
+      supersedingInfo = SupersedingInfo
+        .Supersedes(
+          NonEmptyList.of(
+            SchemaVer.Full(1, 0, 0),
+            SchemaVer.Full(1, 0, 1),
+            SchemaVer.Full(1, 0, 2)
+          )
+        )
+        .some
+    )
 
     val reqs = List(
       Request[IO](Method.POST, uri"/")
@@ -201,7 +216,10 @@ class ServerSpec extends Specification {
         .withEntity(schema103)
         .withHeaders(Header("apikey", InMemory.DummySuperKey.toString)),
       Request[IO](Method.POST, uri"/")
-        .withEntity(schema100SupersededBy)
+        .withEntity(schema102Supersedes100)
+        .withHeaders(Header("apikey", InMemory.DummySuperKey.toString)),
+      Request[IO](Method.POST, uri"/")
+        .withEntity(schema100SupersededBy101)
         .withHeaders(Header("apikey", InMemory.DummySuperKey.toString)),
       Request[IO](Method.GET, schemaKey100.uri).withHeaders(Header("apikey", InMemory.DummySuperKey.toString)),
       Request[IO](Method.GET, schemaKey101.uri).withHeaders(Header("apikey", InMemory.DummySuperKey.toString)),
@@ -225,6 +243,10 @@ class ServerSpec extends Specification {
       TestResponse(
         201,
         json"""{"message": "Schema created", "updated": false, "location": "iglu:com.acme/nonexistent/jsonschema/1-0-3", "status": 201}"""
+      ),
+      TestResponse(
+        200,
+        json"""{"message": "Schema updated", "updated": true, "location": "iglu:com.acme/nonexistent/jsonschema/1-0-2", "status": 200}"""
       ),
       TestResponse(
         200,

@@ -19,19 +19,20 @@ import java.util.concurrent.TimeUnit
 import java.time.Instant
 import fs2.Stream
 import cats.Monad
-import cats.implicits._
 import cats.data.NonEmptyList
+import cats.implicits._
 import cats.effect.{Bracket, Clock, Sync}
 import cats.effect.concurrent.Ref
 import io.circe.Json
 import com.snowplowanalytics.iglu.core.{SchemaKey, SchemaMap, SchemaVer}
+import com.snowplowanalytics.iglu.server.model.Schema.SupersedingInfo
 import com.snowplowanalytics.iglu.server.model.{Permission, Schema, SchemaDraft}
 import com.snowplowanalytics.iglu.server.model.SchemaDraft.DraftId
 
 /** Ephemeral storage that will be lost after server shut down */
 case class InMemory[F[_]](ref: Ref[F, InMemory.State]) extends Storage[F] {
   def getSchema(schemaMap: SchemaMap)(implicit F: Bracket[F, Throwable]): F[Option[Schema]] =
-    for { db <- ref.get } yield db.schemas.get(schemaMap)
+    for { db <- ref.get } yield db.schemas.get(schemaMap).map(addSupersedingInfo(db))
 
   def getPermission(apikey: UUID)(implicit F: Bracket[F, Throwable]): F[Option[Permission]] =
     for { db <- ref.get } yield db.permission.get(apikey)
@@ -63,7 +64,16 @@ case class InMemory[F[_]](ref: Ref[F, InMemory.State]) extends Storage[F] {
     addSchema(schemaMap, body, isPublic)
 
   def getSchemas(implicit F: Bracket[F, Throwable]): F[List[Schema]] =
-    ref.get.map(state => state.schemas.values.toList.sortBy(_.metadata.createdAt))
+    ref
+      .get
+      .map(state =>
+        state
+          .schemas
+          .values
+          .toList
+          .sortBy(schema => (schema.metadata.createdAt, schema.schemaMap.schemaKey.version))
+          .map(addSupersedingInfo(state))
+      )
 
   def getSchemasKeyOnly(implicit F: Bracket[F, Throwable]): F[List[(SchemaMap, Schema.Metadata)]] =
     ref.get.map(state => state.schemas.values.toList.sortBy(_.metadata.createdAt).map(s => (s.schemaMap, s.metadata)))
@@ -102,26 +112,60 @@ case class InMemory[F[_]](ref: Ref[F, InMemory.State]) extends Storage[F] {
       _  <- ref.update(_.copy(permission = db.permission - apikey))
     } yield ()
 
-  def addSupersededByColumn(implicit F: Bracket[F, Throwable]): F[Unit] =
+  def runAutomaticMigrations(implicit F: Bracket[F, Throwable]): F[Unit] =
     Bracket[F, Throwable].unit
+
+  def addSupersedingInfo(db: InMemory.State)(schema: Schema): Schema =
+    db.superseding.get(schema.schemaMap) match {
+      case Some(version) => schema.copy(supersedingInfo = Some(SupersedingInfo.SupersededBy(version)))
+      case None =>
+        val vendor         = schema.schemaMap.schemaKey.vendor
+        val name           = schema.schemaMap.schemaKey.name
+        val currentVersion = schema.schemaMap.schemaKey.version
+        val superseded = db
+          .superseding
+          .toList
+          .collect {
+            case (SchemaMap(SchemaKey(`vendor`, `name`, _, version)), `currentVersion`) => version
+          }
+          .sorted
+        superseded match {
+          case head :: tail => schema.copy(supersedingInfo = Some(SupersedingInfo.Supersedes(NonEmptyList(head, tail))))
+          case _            => schema
+        }
+    }
 
   def updateSupersedingVersion(
     vendor: String,
     name: String,
-    superseded: NonEmptyList[SchemaVer.Full],
-    supersededBy: SchemaVer.Full
+    supersedingInfo: SupersedingInfo.Pair
   )(implicit F: Bracket[F, Throwable]): F[Unit] =
     for {
       db <- ref.get
-      schemas = superseded.toList.foldRight(db.schemas) {
-        case (v, m) =>
-          val supersededSchemaKey = SchemaMap(SchemaKey(vendor, name, "jsonschema", v))
-          m.updated(
-            supersededSchemaKey,
-            m(supersededSchemaKey).copy(supersededBy = Some(supersededBy))
+      actualSupersedingVersion = db
+        .superseding
+        .getOrElse(
+          SchemaMap(SchemaKey(vendor, name, "jsonschema", supersedingInfo.supersedingVersion)),
+          supersedingInfo.supersedingVersion
+        )
+      superseded = supersedingInfo.supersededVersions.toList.toSet
+      transitive = db
+        .superseding
+        .toList
+        .collect {
+          case (schemaMap, version) if superseded(version) => schemaMap.schemaKey.version
+        }
+        .toSet
+      data = transitive.union(superseded).foldLeft(db.superseding) {
+        case (acc, version) =>
+          val schemaMap = SchemaMap(SchemaKey(vendor, name, "jsonschema", version))
+          val newValue = Ordering[SchemaVer.Full].max(
+            acc.get(schemaMap).getOrElse(actualSupersedingVersion),
+            actualSupersedingVersion
           )
+          acc.updated(schemaMap, newValue)
       }
-      _ <- ref.update(_.copy(schemas = schemas))
+      _ <- ref.update(_.copy(superseding = data))
     } yield ()
 }
 
@@ -131,17 +175,19 @@ object InMemory {
 
   case class State(
     schemas: Map[SchemaMap, Schema],
+    superseding: Map[SchemaMap, SchemaVer.Full],
     permission: Map[UUID, Permission],
     drafts: Map[DraftId, SchemaDraft]
   )
 
   object State {
-    val empty: State = State(Map.empty, Map.empty, Map.empty)
+    val empty: State = State(Map.empty, Map.empty, Map.empty, Map.empty)
 
     /** Dev state */
     val withSuperKey: State =
       State(
         Map.empty[SchemaMap, Schema],
+        Map.empty,
         Map(DummySuperKey -> Permission.Super),
         Map.empty[DraftId, SchemaDraft]
       )
