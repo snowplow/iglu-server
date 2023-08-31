@@ -22,7 +22,7 @@ trait StorageAgnosticSpec {
       } yield responses.flatMap(_.lastOption).getOrElse(Response(Status.NotFound))
     }
 
-  def sendRequestGetState[A](
+  def sendRequestsGetState[A](
     createService: Storage[IO] => HttpRoutes[IO]
   )(obtainState: Storage[IO] => IO[A])(requests: List[Request[IO]]): IO[(List[Response[IO]], A)] =
     storageResource.use { storage =>
@@ -78,7 +78,7 @@ trait PostgresStorageSpec { self: StorageAgnosticSpec =>
           .schemas
           .values
           .toList
-          .map(schema => storage.addSchema(schema.schemaMap, schema.body, schema.metadata.isPublic))
+          .map(schema => storage.addSchema(schema.schemaMap, schema.body, schema.metadata.isPublic, List.empty))
           .sequence
       )
     } yield storage

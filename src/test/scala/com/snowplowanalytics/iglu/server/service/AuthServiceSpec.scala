@@ -25,7 +25,7 @@ import com.snowplowanalytics.iglu.server.storage.InMemory
 
 class AuthServiceSpec extends org.specs2.Specification with StorageAgnosticSpec with InMemoryStorageSpec {
   def getState(request: Request[IO], superApiKey: Option[UUID] = None): IO[(List[Response[IO]], InMemory.State)] =
-    sendRequestGetState[InMemory.State](storage =>
+    sendRequestsGetState[InMemory.State](storage =>
       AuthService.asRoutes(storage, superApiKey, SpecHelpers.ctx, createRhoMiddleware())
     )(storage => storage.asInstanceOf[InMemory[IO]].ref.get)(List(request))
 

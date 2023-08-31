@@ -16,23 +16,17 @@ package com.snowplowanalytics.iglu.server
 package storage
 
 import java.util.UUID
-
 import io.circe.Json
-
 import cats.Monad
 import cats.implicits._
 import cats.data.NonEmptyList
 import cats.effect.{Bracket, Clock}
-
 import fs2.Stream
-
 import doobie._
 import doobie.implicits._
 import doobie.postgres.implicits._
 import doobie.postgres.circe.json.implicits._
-
 import org.typelevel.log4cats.Logger
-
 import com.snowplowanalytics.iglu.core.{SchemaMap, SchemaVer}
 import com.snowplowanalytics.iglu.server.migrations.Bootstrap
 import com.snowplowanalytics.iglu.server.model.{Permission, Schema, SchemaDraft}
@@ -67,12 +61,16 @@ class Postgres[F[_]](xa: Transactor[F], logger: Logger[F]) extends Storage[F] { 
     logger.debug(s"getPermission") *>
       Postgres.Sql.getPermission(apikey).option.transact(xa)
 
-  def addSchema(schemaMap: SchemaMap, body: Json, isPublic: Boolean)(
+  def addSchema(schemaMap: SchemaMap, body: Json, isPublic: Boolean, supersedes: List[SchemaVer.Full])(
     implicit C: Clock[F],
     M: Bracket[F, Throwable]
   ): F[Unit] =
     logger.debug(s"addSchema ${schemaMap.schemaKey.toSchemaUri}") *>
-      Postgres.Sql.addSchema(schemaMap, body, isPublic).run.void.transact(xa)
+      (Postgres.Sql.addSchema(schemaMap, body, isPublic, supersedes).run.void *>
+        (supersedes match {
+          case head :: tail => Postgres.Sql.updateSupersedingVersion(schemaMap, NonEmptyList(head, tail)).run.void
+          case _            => doobie.free.connection.unit
+        })).transact(xa)
 
   def updateSchema(schemaMap: SchemaMap, body: Json, isPublic: Boolean)(
     implicit C: Clock[F],
@@ -122,31 +120,23 @@ class Postgres[F[_]](xa: Transactor[F], logger: Logger[F]) extends Storage[F] { 
         Postgres.Sql.dropKeyAction.run.void).transact(xa) *>
       logger.warn("Database entities were dropped")
 
-  def addSupersededByColumn(implicit F: Bracket[F, Throwable]): F[Unit] =
-    logger.debug(s"addSupersededByColumn") *>
-      Postgres.Sql.addSupersededByColumn.run.void.transact(xa)
+  def runAutomaticMigrations(implicit F: Bracket[F, Throwable]): F[Unit] =
+    logger.debug(s"Running automatic migrations") *>
+      (Postgres.Sql.addSupersededByColumn.run.void *>
+        Postgres.Sql.addSupersedesColumn.run.void).transact(xa) *>
+      logger.debug(s"Automatic migrations done")
 
   def bootstrap(implicit F: Bracket[F, Throwable]): F[Int] = Bootstrap.initialize(xa)
-
-  def updateSupersedingVersion(
-    vendor: String,
-    name: String,
-    superseded: NonEmptyList[SchemaVer.Full],
-    supersededBy: SchemaVer.Full
-  )(implicit F: Bracket[F, Throwable]): F[Unit] =
-    logger.debug(s"updateSupersedingVersion: $vendor - $name - $superseded - $supersededBy") *>
-      Postgres.Sql.updateSupersedingVersion(vendor, name, superseded, supersededBy).run.void.transact(xa)
 }
 
 object Postgres {
-
   val SchemasTable     = Fragment.const("iglu_schemas")
   val DraftsTable      = Fragment.const("iglu_drafts")
   val PermissionsTable = Fragment.const("iglu_permissions")
 
   val schemaColumns =
     Fragment.const(
-      "vendor, name, format, model, revision, addition, created_at, updated_at, is_public, body, superseded_by"
+      "vendor, name, format, model, revision, addition, created_at, updated_at, is_public, body, superseded_by, supersedes"
     )
   val schemaKeyColumns =
     Fragment.const("vendor, name, format, model, revision, addition, created_at, updated_at, is_public")
@@ -181,12 +171,24 @@ object Postgres {
   def supersededByFr(version: SchemaVer.Full): Fragment =
     fr"superseded_by = ${version.asString}"
 
-  def supersededFr(vendor: String, name: String, superseded: SchemaVer.Full): Fragment =
-    fr"(" ++ nameFr(vendor, name) ++ fr"AND" ++ schemaVerFr(superseded) ++ fr")" ++
-      fr"OR ${supersededByFr(superseded)}"
-
   def supersededListFr(vendor: String, name: String, supersededList: NonEmptyList[SchemaVer.Full]): Fragment =
-    supersededList.map(supersededFr(vendor, name, _)).intercalate(fr"OR")
+    Fragments.and(
+      nameFr(vendor, name),
+      supersededList
+        .map(version =>
+          Fragments.or(
+            schemaVerFr(version),
+            supersededByFr(version)
+          )
+        )
+        .intercalate(fr"OR")
+    )
+
+  def supersededByInferiorFr(supersedingVersion: SchemaVer.Full) =
+    Fragments.or(
+      fr"superseded_by IS NULL",
+      fr"STRING_TO_ARRAY(superseded_by, '-')::int[] < STRING_TO_ARRAY(${supersedingVersion.asString}, '-')::int[]"
+    )
 
   object Sql {
     def getSchema(schemaMap: SchemaMap): Query0[Schema] =
@@ -214,11 +216,15 @@ object Postgres {
     def getSchemasKeyOnly: Query0[(SchemaMap, Schema.Metadata)] =
       (fr"SELECT" ++ schemaKeyColumns ++ fr"FROM" ++ SchemasTable ++ Ordering).query[(SchemaMap, Schema.Metadata)]
 
-    def addSchema(schemaMap: SchemaMap, schema: Json, isPublic: Boolean): Update0 = {
+    def addSchema(schemaMap: SchemaMap, schema: Json, isPublic: Boolean, supersedes: List[SchemaVer.Full]): Update0 = {
       val key = schemaMap.schemaKey
       val ver = key.version
       (fr"INSERT INTO" ++ SchemasTable ++ fr"(" ++ schemaColumns ++ fr")" ++
-        fr"VALUES (${key.vendor}, ${key.name}, ${key.format}, ${ver.model}, ${ver.revision}, ${ver.addition}, current_timestamp, current_timestamp, $isPublic, $schema, null)").update
+        fr"""VALUES (
+          ${key.vendor}, ${key.name}, ${key.format},
+          ${ver.model}, ${ver.revision}, ${ver.addition},
+          current_timestamp, current_timestamp,
+          $isPublic, $schema, null, ${supersedes.map(_.asString)})""").update
     }
 
     def updateSchema(schemaMap: SchemaMap, schema: Json, isPublic: Boolean): Update0 =
@@ -266,18 +272,25 @@ object Postgres {
       sql"DROP TYPE IF EXISTS key_action".update
 
     def updateSupersedingVersion(
-      vendor: String,
-      name: String,
-      superseded: NonEmptyList[SchemaVer.Full],
-      supersededBy: SchemaVer.Full
+      schemaMap: SchemaMap,
+      supersedes: NonEmptyList[SchemaVer.Full]
     ): Update0 =
-      (fr"UPDATE" ++ SchemasTable ++ fr"SET" ++ supersededByFr(supersededBy) ++ fr"WHERE" ++ supersededListFr(
-        vendor,
-        name,
-        superseded
-      )).update
+      sql"""
+        UPDATE $SchemasTable
+        SET superseded_by = ${schemaMap.schemaKey.version.asString}
+        WHERE ${Fragments.and(
+        supersededByInferiorFr(schemaMap.schemaKey.version),
+        supersededListFr(
+          schemaMap.schemaKey.vendor,
+          schemaMap.schemaKey.name,
+          supersedes
+        )
+      )}""".update
 
     def addSupersededByColumn: Update0 =
       (fr"ALTER TABLE" ++ SchemasTable ++ fr"ADD COLUMN IF NOT EXISTS superseded_by VARCHAR(32)").update
+
+    def addSupersedesColumn: Update0 =
+      (fr"ALTER TABLE" ++ SchemasTable ++ fr"ADD COLUMN IF NOT EXISTS supersedes VARCHAR(32) ARRAY").update
   }
 }

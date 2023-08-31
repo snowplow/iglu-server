@@ -118,7 +118,7 @@ object Fifth {
     val previousPublic = schemas.forall(_.isPublic)
     val versions       = schemas.map(_.map.schemaKey.version)
     if ((previousPublic && isPublic) || (!previousPublic && !isPublic) || schemas.isEmpty)
-      VersionCursor.isAllowed(current.schemaKey.version, versions, patchesAllowed = false)
+      VersionCursor.isAllowed(current.schemaKey.version, versions, patchesAllowed = false, List.empty)
     else
       Inconsistency.Availability(isPublic, previousPublic).asLeft
   }

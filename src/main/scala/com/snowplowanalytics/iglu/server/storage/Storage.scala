@@ -16,22 +16,15 @@ package com.snowplowanalytics.iglu.server
 package storage
 
 import java.util.UUID
-
 import fs2.Stream
-
 import cats.Monad
 import cats.effect.{Blocker, Bracket, BracketThrow, Clock, ContextShift, Effect, Resource, Sync}
 import cats.implicits._
-import cats.data.NonEmptyList
-
 import io.circe.Json
-
 import doobie.hikari._
 import doobie.util.transactor.Transactor
-
 import org.typelevel.log4cats.slf4j.Slf4jLogger
 import org.typelevel.log4cats.Logger
-
 import com.snowplowanalytics.iglu.core.{SchemaMap, SchemaVer}
 import com.snowplowanalytics.iglu.server.Config.StorageConfig
 import com.snowplowanalytics.iglu.server.model.{Permission, Schema, SchemaDraft}
@@ -59,7 +52,7 @@ trait Storage[F[_]] {
   def getSchemasKeyOnly(implicit F: Bracket[F, Throwable]): F[List[(SchemaMap, Schema.Metadata)]]
   def getSchemaBody(schemaMap: SchemaMap)(implicit F: Bracket[F, Throwable]): F[Option[Json]] =
     getSchema(schemaMap).nested.map(_.body).value
-  def addSchema(schemaMap: SchemaMap, body: Json, isPublic: Boolean)(
+  def addSchema(schemaMap: SchemaMap, body: Json, isPublic: Boolean, supersedes: List[SchemaVer.Full])(
     implicit C: Clock[F],
     M: Bracket[F, Throwable]
   ): F[Unit]
@@ -81,14 +74,7 @@ trait Storage[F[_]] {
     } yield ()
   def deletePermission(id: UUID)(implicit F: Bracket[F, Throwable]): F[Unit]
 
-  def addSupersededByColumn(implicit F: Bracket[F, Throwable]): F[Unit]
-
-  def updateSupersedingVersion(
-    vendor: String,
-    name: String,
-    superseded: NonEmptyList[SchemaVer.Full],
-    supersededBy: SchemaVer.Full
-  )(implicit F: Bracket[F, Throwable]): F[Unit]
+  def runAutomaticMigrations(implicit F: Bracket[F, Throwable]): F[Unit]
 }
 
 object Storage {

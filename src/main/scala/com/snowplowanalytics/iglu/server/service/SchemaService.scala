@@ -17,7 +17,7 @@ package service
 
 import java.util.UUID
 
-import cats.data.{EitherT, NonEmptyList, Validated}
+import cats.data.Validated
 import cats.effect._
 import cats.implicits._
 
@@ -51,6 +51,7 @@ class SchemaService[F[+_]: Sync](
 
   import swagger._
   import SchemaService._
+
   implicit val C: Clock[F] = Clock.create[F]
 
   val reprUri       = paramD[SchemaFormat]("repr", SchemaFormat.Uri, "Schema representation format")
@@ -172,7 +173,7 @@ class SchemaService[F[+_]: Sync](
     isPublic: Boolean,
     permission: Permission,
     schema: SelfDescribingSchema[Json],
-    supersedingInfo: Option[SupersedingInfo]
+    supersedingInfo: SupersedingInfo
   ) =
     if (permission.canCreateSchema(schema.self.schemaKey.vendor)) {
       ValidationService.validateJsonSchema(schema.normalize) match {
@@ -187,7 +188,7 @@ class SchemaService[F[+_]: Sync](
       case SchemaFormat.Uri =>
         db.getSchemasKeyOnly
           .map(_.filter(isReadablePair(permission)).map {
-            case (map, meta) => Schema(map, meta, Json.Null, None).withFormat(SchemaFormat.Uri)
+            case (map, meta) => Schema(map, meta, Json.Null, SupersedingInfo.empty).withFormat(SchemaFormat.Uri)
           })
       case _ =>
         db.getSchemas.map(_.filter(isReadable(permission)).map(_.withFormat(format)))
@@ -205,85 +206,24 @@ class SchemaService[F[+_]: Sync](
   private def addSchema(
     schema: SelfDescribingSchema[Json],
     isPublic: Boolean,
-    supersedingInfo: Option[SupersedingInfo]
+    supersedingInfo: SupersedingInfo
   ) =
     for {
-      allowed          <- isSchemaAllowed(db, schema.self, patchesAllowed, isPublic)
-      supersedingCheck <- checkSupersedingVersion(schema.self, supersedingInfo)
-      response <- (allowed, supersedingCheck) match {
-        case (Right(_), Right(s)) =>
+      allowed <- isSchemaAllowed(db, schema.self, patchesAllowed, isPublic, supersedingInfo)
+      response <- allowed match {
+        case Right(_) =>
           for {
             existing <- db.getSchema(schema.self).map(_.isDefined)
             _ <- if (existing) db.updateSchema(schema.self, schema.schema, isPublic)
-            else db.addSchema(schema.self, schema.schema, isPublic)
-            _ <- updateSupersedingVersion(schema.self, s)
+            else db.addSchema(schema.self, schema.schema, isPublic, supersedingInfo.supersedes)
             payload = IgluResponse.SchemaUploaded(existing, schema.self.schemaKey): IgluResponse
             _        <- webhooks.schemaPublished(schema.self.schemaKey, existing)
             response <- if (existing) Ok(payload) else Created(payload)
           } yield response
-        case (Left(Inconsistency.AlreadyExists), Right(Some(s))) =>
-          for {
-            _        <- updateSupersedingVersion(schema.self, Some(s))
-            response <- Ok(IgluResponse.SupersedingVersionUpdated(schema.self.schemaKey): IgluResponse)
-          } yield response
-        case (_, Left(error)) =>
-          Conflict(IgluResponse.Message(error): IgluResponse)
-        case (Left(error), _) =>
+        case Left(error) =>
           Conflict(IgluResponse.Message(error.show): IgluResponse)
       }
     } yield response
-
-  private def updateSupersedingVersion(
-    currSchema: SchemaMap,
-    supersedingInfo: Option[(SupersedingInfo.Superseded, SupersedingInfo.SupersededBy)]
-  ): F[Unit] =
-    supersedingInfo match {
-      case None => Sync[F].unit
-      case Some((superseded, supersededBy)) =>
-        val s = currSchema.schemaKey
-        db.updateSupersedingVersion(s.vendor, s.name, superseded.versions, supersededBy.version)
-    }
-
-  private def checkSupersedingVersion(
-    currSchema: SchemaMap,
-    supersedingInfo: Option[SupersedingInfo]
-  ): F[Either[String, Option[(SupersedingInfo.Superseded, SupersedingInfo.SupersededBy)]]] =
-    supersedingInfo match {
-      case None => Sync[F].delay(Right(None))
-      case Some(supersedingInfo) =>
-        val (superseded, supersededBy) = supersedingInfo match {
-          case SupersedingInfo.SupersededBy(v) =>
-            // In here, we want to make sure that schema that is specified as 'supersededBy' exists in the db.
-            // Also, it is possible superseding schema is superseded by another schema. Therefore, we are
-            // trying to return its 'supersededBy' field. If it is None, we return the schema's own version
-            // because it means that it isn't superseded by another schema.
-            val superseded = NonEmptyList.of(currSchema.schemaKey.version)
-            val supersededBy = db.getSchema(SchemaMap(currSchema.schemaKey.copy(version = v))).map {
-              s: Option[Schema] => s.map(_.supersededBy.getOrElse(v))
-            }
-            (superseded, supersededBy)
-          case SupersedingInfo.Superseded(superseded) =>
-            // In here, currSchema is superseding schema. This case can be reached if the schema is created
-            // for the first time. Superseding schema check will be made before schema is created.
-            // Therefore, it is possible currSchema doesn't exist when this function is called.
-            // Therefore, if it is None, we return the schema's own version. If schema exists, we will follow
-            // the same procedure as above to find superseding schema version.
-            val currVersion = currSchema.schemaKey.version
-            val supersededBy = db.getSchema(SchemaMap(currSchema.schemaKey.copy(version = currVersion))).map {
-              s: Option[Schema] => s.flatMap(_.supersededBy).orElse(currVersion.some)
-            }
-            (superseded, supersededBy)
-        }
-        val res = for {
-          supersededBy <- EitherT.fromOptionF(supersededBy, ifNone = "Superseding schema doesn't exist")
-          _ <- EitherT.cond[F](
-            superseded.map(superseded => Ordering[SchemaVer.Full].gt(supersededBy, superseded)).forall(identity),
-            right = (),
-            left = "There are superseded schema versions greater than superseding schema version"
-          )
-        } yield Some((SupersedingInfo.Superseded(superseded), SupersedingInfo.SupersededBy(supersededBy)))
-        res.value
-    }
 }
 
 object SchemaService {
@@ -305,16 +245,18 @@ object SchemaService {
     db: Storage[F],
     schemaMap: SchemaMap,
     patchesAllowed: Boolean,
-    isPublic: Boolean
+    isPublic: Boolean,
+    supersedingInfo: SupersedingInfo
   ): F[Either[Inconsistency, Unit]] =
     for {
       schemas <- db.getSchemasByName(schemaMap.schemaKey.vendor, schemaMap.schemaKey.name).compile.toList
       previousPublic = schemas.forall(_.metadata.isPublic)
       versions       = schemas.map(_.schemaMap.schemaKey.version)
     } yield
-      if ((previousPublic && isPublic) || (!previousPublic && !isPublic) || schemas.isEmpty)
-        VersionCursor.isAllowed(schemaMap.schemaKey.version, versions, patchesAllowed)
-      else Inconsistency.Availability(isPublic, previousPublic).asLeft
+      if (schemas.nonEmpty && (isPublic != previousPublic))
+        Inconsistency.Availability(isPublic, previousPublic).asLeft
+      else
+        VersionCursor.isAllowed(schemaMap.schemaKey.version, versions, patchesAllowed, supersedingInfo.supersedes)
 
   /** Extract schemas from database, available for particular permission */
   def isReadable(permission: Permission)(schema: Schema): Boolean =

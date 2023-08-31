@@ -17,24 +17,19 @@ package storage
 
 import java.util.UUID
 import io.circe.Json
-
 import cats.data.NonEmptyList
 import cats.syntax.traverse._
 import cats.instances.list._
 import cats.effect.IO
-
 import doobie._
 import doobie.specs2._
 import doobie.implicits._
-
 import eu.timepit.refined.types.numeric.NonNegInt
-
-import com.snowplowanalytics.iglu.core.{SchemaMap, SchemaVer}
+import com.snowplowanalytics.iglu.core.{SchemaKey, SchemaMap, SchemaVer}
 import com.snowplowanalytics.iglu.server.model.{Permission, SchemaDraft}
 import com.snowplowanalytics.iglu.server.migrations.Bootstrap
 
 import scala.concurrent.ExecutionContext
-
 import org.specs2.mutable.Specification
 import org.specs2.specification.BeforeAll
 
@@ -93,7 +88,12 @@ class PostgresSpec extends Specification with BeforeAll with IOChecker {
       check(
         Postgres
           .Sql
-          .addSchema(SchemaMap("does", "not", "exist", SchemaVer.Full(1, 0, 0)), Json.fromFields(List.empty), true)
+          .addSchema(
+            SchemaMap("does", "not", "exist", SchemaVer.Full(1, 0, 0)),
+            Json.fromFields(List.empty),
+            true,
+            List(SchemaVer.Full(1, 0, 0))
+          )
       )
     }
 
@@ -129,10 +129,8 @@ class PostgresSpec extends Specification with BeforeAll with IOChecker {
         Postgres
           .Sql
           .updateSupersedingVersion(
-            "vendor",
-            "name",
-            NonEmptyList.of(SchemaVer.Full(1, 0, 0), SchemaVer.Full(1, 0, 2)),
-            SchemaVer.Full(1, 0, 3)
+            SchemaMap(SchemaKey("vendor", "name", "jsonschema", SchemaVer.Full(1, 0, 3))),
+            NonEmptyList.of(SchemaVer.Full(1, 0, 0), SchemaVer.Full(1, 0, 2))
           )
       )
     }

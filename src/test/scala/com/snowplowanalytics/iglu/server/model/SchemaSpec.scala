@@ -15,18 +15,11 @@
 package com.snowplowanalytics.iglu.server.model
 
 import java.time.Instant
-
-import cats.data.NonEmptyList
-import cats.syntax.option._
-
 import io.circe._
 import io.circe.syntax._
 import io.circe.literal._
-
 import com.snowplowanalytics.iglu.core.{SchemaKey, SchemaMap, SchemaVer, SelfDescribingSchema}
-
-import com.snowplowanalytics.iglu.server.model.Schema.{Metadata, Repr}
-
+import com.snowplowanalytics.iglu.server.model.Schema.{Metadata, Repr, SupersedingInfo}
 import SchemaSpec.testSchema
 
 class SchemaSpec extends org.specs2.Specification {
@@ -60,7 +53,7 @@ class SchemaSpec extends org.specs2.Specification {
         SchemaMap("me.chuwy", "test-schema", "jsonschema", SchemaVer.Full(1, 0, 0)),
         Metadata(Instant.parse("2019-01-12T22:12:54.777Z"), Instant.parse("2019-01-12T22:12:54.777Z"), true),
         json"""{"type": "object"}""",
-        None
+        SupersedingInfo.empty
       )
 
     Schema.serverSchemaDecoder.decodeJson(input) must beRight(expected)
@@ -72,9 +65,10 @@ class SchemaSpec extends org.specs2.Specification {
         SchemaMap("me.chuwy", "test-schema", "jsonschema", SchemaVer.Full(1, 0, 0)),
         Metadata(Instant.parse("2019-01-12T22:12:54.777Z"), Instant.parse("2019-01-12T22:12:54.777Z"), true),
         json"""{"type": "object"}""",
-        None
+        SupersedingInfo.empty
       )
-    val schemaWithSupersededBy = schemaWithoutSupersededBy.copy(supersededBy = Some(SchemaVer.Full(1, 0, 1)))
+    val schemaWithSupersededBy =
+      schemaWithoutSupersededBy.copy(supersedingInfo = SupersedingInfo(Some(SchemaVer.Full(1, 0, 1)), List.empty))
 
     val match1 = Schema.schemaEncoder(schemaWithSupersededBy) must beEqualTo(
       json"""
@@ -117,18 +111,18 @@ class SchemaSpec extends org.specs2.Specification {
   }
 
   def e3 = {
-    val superseding = Schema.SupersedingInfo.SupersededBy(SchemaVer.Full(1, 0, 1))
+    val superseding = Schema.SupersedingInfo(Some(SchemaVer.Full(1, 0, 1)), List.empty)
     val superseded =
-      Schema.SupersedingInfo.Superseded(NonEmptyList.of(SchemaVer.Full(1, 0, 1), SchemaVer.Full(1, 0, 2)))
+      Schema.SupersedingInfo(None, List(SchemaVer.Full(1, 0, 1), SchemaVer.Full(1, 0, 2)))
 
     val (schema1, schemaKey1) = testSchema(SchemaVer.Full(1, 0, 0))
     val (schema2, schemaKey2) = testSchema(
       SchemaVer.Full(1, 0, 0),
-      supersedingInfo = superseding.some
+      supersedingInfo = superseding
     )
     val (schema3, schemaKey3) = testSchema(
       SchemaVer.Full(1, 0, 0),
-      supersedingInfo = superseded.some
+      supersedingInfo = superseded
     )
 
     val bodyOnlyInput = json"""{ "type": "object" }"""
@@ -136,7 +130,12 @@ class SchemaSpec extends org.specs2.Specification {
 
     val selfDescribingResult =
       Schema.SchemaBody.schemaBodyCirceDecoder.decodeJson(schema1) must beRight.like {
-        case Schema.SchemaBody.SelfDescribing(SelfDescribingSchema(SchemaMap(`schemaKey1`), `bodyOnlyInput`), None) =>
+        case Schema
+              .SchemaBody
+              .SelfDescribing(
+              SelfDescribingSchema(SchemaMap(`schemaKey1`), `bodyOnlyInput`),
+              SupersedingInfo(None, Nil)
+              ) =>
           ok
         case e => ko(s"Unexpected decoded value $e")
       }
@@ -144,7 +143,7 @@ class SchemaSpec extends org.specs2.Specification {
       Schema.SchemaBody.schemaBodyCirceDecoder.decodeJson(schema2) must beRight.like {
         case Schema
               .SchemaBody
-              .SelfDescribing(SelfDescribingSchema(SchemaMap(`schemaKey2`), `bodyOnlyInput`), Some(`superseding`)) =>
+              .SelfDescribing(SelfDescribingSchema(SchemaMap(`schemaKey2`), `bodyOnlyInput`), `superseding`) =>
           ok
         case e => ko(s"Unexpected decoded value $e")
       }
@@ -152,7 +151,7 @@ class SchemaSpec extends org.specs2.Specification {
       Schema.SchemaBody.schemaBodyCirceDecoder.decodeJson(schema3) must beRight.like {
         case Schema
               .SchemaBody
-              .SelfDescribing(SelfDescribingSchema(SchemaMap(`schemaKey3`), `bodyOnlyInput`), Some(`superseded`)) =>
+              .SelfDescribing(SelfDescribingSchema(SchemaMap(`schemaKey3`), `bodyOnlyInput`), `superseded`) =>
           ok
         case e => ko(s"Unexpected decoded value $e")
       }
@@ -174,10 +173,10 @@ class SchemaSpec extends org.specs2.Specification {
       SchemaMap("me.chuwy", "test-schema", "jsonschema", SchemaVer.Full(1, 0, 0)),
       Metadata(Instant.parse("2019-01-12T22:12:54.777Z"), Instant.parse("2019-01-12T22:12:54.777Z"), true),
       json"""{"type": "object"}""",
-      Some(SchemaVer.Full(1, 0, 1))
+      SupersedingInfo(Some(SchemaVer.Full(1, 0, 1)), List.empty)
     )
     val reprWithSupersededBy    = Repr.Full(schema)
-    val reprWithoutSupersededBy = Repr.Full(schema.copy(supersededBy = None))
+    val reprWithoutSupersededBy = Repr.Full(schema.copy(supersedingInfo = SupersedingInfo.empty))
 
     val match1 = Schema.representationEncoder(reprWithSupersededBy).noSpaces must beEqualTo(
       json"""
@@ -224,9 +223,9 @@ class SchemaSpec extends org.specs2.Specification {
     )
     val reprWithSupersededBy = Repr.Canonical(
       schema,
-      Some(SchemaVer.Full(1, 0, 1))
+      SupersedingInfo(Some(SchemaVer.Full(1, 0, 1)), List.empty)
     )
-    val reprWithoutSupersededBy = Repr.Canonical(schema, None)
+    val reprWithoutSupersededBy = Repr.Canonical(schema, SupersedingInfo.empty)
 
     val match1 = Schema.representationEncoder(reprWithSupersededBy).noSpaces must beEqualTo(
       json"""
@@ -262,18 +261,16 @@ class SchemaSpec extends org.specs2.Specification {
 object SchemaSpec {
   def testSchema(
     version: SchemaVer.Full,
-    supersedingInfo: Option[Schema.SupersedingInfo] = None,
+    supersedingInfo: Schema.SupersedingInfo = Schema.SupersedingInfo.empty,
     mergeJson: Json = JsonObject.empty.asJson
   ): (Json, SchemaKey) = {
     val schemaKey = SchemaKey("com.acme", "nonexistent", "jsonschema", version)
-    val supersedingInfoJson = supersedingInfo
-      .map {
-        case Schema.SupersedingInfo.SupersededBy(v) =>
-          json"""{ "$$supersededBy": ${v.asString} }"""
-        case Schema.SupersedingInfo.Superseded(l) =>
-          json"""{ "$$supersedes": ${l.map(_.asString).asJson} }"""
-      }
-      .getOrElse(JsonObject.empty.asJson)
+    val supersedingInfoJson =
+      json"""
+      {
+        "$$supersededBy": ${supersedingInfo.supersededBy.map(_.asString)},
+        "$$supersedes": ${supersedingInfo.supersedes.map(_.asString).asJson}
+      }""".dropNullValues.dropEmptyValues
     val schema =
       json"""
       {
