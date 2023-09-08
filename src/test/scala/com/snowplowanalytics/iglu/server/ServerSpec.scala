@@ -37,7 +37,7 @@ import com.snowplowanalytics.iglu.server.model.Schema.SupersedingInfo
 import com.snowplowanalytics.iglu.server.storage.InMemory
 import com.snowplowanalytics.iglu.server.codecs.JsonCodecs._
 import com.snowplowanalytics.iglu.server.model.SchemaSpec.testSchema
-import com.snowplowanalytics.iglu.server.service.SchemaServiceSpec._
+import com.snowplowanalytics.iglu.server.SpecHelpers.SchemaKeyUri
 
 import scala.concurrent.duration.DurationLong
 

@@ -16,32 +16,46 @@ package com.snowplowanalytics.iglu.server
 package service
 
 import java.util.UUID
-
 import cats.data.NonEmptyList
 import cats.implicits._
 import cats.effect.IO
-
 import fs2.Stream
-
 import io.circe._
 import io.circe.literal._
-
 import org.http4s._
 import org.http4s.implicits._
 import org.http4s.circe._
-import org.http4s.client.Client
-import org.http4s.rho.swagger.syntax.io.createRhoMiddleware
-
 import com.snowplowanalytics.iglu.core.{SchemaKey, SchemaMap, SchemaVer, SelfDescribingSchema}
 import com.snowplowanalytics.iglu.server.codecs.JsonCodecs._
 import com.snowplowanalytics.iglu.server.model.{IgluResponse, Schema}
-
 import com.snowplowanalytics.iglu.server.model.SchemaSpec.testSchema
+import com.snowplowanalytics.iglu.server.SpecHelpers.SchemaKeyUri
+import org.http4s.rho.swagger.syntax.io.createRhoMiddleware
 
-import SchemaServiceSpec._
+import java.time.Instant
 
-class SchemaServiceSpec extends org.specs2.Specification {
-  def is = s2"""
+trait SchemaServiceSpecBase extends org.specs2.Specification with StorageAgnosticSpec {
+  def sendRequests(requests: List[Request[IO]], patchesAllowed: Boolean): IO[Response[IO]] =
+    sendRequestsGetResponse(storage =>
+      SchemaService.asRoutes(patchesAllowed, Webhook.WebhookClient(List(), client))(
+        storage,
+        None,
+        SpecHelpers.ctx,
+        createRhoMiddleware()
+      )
+    )(requests)
+
+  def getState(requests: List[Request[IO]], patchesAllowed: Boolean): IO[(List[Response[IO]], List[Schema])] =
+    sendRequestGetState(storage =>
+      SchemaService.asRoutes(patchesAllowed, Webhook.WebhookClient(List(), client))(
+        storage,
+        None,
+        SpecHelpers.ctx,
+        createRhoMiddleware()
+      )
+    )(storage => storage.getSchemas)(requests)
+
+  def is = sequential ^ s2"""
   GET
     Returns 404 for non-existing schema $e1
     Returns 200 and schema for existing public schema $e3
@@ -70,7 +84,7 @@ class SchemaServiceSpec extends org.specs2.Specification {
     val req: Request[IO] =
       Request(Method.GET, uri"/com.acme/nonexistent/jsonschema/1-0-0")
 
-    val response = SchemaServiceSpec.request(List(req), false)
+    val response = sendRequests(List(req), false)
     response.unsafeRunSync().status must beEqualTo(Status.NotFound)
   }
 
@@ -79,7 +93,7 @@ class SchemaServiceSpec extends org.specs2.Specification {
       Request(Method.GET, uri"/com.acme/event/jsonschema/1-0-0")
 
     val result = for {
-      response <- SchemaServiceSpec.request(List(req), false)
+      response <- sendRequests(List(req), false)
       body     <- response.as[Json]
     } yield (response.status, body)
 
@@ -96,7 +110,7 @@ class SchemaServiceSpec extends org.specs2.Specification {
       )
 
     val result = for {
-      response <- SchemaServiceSpec.request(List(req), false)
+      response <- sendRequests(List(req), false)
       body     <- response.as[Json]
     } yield (response.status, body)
 
@@ -113,7 +127,7 @@ class SchemaServiceSpec extends org.specs2.Specification {
       )
 
     val result = for {
-      response <- SchemaServiceSpec.request(List(req), false)
+      response <- sendRequests(List(req), false)
       body     <- response.as[IgluResponse]
     } yield (response.status, body)
 
@@ -126,14 +140,24 @@ class SchemaServiceSpec extends org.specs2.Specification {
       Request(Method.GET, Uri.uri("/").withQueryParam("repr", "meta"))
 
     val result = for {
-      response <- SchemaServiceSpec.request(List(req), false)
+      response <- sendRequests(List(req), false)
       body     <- response.as[List[Schema]]
     } yield (response.status, body)
 
     val expectedBody = SpecHelpers.schemas.filter { case (_, m) => m.metadata.isPublic }.map(_._2)
+    def ignoreTimestamps(schema: Schema) =
+      schema.copy(metadata =
+        schema
+          .metadata
+          .copy(
+            createdAt = Instant.EPOCH,
+            updatedAt = Instant.EPOCH
+          )
+      )
 
     val (status, body) = result.unsafeRunSync()
-    (status must beEqualTo(Status.Ok)).and(body must beEqualTo(expectedBody))
+    (status must beEqualTo(Status.Ok))
+      .and(body.map(ignoreTimestamps) must beEqualTo(expectedBody.map(ignoreTimestamps)))
   }
 
   def e10 = {
@@ -141,7 +165,7 @@ class SchemaServiceSpec extends org.specs2.Specification {
       Request(Method.GET, Uri.uri("/").withQueryParam("repr", "canonical"))
 
     val result = for {
-      response <- SchemaServiceSpec.request(List(req), false)
+      response <- sendRequests(List(req), false)
       body     <- response.as[List[SelfDescribingSchema[Json]]]
     } yield (response.status, body.map(_.self))
 
@@ -160,7 +184,7 @@ class SchemaServiceSpec extends org.specs2.Specification {
       )
 
     val result = for {
-      response <- SchemaServiceSpec.request(List(req), false)
+      response <- sendRequests(List(req), false)
       body     <- response.as[Json]
     } yield (response.status, body)
 
@@ -173,7 +197,7 @@ class SchemaServiceSpec extends org.specs2.Specification {
       Request(Method.GET, Uri.uri("/"))
 
     val result = for {
-      response <- SchemaServiceSpec.request(List(req), false)
+      response <- sendRequests(List(req), false)
       body     <- response.as[List[SchemaKey]]
     } yield (response.status, body)
 
@@ -191,7 +215,7 @@ class SchemaServiceSpec extends org.specs2.Specification {
       Request(Method.GET, uri"/").withHeaders(Headers.of(Header("apikey", SpecHelpers.superKey.toString)))
 
     val result = for {
-      response <- SchemaServiceSpec.request(List(req), false)
+      response <- sendRequests(List(req), false)
       body     <- response.as[List[SchemaKey]]
     } yield (response.status, body)
 
@@ -229,11 +253,12 @@ class SchemaServiceSpec extends org.specs2.Specification {
         .withHeaders(Headers.of(Header("apikey", SpecHelpers.superKey.toString)))
     )
 
-    val (requests, state) = SchemaServiceSpec.state(reqs, false).unsafeRunSync()
-    val dbExpectation = state.schemas.mapValues(s => (s.metadata.isPublic, s.body)) must havePair(
+    val (requests, schemas) = getState(reqs, false).unsafeRunSync()
+    val dbExpectation = schemas.map(s => (s.schemaMap, s.metadata.isPublic, s.body)) must contain(
       (
         SchemaMap("com.acme", "nonexistent", "jsonschema", SchemaVer.Full(1, 0, 0)),
-        (false, json"""{"type": "object"}""")
+        false,
+        json"""{"type": "object"}"""
       )
     )
     val requestExpectation = requests.lastOption.map(_.status) must beSome(Status.Ok)
@@ -283,11 +308,12 @@ class SchemaServiceSpec extends org.specs2.Specification {
         .withHeaders(Headers.of(Header("apikey", SpecHelpers.superKey.toString)))
     )
 
-    val (requests, state) = SchemaServiceSpec.state(reqs, false).unsafeRunSync()
-    val dbExpectation = state.schemas.mapValues(s => (s.metadata.isPublic, s.body)) must havePair(
+    val (requests, schemas) = getState(reqs, false).unsafeRunSync()
+    val dbExpectation = schemas.map(s => (s.schemaMap, s.metadata.isPublic, s.body)) must contain(
       (
         SchemaMap("com.acme", "nonexistent", "jsonschema", SchemaVer.Full(1, 0, 0)),
-        (false, json"""{"type": "object"}""")
+        false,
+        json"""{"type": "object"}"""
       )
     )
     val putRequestExpectation = requests.get(1).map(_.status) must beSome(Status.Conflict)
@@ -316,7 +342,7 @@ class SchemaServiceSpec extends org.specs2.Specification {
       .withBodyStream(exampleSchema)
 
     val result = for {
-      response <- SchemaServiceSpec.request(List(req), false)
+      response <- sendRequests(List(req), false)
       body     <- response.as[Json]
     } yield (response.status, body)
 
@@ -371,11 +397,12 @@ class SchemaServiceSpec extends org.specs2.Specification {
         .withHeaders(Headers.of(Header("apikey", SpecHelpers.superKey.toString)))
     )
 
-    val (requests, state) = SchemaServiceSpec.state(reqs, true).unsafeRunSync()
-    val dbExpectation = state.schemas.mapValues(s => (s.metadata.isPublic, s.body)) must havePair(
+    val (requests, schemas) = getState(reqs, true).unsafeRunSync()
+    val dbExpectation = schemas.map(s => (s.schemaMap, s.metadata.isPublic, s.body)) must contain(
       (
         SchemaMap("com.acme", "nonexistent", "jsonschema", SchemaVer.Full(1, 0, 0)),
-        (false, json"""{"type": "object", "additionalProperties": true}""")
+        false,
+        json"""{"type": "object", "additionalProperties": true}"""
       )
     )
     val requestExpectation = requests.lastOption.map(_.status) must beSome(Status.Ok)
@@ -386,7 +413,7 @@ class SchemaServiceSpec extends org.specs2.Specification {
     val req: Request[IO] =
       Request(Method.GET, uri"/com.acme/nonexistent/jsonschema/boom")
 
-    val response = SchemaServiceSpec.request(List(req), false)
+    val response = sendRequests(List(req), false)
 
     val result = for {
       r    <- response
@@ -432,7 +459,7 @@ class SchemaServiceSpec extends org.specs2.Specification {
       """["iglu:com.acme/nonexistent/jsonschema/1-0-0","iglu:com.acme/nonexistent/jsonschema/1-0-1","iglu:com.acme/nonexistent/jsonschema/1-0-2","iglu:com.acme/nonexistent/jsonschema/1-1-0"]"""
 
     val result = for {
-      response <- SchemaServiceSpec.request(reqs, false)
+      response <- sendRequests(reqs, false)
       last     <- response.bodyText.compile.foldMonoid
     } yield last
 
@@ -463,7 +490,7 @@ class SchemaServiceSpec extends org.specs2.Specification {
       .withBodyStream(exampleSchema)
 
     val result = for {
-      response <- SchemaServiceSpec.request(List(req), false)
+      response <- sendRequests(List(req), false)
       body     <- response.as[Json]
     } yield (response.status, body)
 
@@ -516,7 +543,7 @@ class SchemaServiceSpec extends org.specs2.Specification {
     )
 
     val result = for {
-      response <- SchemaServiceSpec.request(reqs, false)
+      response <- sendRequests(reqs, false)
       body     <- response.as[Json]
     } yield (response.status, body)
 
@@ -559,7 +586,7 @@ class SchemaServiceSpec extends org.specs2.Specification {
     )
 
     val result = for {
-      response <- SchemaServiceSpec.request(reqs, false)
+      response <- sendRequests(reqs, false)
       body     <- response.as[Json]
     } yield (response.status, body)
 
@@ -620,7 +647,7 @@ class SchemaServiceSpec extends org.specs2.Specification {
       Request[IO](Method.GET, schemaKey102.uri).withHeaders(Headers.of(Header("apikey", SpecHelpers.superKey.toString)))
     )
 
-    val (responses, _) = SchemaServiceSpec.state(reqs, false).unsafeRunSync()
+    val (responses, _) = getState(reqs, false).unsafeRunSync()
 
     responses.reverse match {
       case r102 :: r101 :: r100 :: _ =>
@@ -694,7 +721,7 @@ class SchemaServiceSpec extends org.specs2.Specification {
     val expectedResponseStatus = List(Status.Created, Status.Created, Status.Conflict, Status.Conflict)
 
     val matchStatement = for {
-      r <- SchemaServiceSpec.state(reqs, false)
+      r <- getState(reqs, false)
       (responses, _) = r
       responseBodies <- responses.map(_.as[Json]).sequence
       responseStatus = responses.map(_.status)
@@ -705,37 +732,6 @@ class SchemaServiceSpec extends org.specs2.Specification {
   }
 }
 
-object SchemaServiceSpec {
-  import storage.InMemory
+class SchemaServiceSpec extends SchemaServiceSpecBase with InMemoryStorageSpec
 
-  implicit class SchemaKeyUri(schemaKey: SchemaKey) {
-    def uri: Uri = Uri.unsafeFromString(schemaKey.toPath)
-  }
-
-  val client: Client[IO] = Client.fromHttpApp(HttpApp[IO](r => Response[IO]().withEntity(r.body).pure[IO]))
-
-  def request(reqs: List[Request[IO]], patchesAllowed: Boolean): IO[Response[IO]] =
-    for {
-      storage <- InMemory.getInMemory[IO](SpecHelpers.exampleState)
-      service = SchemaService.asRoutes(patchesAllowed, Webhook.WebhookClient(List(), client))(
-        storage,
-        None,
-        SpecHelpers.ctx,
-        createRhoMiddleware()
-      )
-      responses <- reqs.traverse(service.run).value
-    } yield responses.flatMap(_.lastOption).getOrElse(Response(Status.NotFound))
-
-  def state(reqs: List[Request[IO]], patchesAllowed: Boolean): IO[(List[Response[IO]], InMemory.State)] =
-    for {
-      storage <- InMemory.getInMemory[IO](SpecHelpers.exampleState)
-      service = SchemaService.asRoutes(patchesAllowed, Webhook.WebhookClient(List(), client))(
-        storage,
-        None,
-        SpecHelpers.ctx,
-        createRhoMiddleware()
-      )
-      responses <- reqs.traverse(service.run).value
-      state     <- storage.ref.get
-    } yield (responses.getOrElse(List.empty), state)
-}
+class SchemaServiceSpecPostgres extends SchemaServiceSpecBase with PostgresStorageSpec

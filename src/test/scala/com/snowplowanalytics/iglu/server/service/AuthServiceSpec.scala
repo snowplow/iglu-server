@@ -19,11 +19,16 @@ import cats.effect.IO
 import fs2.Stream
 import org.http4s._
 import org.http4s.rho.swagger.syntax.io.createRhoMiddleware
-import java.util.UUID
 
+import java.util.UUID
 import com.snowplowanalytics.iglu.server.storage.InMemory
 
-class AuthServiceSpec extends org.specs2.Specification {
+class AuthServiceSpec extends org.specs2.Specification with StorageAgnosticSpec with InMemoryStorageSpec {
+  def getState(request: Request[IO], superApiKey: Option[UUID] = None): IO[(List[Response[IO]], InMemory.State)] =
+    sendRequestGetState[InMemory.State](storage =>
+      AuthService.asRoutes(storage, superApiKey, SpecHelpers.ctx, createRhoMiddleware())
+    )(storage => storage.asInstanceOf[InMemory[IO]].ref.get)(List(request))
+
   def is = s2"""
   /keygen generates read-only API key pair for super key in storage and JSON payload $e1
   /keygen generates read-only API key pair for super key in config file and JSON payload $e2
@@ -49,7 +54,7 @@ class AuthServiceSpec extends org.specs2.Specification {
       Set()
     )
 
-    val response   = AuthServiceSpec.state(req)
+    val response   = getState(req)
     val (_, state) = response.unsafeRunSync()
     state.permission must haveValues(expected)
   }
@@ -72,7 +77,7 @@ class AuthServiceSpec extends org.specs2.Specification {
       Set()
     )
 
-    val response   = AuthServiceSpec.state(req, Some(superApiKey))
+    val response   = getState(req, Some(superApiKey))
     val (_, state) = response.unsafeRunSync()
     state.permission must (haveValues(expected))
   }
@@ -93,7 +98,7 @@ class AuthServiceSpec extends org.specs2.Specification {
       Set()
     )
 
-    val response   = AuthServiceSpec.state(req)
+    val response   = getState(req)
     val (_, state) = response.unsafeRunSync()
     (state.permission must not).haveValues(expected)
   }
@@ -106,7 +111,7 @@ class AuthServiceSpec extends org.specs2.Specification {
         body = Stream.emits("""{"vendorPrefix": "me.chuwy"}""").evalMap(c => IO.pure(c.toByte))
       )
 
-    val response           = AuthServiceSpec.state(req)
+    val response           = getState(req)
     val (responses, state) = response.unsafeRunSync()
     val stateHaventChanged = state must beEqualTo(SpecHelpers.exampleState)
     val unauthorized       = responses.map(_.status) must beEqualTo(List(Status.Forbidden))
@@ -127,7 +132,7 @@ class AuthServiceSpec extends org.specs2.Specification {
         body = Stream.emits("""{"vendorPrefix": "me.chuwy"}""").evalMap(c => IO.pure(c.toByte))
       )
 
-    val response           = AuthServiceSpec.state(req, Some(superApiKey))
+    val response           = getState(req, Some(superApiKey))
     val (responses, state) = response.unsafeRunSync()
     val stateHaventChanged = state must beEqualTo(SpecHelpers.exampleState)
     val unauthorized       = responses.map(_.status) must beEqualTo(List(Status.Forbidden))
@@ -142,18 +147,11 @@ class AuthServiceSpec extends org.specs2.Specification {
       headers = Headers.of(Header("apikey", SpecHelpers.superKey.toString))
     )
 
-    val response           = AuthServiceSpec.state(req)
+    val response           = getState(req)
     val (responses, state) = response.unsafeRunSync()
     val nokey              = (state.permission must not).haveKey(SpecHelpers.readKey)
     val deletedResponse    = responses.map(_.status) must beEqualTo(List(Status.Ok))
 
     nokey.and(deletedResponse)
   }
-}
-
-object AuthServiceSpec {
-  def state(req: Request[IO], superApiKey: Option[UUID] = None): IO[(List[Response[IO]], InMemory.State)] =
-    SpecHelpers.state(storage => AuthService.asRoutes(storage, superApiKey, SpecHelpers.ctx, createRhoMiddleware()))(
-      List(req)
-    )
 }
