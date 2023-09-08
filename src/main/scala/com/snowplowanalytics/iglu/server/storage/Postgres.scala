@@ -34,6 +34,7 @@ import doobie.postgres.circe.json.implicits._
 import org.typelevel.log4cats.Logger
 
 import com.snowplowanalytics.iglu.core.{SchemaMap, SchemaVer}
+import com.snowplowanalytics.iglu.server.migrations.Bootstrap
 import com.snowplowanalytics.iglu.server.model.{Permission, Schema, SchemaDraft}
 import com.snowplowanalytics.iglu.server.model.SchemaDraft.DraftId
 
@@ -124,6 +125,8 @@ class Postgres[F[_]](xa: Transactor[F], logger: Logger[F]) extends Storage[F] { 
   def addSupersededByColumn(implicit F: Bracket[F, Throwable]): F[Unit] =
     logger.debug(s"addSupersededByColumn") *>
       Postgres.Sql.addSupersededByColumn.run.void.transact(xa)
+
+  def bootstrap(implicit F: Bracket[F, Throwable]): F[Int] = Bootstrap.initialize(xa)
 
   def updateSupersedingVersion(
     vendor: String,

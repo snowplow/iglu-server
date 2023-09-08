@@ -17,21 +17,31 @@ package service
 
 import cats.effect.IO
 import cats.implicits._
-
 import io.circe.Json
 import io.circe.literal._
-
 import fs2.Stream
-
 import org.http4s.{Service => _, _}
 import org.http4s.implicits._
 import org.http4s.circe._
 import org.http4s.rho.swagger.syntax.io.createRhoMiddleware
-
 import SpecHelpers.toBytes
-import ValidationServiceSpec._
 
-class ValidationServiceSpec extends org.specs2.Specification {
+class ValidationServiceSpec extends org.specs2.Specification with StorageAgnosticSpec with InMemoryStorageSpec {
+  def sendRequests(requests: List[Request[IO]]) =
+    sendRequestGetState(storage => ValidationService.asRoutes(storage, None, SpecHelpers.ctx, createRhoMiddleware()))(
+      _ => IO.unit
+    )(
+      requests
+    )
+
+  def sendRequest(req: Request[IO]) =
+    sendRequests(List(req)).flatMap { case (responses, _) => responses.last.as[Json] }.unsafeRunSync()
+
+  def sendRequestGetText(req: Request[IO]) =
+    sendRequests(List(req))
+      .flatMap { case (responses, _) => responses.last.bodyText.compile.foldMonoid }
+      .unsafeRunSync()
+
   def is = s2"""
   POST /validate/schema/jsonschema returns linting errors for self-describing schema $e1
   POST /validate/schema/jsonschema returns success message for valid self-describing schema $e2
@@ -204,7 +214,7 @@ class ValidationServiceSpec extends org.specs2.Specification {
 
     val request = Request[IO](Method.POST, Uri.uri("/validate/instance")).withBodyStream(toBytes(instance))
 
-    val (responses, _) = ValidationServiceSpec.request(List(request)).unsafeRunSync()
+    val (responses, _) = sendRequests(List(request)).unsafeRunSync()
     val response       = responses.last
 
     val bodyExpectation   = response.as[Json].unsafeRunSync() must beEqualTo(expected)
@@ -218,7 +228,7 @@ class ValidationServiceSpec extends org.specs2.Specification {
     val request = Request[IO](Method.POST, Uri.uri("/validate/instance"))
       .withHeaders(Headers.of(Header("apikey", SpecHelpers.readKey.toString)))
       .withBodyStream(toBytes(instance))
-    val response = ValidationServiceSpec.sendRequestGetText(request)
+    val response = sendRequestGetText(request)
 
     response must contain("$.password: is missing but it is required")
   }
@@ -232,7 +242,7 @@ class ValidationServiceSpec extends org.specs2.Specification {
       .withHeaders(Headers.of(Header("apikey", "00000000-1111-eeee-0000-eeeeeeeeffff")))
       .withBodyStream(toBytes(instance))
 
-    val (responses, _) = ValidationServiceSpec.request(List(request)).unsafeRunSync()
+    val (responses, _) = sendRequests(List(request)).unsafeRunSync()
     val response       = responses.last
 
     val bodyExpectation   = response.as[Json].unsafeRunSync() must beEqualTo(expected)
@@ -315,18 +325,4 @@ class ValidationServiceSpec extends org.specs2.Specification {
     response must beEqualTo(expected)
 
   }
-}
-
-object ValidationServiceSpec {
-
-  def request(reqs: List[Request[IO]]) =
-    SpecHelpers.state(storage => ValidationService.asRoutes(storage, None, SpecHelpers.ctx, createRhoMiddleware()))(
-      reqs
-    )
-
-  def sendRequest(req: Request[IO]) =
-    request(List(req)).flatMap { case (responses, _) => responses.last.as[Json] }.unsafeRunSync()
-
-  def sendRequestGetText(req: Request[IO]) =
-    request(List(req)).flatMap { case (responses, _) => responses.last.bodyText.compile.foldMonoid }.unsafeRunSync()
 }

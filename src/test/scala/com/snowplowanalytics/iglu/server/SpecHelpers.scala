@@ -16,22 +16,16 @@ package com.snowplowanalytics.iglu.server
 
 import java.util.UUID
 import java.time.Instant
-
-import cats.implicits._
 import cats.effect.{Clock, IO}
-
 import fs2.Stream
-
 import io.circe.Json
 import io.circe.literal._
-
 import org.http4s._
 import org.http4s.rho.AuthedContext
-
-import com.snowplowanalytics.iglu.core.{SchemaMap, SchemaVer}
+import com.snowplowanalytics.iglu.core.{SchemaKey, SchemaMap, SchemaVer}
 import com.snowplowanalytics.iglu.server.model.Permission.{SchemaAction, Vendor}
 import model.{Permission, Schema, SchemaDraft}
-import storage.{InMemory, Storage}
+import storage.InMemory
 
 object SpecHelpers {
 
@@ -88,15 +82,10 @@ object SpecHelpers {
     drafts
   )
 
-  /** Run multiple requests against HTTP service and return all responses and result state */
-  def state(ser: Storage[IO] => HttpRoutes[IO])(reqs: List[Request[IO]]): IO[(List[Response[IO]], InMemory.State)] =
-    for {
-      storage <- InMemory.getInMemory[IO](exampleState)
-      service = ser(storage)
-      responses <- reqs.traverse(service.run).value
-      state     <- storage.ref.get
-    } yield (responses.getOrElse(List.empty), state)
-
   def toBytes(entity: Json) =
     Stream.emits(entity.noSpaces.stripMargin.getBytes).covary[IO]
+
+  implicit class SchemaKeyUri(schemaKey: SchemaKey) {
+    def uri: Uri = Uri.unsafeFromString(schemaKey.toPath)
+  }
 }
