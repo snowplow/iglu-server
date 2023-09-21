@@ -70,16 +70,16 @@ class SchemaService[F[+_]: Sync](
   "Delete a particular schema from Iglu by its URI" **
     DELETE / 'vendor / 'name / 'format / version >>> ctx.auth |>> deleteSchema _
 
-  "Get list of schemas by vendor name" **
+  "Get list of schemas by vendor name and schema name" **
     GET / 'vendor / 'name +? reprUri >>> ctx.auth |>> getSchemasByName _
 
-  "Get list of schemas by vendor name" **
+  "Get list of schemas by vendor name, schema name and major version (model)" **
     GET / 'vendor / 'name / "jsonschema" / pathVar[Int]("model") +? reprUri >>> ctx.auth |>> getSchemasByModel _
 
-  "Get all schemas for vendor" **
+  "Get list of schemas by vendor name" **
     GET / 'vendor +? reprUri >>> ctx.auth |>> getSchemasByVendor _
 
-  "List all available schemas" **
+  "Get list of schemas (all)" **
     GET +? reprUri >>> ctx.auth |>> listSchemas _
 
   "Add a schema (self-describing or not) to its Iglu URI" **
