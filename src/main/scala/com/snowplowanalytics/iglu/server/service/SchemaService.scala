@@ -73,7 +73,7 @@ class SchemaService[F[+_]: Sync](
   "Get list of schemas by vendor name" **
     GET / 'vendor / 'name +? reprUri >>> ctx.auth |>> getSchemasByName _
 
-  "Get list of schemas by vendor name" **
+  "Get list of schemas by vendor name and major version (model)" **
     GET / 'vendor / 'name / "jsonschema" / pathVar[Int]("model") +? reprUri >>> ctx.auth |>> getSchemasByModel _
 
   "Get all schemas for vendor" **
