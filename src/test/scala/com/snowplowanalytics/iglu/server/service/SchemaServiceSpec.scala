@@ -46,8 +46,8 @@ class SchemaServiceSpec extends org.specs2.Specification {
     Returns 404 for non-existing schema $e1
     Returns 200 and schema for existing public schema $e3
     Returns 200 and schema for existing private schema $e4
-    Returns list of schemas with metadata if metadata=1 passed $e9
-    Returns list of canonical schemas if body=1 passed $e10
+    Returns list of schemas with metadata if repr=meta passed $e9
+    Returns list of canonical schemas if repr=canonical passed $e10
     Returns 404 for existing schema if invalid apikey provided $e5
     Returns only public schemas without apikey $e7
     Returns public and private schemas with apikey $e8
@@ -123,7 +123,7 @@ class SchemaServiceSpec extends org.specs2.Specification {
 
   def e9 = {
     val req: Request[IO] =
-      Request(Method.GET, Uri.uri("/").withQueryParam("metadata", "1"))
+      Request(Method.GET, Uri.uri("/").withQueryParam("repr", "meta"))
 
     val result = for {
       response <- SchemaServiceSpec.request(List(req), false)
@@ -138,7 +138,7 @@ class SchemaServiceSpec extends org.specs2.Specification {
 
   def e10 = {
     val req: Request[IO] =
-      Request(Method.GET, Uri.uri("/").withQueryParam("body", "1"))
+      Request(Method.GET, Uri.uri("/").withQueryParam("repr", "canonical"))
 
     val result = for {
       response <- SchemaServiceSpec.request(List(req), false)
