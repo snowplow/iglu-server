@@ -18,50 +18,26 @@ package codecs
 import scala.reflect.runtime.universe.TypeTag
 
 import cats.Monad
-import cats.syntax.either._
 
 import eu.timepit.refined.types.numeric.NonNegInt
 
-import org.http4s.{Query, Response, Status}
 import org.http4s.rho.bits._
-
 import com.snowplowanalytics.iglu.core.{ParseError, SchemaVer}
 import com.snowplowanalytics.iglu.server.model.{DraftVersion, Schema}
 
 trait UriParsers {
 
-  case class LegacyBoolean(value: Boolean)
+  implicit def schemaReprStringParser[F[_]]: StringParser[F, Schema.Repr.Format] =
+    new StringParser[F, Schema.Repr.Format] {
+      override val typeTag: Some[TypeTag[Schema.Repr.Format]] = Some(implicitly[TypeTag[Schema.Repr.Format]])
 
-  def parseRepresentationUri[F[_]](query: Query)(implicit F: Monad[F]): ResultResponse[F, Schema.Repr.Format] =
-    parseRepresentation(query, Schema.Repr.Format.Uri)
-
-  def parseRepresentationCanonical[F[_]](query: Query)(implicit F: Monad[F]): ResultResponse[F, Schema.Repr.Format] =
-    parseRepresentation(query, Schema.Repr.Format.Canonical)
-
-  private def parseRepresentation[F[_]](query: Query, default: Schema.Repr.Format)(
-    implicit F: Monad[F]
-  ): ResultResponse[F, Schema.Repr.Format] = {
-    val result = query.params.get("repr") match {
-      case Some(s) =>
-        Schema.Repr.Format.parse(s).toRight(s"Cannot recognize schema representation in query: $s")
-      case None =>
-        (query.params.getOrElse("metadata", "0"), query.params.getOrElse("body", "0")) match {
-          case ("1", "1") => Schema.Repr.Format.Meta.asRight
-          case ("0", "1") => Schema.Repr.Format.Canonical.asRight
-          case ("1", "0") => Schema.Repr.Format.Meta.asRight
-          case ("0", "0") => default.asRight
-          case (m, b)     => s"Inconsistent metadata/body query parameters: $m/$b".asLeft
+      override def parse(s: String)(implicit F: Monad[F]): ResultResponse[F, Schema.Repr.Format] =
+        Schema.Repr.Format.parse(s) match {
+          case Some(format) => SuccessResponse(format)
+          case None         => FailureResponse.pure[F](BadRequest.pure(s"Unknown schema representation format: '$s'"))
         }
     }
 
-    result match {
-      case Right(format) =>
-        SuccessResponse[F, Schema.Repr.Format](format)
-      case Left(error) =>
-        val response = Response[F]().withStatus(Status.BadRequest).withBodyStream(Utils.toBytes(error))
-        FailureResponse.pure[F](Monad[F].pure(response))
-    }
-  }
   implicit def schemaFormatStringParser[F[_]]: StringParser[F, Schema.Format] =
     new StringParser[F, Schema.Format] {
       override val typeTag: Some[TypeTag[Schema.Format]] = Some(implicitly[TypeTag[Schema.Format]])

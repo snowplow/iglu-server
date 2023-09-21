@@ -25,7 +25,6 @@ import io.circe.Json
 
 import org.http4s.HttpRoutes
 import org.http4s.circe._
-import org.http4s.rho.bits.TextMetaData
 import org.http4s.rho.{AuthedContext, RhoMiddleware, RhoRoutes}
 import org.http4s.rho.swagger.SwaggerSyntax
 import org.http4s.rho.swagger.syntax.{io => swaggerSyntax}
@@ -54,8 +53,8 @@ class SchemaService[F[+_]: Sync](
   import SchemaService._
   implicit val C: Clock[F] = Clock.create[F]
 
-  val reprUri       = genericQueryCapture(UriParsers.parseRepresentationUri[F]).withMetadata(ReprMetadata)
-  val reprCanonical = genericQueryCapture(UriParsers.parseRepresentationCanonical[F]).withMetadata(ReprMetadata)
+  val reprUri       = paramD[SchemaFormat]("repr", SchemaFormat.Uri, "Schema representation format")
+  val reprCanonical = paramD[SchemaFormat]("repr", SchemaFormat.Canonical, "Schema representation format")
 
   val version  = pathVar[SchemaVer.Full]("version", "SchemaVer")
   val isPublic = paramD[Boolean]("isPublic", false, "Should schema be created as public")
@@ -288,11 +287,6 @@ class SchemaService[F[+_]: Sync](
 }
 
 object SchemaService {
-
-  val ReprMetadata: TextMetaData = new TextMetaData {
-    def msg: String =
-      "Schema representation format (can be specified either by repr=uri/meta/canonical or legacy meta=1&body=1)"
-  }
 
   def asRoutes(
     patchesAllowed: Boolean,
