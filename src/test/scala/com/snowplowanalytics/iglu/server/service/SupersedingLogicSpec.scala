@@ -66,18 +66,6 @@ trait SupersedingLogicSpecBase extends org.specs2.Specification with StorageAgno
     // obviously
     val logicWorks = sendReceive(input.map(_.encode)) must beEqualTo(expected.map(_.encode._1))
 
-    // the order of `supersedes` declarations should not matter
-    // let’s try to patch them in all possible permutations
-    val distinctSchemas    = input.map(_.copy(supersedes = List.empty)).distinct
-    val supersedingSchemas = input.filter(_.supersedes.nonEmpty)
-    val orderDoesNotMatter = supersedingSchemas
-      .permutations
-      .toList
-      .map { shuffled =>
-        sendReceive((distinctSchemas ::: shuffled).map(_.encode)) must beEqualTo(expected.map(_.encode._1))
-      }
-      .reduce(_.and(_))
-
     // if we load the result into another Iglu Server,
     // (which is what happens when promoting schemas from DEV to PROD)
     // we should get exactly the same
@@ -85,24 +73,20 @@ trait SupersedingLogicSpecBase extends org.specs2.Specification with StorageAgno
     // but does not hurt to check)
     val promotionWorks = sendReceive(expected.map(_.encode)) must beEqualTo(expected.map(_.encode._1))
 
-    logicWorks.and(orderDoesNotMatter).and(promotionWorks)
+    logicWorks.and(promotionWorks)
   }
 
   def is = sequential ^ s2"""
   Basics
     Schema version can be superseded by a newer version $e1
-    Schema version can be superseded via patching $e2
+    Schema version can’t be superseded via patching $e2
     Schema version can’t be superseded by an older version $e3
     Schema version can supersede multiple versions $e4
-    Schema version can supersede multiple versions via patching $e5
   Chaining
-    If B<-A and C<-A, then C<-A $e6
-    If C<-A and B<-A, then C<-A $e7
-    If B<-A and C<-B, then C<-A and C<-B $e8
-    If C<-A and C<-B and D<-C, then D<-A and D<-B and D<-C $e9
-    If B<-A and D<-C and C<-B, then D<-A and D<-B and D<-C $e10
-    If C<-B and D<-A and B<-A, then D<-A and C<-B $e11
-    A long chain like E<-D<-C<-B<-A works $e12
+    If B<-A and C<-A, then C<-A $e5
+    If B<-A and C<-B, then C<-A and C<-B $e6
+    If C<-A and C<-B and D<-C, then D<-A and D<-B and D<-C $e7
+    A long chain like E<-D<-C<-B<-A works $e8
   """
 
   def e1 = {
@@ -127,8 +111,8 @@ trait SupersedingLogicSpecBase extends org.specs2.Specification with StorageAgno
     )
 
     val expected = List(
-      S((1, 0, 0), supersededBy = Some((1, 0, 1))),
-      S((1, 0, 1), supersedes = List((1, 0, 0)))
+      S((1, 0, 0)),
+      S((1, 0, 1))
     )
 
     validate(input, expected)
@@ -151,7 +135,7 @@ trait SupersedingLogicSpecBase extends org.specs2.Specification with StorageAgno
     validate(input, expected)
   }
 
-  def e5 = {
+  def e4 = {
     val input = List(
       S((1, 0, 0)),
       S((1, 0, 1)),
@@ -167,18 +151,17 @@ trait SupersedingLogicSpecBase extends org.specs2.Specification with StorageAgno
     validate(input, expected)
   }
 
-  def e4 = {
+  def e5 = {
     val input = List(
       S((1, 0, 0)),
-      S((1, 0, 1)),
-      S((1, 0, 2), supersedes = List((1, 0, 0))),
-      S((1, 0, 2), supersedes = List((1, 0, 1)))
+      S((1, 0, 1), supersedes = List((1, 0, 0))),
+      S((1, 0, 2), supersedes = List((1, 0, 0)))
     )
 
     val expected = List(
       S((1, 0, 0), supersededBy = Some((1, 0, 2))),
-      S((1, 0, 1), supersededBy = Some((1, 0, 2))),
-      S((1, 0, 2), supersedes = List((1, 0, 0), (1, 0, 1)))
+      S((1, 0, 1)),
+      S((1, 0, 2), supersedes = List((1, 0, 0)))
     )
 
     validate(input, expected)
@@ -188,39 +171,6 @@ trait SupersedingLogicSpecBase extends org.specs2.Specification with StorageAgno
     val input = List(
       S((1, 0, 0)),
       S((1, 0, 1), supersedes = List((1, 0, 0))),
-      S((1, 0, 2), supersedes = List((1, 0, 0)))
-    )
-
-    val expected = List(
-      S((1, 0, 0), supersededBy = Some((1, 0, 2))),
-      S((1, 0, 1)),
-      S((1, 0, 2), supersedes = List((1, 0, 0)))
-    )
-
-    validate(input, expected)
-  }
-
-  def e7 = {
-    val input = List(
-      S((1, 0, 0)),
-      S((1, 0, 1)),
-      S((1, 0, 2), supersedes = List((1, 0, 0))),
-      S((1, 0, 1), supersedes = List((1, 0, 0)))
-    )
-
-    val expected = List(
-      S((1, 0, 0), supersededBy = Some((1, 0, 2))),
-      S((1, 0, 1)),
-      S((1, 0, 2), supersedes = List((1, 0, 0)))
-    )
-
-    validate(input, expected)
-  }
-
-  def e8 = {
-    val input = List(
-      S((1, 0, 0)),
-      S((1, 0, 1), supersedes = List((1, 0, 0))),
       S((1, 0, 2), supersedes = List((1, 0, 1)))
     )
 
@@ -233,7 +183,7 @@ trait SupersedingLogicSpecBase extends org.specs2.Specification with StorageAgno
     validate(input, expected)
   }
 
-  def e9 = {
+  def e7 = {
     val input = List(
       S((1, 0, 0)),
       S((1, 0, 1)),
@@ -251,45 +201,7 @@ trait SupersedingLogicSpecBase extends org.specs2.Specification with StorageAgno
     validate(input, expected)
   }
 
-  def e10 = {
-    val input = List(
-      S((1, 0, 0)),
-      S((1, 0, 1), supersedes = List((1, 0, 0))),
-      S((1, 0, 2)),
-      S((1, 0, 3), supersedes = List((1, 0, 2))),
-      S((1, 0, 2), supersedes = List((1, 0, 1)))
-    )
-
-    val expected = List(
-      S((1, 0, 0), supersededBy = Some((1, 0, 3))),
-      S((1, 0, 1), supersededBy = Some((1, 0, 3))),
-      S((1, 0, 2), supersededBy = Some((1, 0, 3))),
-      S((1, 0, 3), supersedes = List((1, 0, 0), (1, 0, 1), (1, 0, 2)))
-    )
-
-    validate(input, expected)
-  }
-
-  def e11 = {
-    val input = List(
-      S((1, 0, 0)),
-      S((1, 0, 1)),
-      S((1, 0, 2), supersedes = List((1, 0, 1))),
-      S((1, 0, 3), supersedes = List((1, 0, 0))),
-      S((1, 0, 1), supersedes = List((1, 0, 0)))
-    )
-
-    val expected = List(
-      S((1, 0, 0), supersededBy = Some((1, 0, 3))),
-      S((1, 0, 1), supersededBy = Some((1, 0, 2))),
-      S((1, 0, 2), supersedes = List((1, 0, 1))),
-      S((1, 0, 3), supersedes = List((1, 0, 0)))
-    )
-
-    validate(input, expected)
-  }
-
-  def e12 = {
+  def e8 = {
     val input = List(
       S((1, 0, 0)),
       S((1, 0, 1), supersedes = List((1, 0, 0))),

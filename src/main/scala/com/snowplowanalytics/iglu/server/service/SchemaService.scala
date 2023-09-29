@@ -17,7 +17,7 @@ package service
 
 import java.util.UUID
 
-import cats.data.{EitherT, Validated}
+import cats.data.Validated
 import cats.effect._
 import cats.implicits._
 
@@ -52,6 +52,7 @@ class SchemaService[F[+_]: Sync](
 
   import swagger._
   import SchemaService._
+
   implicit val C: Clock[F] = Clock.create[F]
 
   val reprUri       = genericQueryCapture(UriParsers.parseRepresentationUri[F]).withMetadata(ReprMetadata)
@@ -209,72 +210,25 @@ class SchemaService[F[+_]: Sync](
     supersedingInfo: Option[SupersedingInfo]
   ) =
     for {
-      allowed          <- isSchemaAllowed(db, schema.self, patchesAllowed, isPublic)
-      supersedingCheck <- checkSupersedingVersion(schema.self, supersedingInfo)
-      response <- (allowed, supersedingCheck) match {
-        case (Right(_), Right(s)) =>
+      allowed <- isSchemaAllowed(db, schema.self, patchesAllowed, isPublic, supersedingInfo)
+      response <- allowed match {
+        case Right(_) =>
           for {
             existing <- db.getSchema(schema.self).map(_.isDefined)
+            supersedes = supersedingInfo match {
+              case Some(SupersedingInfo.Supersedes(versions)) => versions.toList
+              case _                                          => List.empty
+            }
             _ <- if (existing) db.updateSchema(schema.self, schema.schema, isPublic)
-            else db.addSchema(schema.self, schema.schema, isPublic)
-            _ <- updateSupersedingVersion(schema.self, s)
+            else db.addSchema(schema.self, schema.schema, isPublic, supersedes)
             payload = IgluResponse.SchemaUploaded(existing, schema.self.schemaKey): IgluResponse
             _        <- webhooks.schemaPublished(schema.self.schemaKey, existing)
             response <- if (existing) Ok(payload) else Created(payload)
           } yield response
-        case (Left(Inconsistency.AlreadyExists), Right(Some(s))) =>
-          for {
-            _        <- updateSupersedingVersion(schema.self, Some(s))
-            response <- Ok(IgluResponse.SupersedingVersionUpdated(schema.self.schemaKey): IgluResponse)
-          } yield response
-        case (_, Left(error)) =>
-          Conflict(IgluResponse.Message(error): IgluResponse)
-        case (Left(error), _) =>
+        case Left(error) =>
           Conflict(IgluResponse.Message(error.show): IgluResponse)
       }
     } yield response
-
-  private def updateSupersedingVersion(
-    currSchema: SchemaMap,
-    supersedingInfo: Option[SupersedingInfo.Pair]
-  ): F[Unit] =
-    supersedingInfo match {
-      case None => Sync[F].unit
-      case Some(value) =>
-        val s = currSchema.schemaKey
-        db.updateSupersedingVersion(s.vendor, s.name, value)
-    }
-
-  private def checkSupersedingVersion(
-    currSchema: SchemaMap,
-    supersedingInfo: Option[SupersedingInfo]
-  ): F[Either[String, Option[SupersedingInfo.Pair]]] =
-    supersedingInfo match {
-      case Some(SupersedingInfo.Supersedes(supersededVersions)) =>
-        // A schema version can only supersede a lower version of the same schema.
-        val validOrdering = supersededVersions.forall { version =>
-          Ordering[SchemaVer.Full].gt(currSchema.schemaKey.version, version)
-        }
-        EitherT
-          .cond[F](
-            validOrdering,
-            right = SupersedingInfo.Pair(currSchema.schemaKey.version, supersededVersions).some,
-            left = "There are superseded schema versions greater than superseding schema version"
-          )
-          .value
-      case _ =>
-        // An incoming schema can have the `supersededBy` property set if it was copied from another Iglu Server.
-        // However, we ignore it for the purpose of updating the schema registry.
-        // In other words, `supersededBy` is only used for output, but not for input.
-        // This is because:
-        // 1) The schema version referred by `supersededBy` must already exit, but it is also newer
-        //    than the current schema version. Therefore, the current schema version already exists.
-        //    This means we would need to be patching it, which is not recommended.
-        // 2) When copying schemas from one Iglu Server to another (e.g. promoting schemas to PROD)
-        //    in version order, `supersededBy` will refer to a future schema which would not exist yet.
-        //    Therefore, we use `supersedes` instead to propagate this information.
-        Sync[F].delay(Right(None))
-    }
 }
 
 object SchemaService {
@@ -301,16 +255,22 @@ object SchemaService {
     db: Storage[F],
     schemaMap: SchemaMap,
     patchesAllowed: Boolean,
-    isPublic: Boolean
+    isPublic: Boolean,
+    supersedingInfo: Option[SupersedingInfo]
   ): F[Either[Inconsistency, Unit]] =
     for {
       schemas <- db.getSchemasByName(schemaMap.schemaKey.vendor, schemaMap.schemaKey.name).compile.toList
       previousPublic = schemas.forall(_.metadata.isPublic)
       versions       = schemas.map(_.schemaMap.schemaKey.version)
+      supersedes = supersedingInfo match {
+        case Some(SupersedingInfo.Supersedes(supersededVersions)) => supersededVersions.toList
+        case _                                                    => List.empty
+      }
     } yield
-      if ((previousPublic && isPublic) || (!previousPublic && !isPublic) || schemas.isEmpty)
-        VersionCursor.isAllowed(schemaMap.schemaKey.version, versions, patchesAllowed)
-      else Inconsistency.Availability(isPublic, previousPublic).asLeft
+      if (schemas.nonEmpty && (isPublic != previousPublic))
+        Inconsistency.Availability(isPublic, previousPublic).asLeft
+      else
+        VersionCursor.isAllowed(schemaMap.schemaKey.version, versions, patchesAllowed, supersedes)
 
   /** Extract schemas from database, available for particular permission */
   def isReadable(permission: Permission)(schema: Schema): Boolean =

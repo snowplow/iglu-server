@@ -44,7 +44,7 @@ case class InMemory[F[_]](ref: Ref[F, InMemory.State]) extends Storage[F] {
       _ <- ref.set(newState)
     } yield ()
 
-  def addSchema(schemaMap: SchemaMap, body: Json, isPublic: Boolean)(
+  def addSchema(schemaMap: SchemaMap, body: Json, isPublic: Boolean, supersedes: List[SchemaVer.Full])(
     implicit C: Clock[F],
     M: Bracket[F, Throwable]
   ): F[Unit] =
@@ -55,13 +55,14 @@ case class InMemory[F[_]](ref: Ref[F, InMemory.State]) extends Storage[F] {
       meta    = Schema.Metadata(addedAt, addedAt, isPublic)
       schema  = Schema(schemaMap, meta, body, None)
       _ <- ref.update(_.copy(schemas = db.schemas.updated(schemaMap, schema)))
+      _ <- updateSupersedingVersion(schemaMap, supersedes.toSet)
     } yield ()
 
   def updateSchema(schemaMap: SchemaMap, body: Json, isPublic: Boolean)(
     implicit C: Clock[F],
     M: Bracket[F, Throwable]
   ): F[Unit] =
-    addSchema(schemaMap, body, isPublic)
+    addSchema(schemaMap, body, isPublic, List.empty)
 
   def getSchemas(implicit F: Bracket[F, Throwable]): F[List[Schema]] =
     ref
@@ -136,34 +137,26 @@ case class InMemory[F[_]](ref: Ref[F, InMemory.State]) extends Storage[F] {
     }
 
   def updateSupersedingVersion(
-    vendor: String,
-    name: String,
-    supersedingInfo: SupersedingInfo.Pair
+    schemaMap: SchemaMap,
+    supersedes: Set[SchemaVer.Full]
   )(implicit F: Bracket[F, Throwable]): F[Unit] =
     for {
       db <- ref.get
-      actualSupersedingVersion = db
-        .superseding
-        .getOrElse(
-          SchemaMap(SchemaKey(vendor, name, "jsonschema", supersedingInfo.supersedingVersion)),
-          supersedingInfo.supersedingVersion
-        )
-      superseded = supersedingInfo.supersededVersions.toList.toSet
       transitive = db
         .superseding
         .toList
         .collect {
-          case (schemaMap, version) if superseded(version) => schemaMap.schemaKey.version
+          case (schemaMap, version) if supersedes(version) => schemaMap.schemaKey.version
         }
         .toSet
-      data = transitive.union(superseded).foldLeft(db.superseding) {
+      data = transitive.union(supersedes).foldLeft(db.superseding) {
         case (acc, version) =>
-          val schemaMap = SchemaMap(SchemaKey(vendor, name, "jsonschema", version))
+          val map = schemaMap.copy(schemaKey = schemaMap.schemaKey.copy(version = version))
           val newValue = Ordering[SchemaVer.Full].max(
-            acc.get(schemaMap).getOrElse(actualSupersedingVersion),
-            actualSupersedingVersion
+            acc.get(map).getOrElse(schemaMap.schemaKey.version),
+            schemaMap.schemaKey.version
           )
-          acc.updated(schemaMap, newValue)
+          acc.updated(map, newValue)
       }
       _ <- ref.update(_.copy(superseding = data))
     } yield ()

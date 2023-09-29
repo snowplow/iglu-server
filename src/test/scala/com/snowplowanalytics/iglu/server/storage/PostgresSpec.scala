@@ -25,10 +25,9 @@ import doobie._
 import doobie.specs2._
 import doobie.implicits._
 import eu.timepit.refined.types.numeric.NonNegInt
-import com.snowplowanalytics.iglu.core.{SchemaMap, SchemaVer}
+import com.snowplowanalytics.iglu.core.{SchemaKey, SchemaMap, SchemaVer}
 import com.snowplowanalytics.iglu.server.model.{Permission, SchemaDraft}
 import com.snowplowanalytics.iglu.server.migrations.Bootstrap
-import com.snowplowanalytics.iglu.server.model.Schema.SupersedingInfo
 
 import scala.concurrent.ExecutionContext
 import org.specs2.mutable.Specification
@@ -125,12 +124,8 @@ class PostgresSpec extends Specification with BeforeAll with IOChecker {
         Postgres
           .Sql
           .updateSupersedingVersion(
-            "vendor",
-            "name",
-            SupersedingInfo.Pair(
-              SchemaVer.Full(1, 0, 3),
-              NonEmptyList.of(SchemaVer.Full(1, 0, 0), SchemaVer.Full(1, 0, 2))
-            )
+            SchemaMap(SchemaKey("vendor", "name", "jsonschema", SchemaVer.Full(1, 0, 3))),
+            NonEmptyList.of(SchemaVer.Full(1, 0, 0), SchemaVer.Full(1, 0, 2))
           )
       )
     }

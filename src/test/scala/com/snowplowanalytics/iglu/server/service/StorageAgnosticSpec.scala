@@ -78,7 +78,7 @@ trait PostgresStorageSpec { self: StorageAgnosticSpec =>
           .schemas
           .values
           .toList
-          .map(schema => storage.addSchema(schema.schemaMap, schema.body, schema.metadata.isPublic))
+          .map(schema => storage.addSchema(schema.schemaMap, schema.body, schema.metadata.isPublic, List.empty))
           .sequence
       )
     } yield storage

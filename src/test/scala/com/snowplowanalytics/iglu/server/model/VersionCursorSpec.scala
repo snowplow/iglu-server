@@ -25,6 +25,8 @@ class VersionCursorSpec extends org.specs2.Specification {
   previousExists rejects new addition if previous does not exist $e5
   isAllowed allows overriding schema if patchesAllowed set to true $e6
   isAllowed forbids overriding schema if patchesAllowed set to false $e7
+  isAllowed forbids superseding nonexistent schema versions $e8
+  isAllowed forbids superseding superior schema versions $e9
   """
 
   def e1 = {
@@ -58,10 +60,30 @@ class VersionCursorSpec extends org.specs2.Specification {
   }
 
   def e6 =
-    VersionCursor.isAllowed(SchemaVer.Full(1, 0, 0), List(SchemaVer.Full(1, 0, 0)), true) must beRight(())
+    VersionCursor.isAllowed(SchemaVer.Full(1, 0, 0), List(SchemaVer.Full(1, 0, 0)), true, List.empty) must beRight(())
 
   def e7 =
-    VersionCursor.isAllowed(SchemaVer.Full(1, 0, 0), List(SchemaVer.Full(1, 0, 0)), false) must beLeft(
+    VersionCursor.isAllowed(SchemaVer.Full(1, 0, 0), List(SchemaVer.Full(1, 0, 0)), false, List.empty) must beLeft(
       VersionCursor.Inconsistency.AlreadyExists
+    )
+
+  def e8 =
+    VersionCursor.isAllowed(
+      SchemaVer.Full(2, 0, 0),
+      List(SchemaVer.Full(1, 0, 0)),
+      false,
+      List(SchemaVer.Full(1, 0, 1))
+    ) must beLeft(
+      VersionCursor.Inconsistency.SupersededMissing
+    )
+
+  def e9 =
+    VersionCursor.isAllowed(
+      SchemaVer.Full(1, 0, 1),
+      List(SchemaVer.Full(1, 0, 0), SchemaVer.Full(2, 0, 0)),
+      false,
+      List(SchemaVer.Full(2, 0, 0))
+    ) must beLeft(
+      VersionCursor.Inconsistency.SupersededInvalid
     )
 }

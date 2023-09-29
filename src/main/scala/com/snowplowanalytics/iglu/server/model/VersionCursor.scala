@@ -16,7 +16,6 @@ package com.snowplowanalytics.iglu.server.model
 
 import cats.Show
 import cats.syntax.either._
-
 import com.snowplowanalytics.iglu.core.SchemaVer
 
 /** ADT representing a place of schema in SchemaVer tree */
@@ -39,6 +38,8 @@ object VersionCursor {
   sealed trait Inconsistency extends Product with Serializable
   object Inconsistency {
     case object PreviousMissing                                         extends Inconsistency
+    case object SupersededMissing                                       extends Inconsistency
+    case object SupersededInvalid                                       extends Inconsistency
     case object AlreadyExists                                           extends Inconsistency
     case class Availability(isPublic: Boolean, previousPublic: Boolean) extends Inconsistency
 
@@ -46,6 +47,10 @@ object VersionCursor {
       Show.show {
         case PreviousMissing =>
           "Preceding SchemaVer in the group is missing, check that schemas published in proper order"
+        case SupersededMissing =>
+          s"Superseded schema version(s) do not exist"
+        case SupersededInvalid =>
+          s"Superseded schema version(s) must be below the superseding version"
         case AlreadyExists =>
           "Schema already exists"
         case Availability(isPublic, previousPublic) =>
@@ -56,11 +61,14 @@ object VersionCursor {
   def isAllowed(
     version: SchemaVer.Full,
     existing: List[SchemaVer.Full],
-    patchesAllowed: Boolean
+    patchesAllowed: Boolean,
+    supersedes: List[SchemaVer.Full]
   ): Either[Inconsistency, Unit] =
     if (existing.contains(version) && !patchesAllowed) Inconsistency.AlreadyExists.asLeft
-    else if (previousExists(existing, get(version))) ().asRight
-    else Inconsistency.PreviousMissing.asLeft
+    else if (!previousExists(existing, get(version))) Inconsistency.PreviousMissing.asLeft
+    else if (supersedes.diff(existing).nonEmpty) Inconsistency.SupersededMissing.asLeft
+    else if (supersedes.exists(Ordering[SchemaVer.Full].gt(_, version))) Inconsistency.SupersededInvalid.asLeft
+    else ().asRight
 
   def get(version: SchemaVer.Full): VersionCursor = version match {
     case SchemaVer.Full(1, 0, 0) => Initial

@@ -25,9 +25,8 @@ import doobie.hikari._
 import doobie.util.transactor.Transactor
 import org.typelevel.log4cats.slf4j.Slf4jLogger
 import org.typelevel.log4cats.Logger
-import com.snowplowanalytics.iglu.core.SchemaMap
+import com.snowplowanalytics.iglu.core.{SchemaMap, SchemaVer}
 import com.snowplowanalytics.iglu.server.Config.StorageConfig
-import com.snowplowanalytics.iglu.server.model.Schema.SupersedingInfo
 import com.snowplowanalytics.iglu.server.model.{Permission, Schema, SchemaDraft}
 import com.snowplowanalytics.iglu.server.model.SchemaDraft.DraftId
 
@@ -53,7 +52,7 @@ trait Storage[F[_]] {
   def getSchemasKeyOnly(implicit F: Bracket[F, Throwable]): F[List[(SchemaMap, Schema.Metadata)]]
   def getSchemaBody(schemaMap: SchemaMap)(implicit F: Bracket[F, Throwable]): F[Option[Json]] =
     getSchema(schemaMap).nested.map(_.body).value
-  def addSchema(schemaMap: SchemaMap, body: Json, isPublic: Boolean)(
+  def addSchema(schemaMap: SchemaMap, body: Json, isPublic: Boolean, supersedes: List[SchemaVer.Full])(
     implicit C: Clock[F],
     M: Bracket[F, Throwable]
   ): F[Unit]
@@ -76,12 +75,6 @@ trait Storage[F[_]] {
   def deletePermission(id: UUID)(implicit F: Bracket[F, Throwable]): F[Unit]
 
   def runAutomaticMigrations(implicit F: Bracket[F, Throwable]): F[Unit]
-
-  def updateSupersedingVersion(
-    vendor: String,
-    name: String,
-    supersedingInfo: SupersedingInfo.Pair
-  )(implicit F: Bracket[F, Throwable]): F[Unit]
 }
 
 object Storage {

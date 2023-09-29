@@ -29,7 +29,6 @@ import doobie.postgres.circe.json.implicits._
 import org.typelevel.log4cats.Logger
 import com.snowplowanalytics.iglu.core.{SchemaMap, SchemaVer}
 import com.snowplowanalytics.iglu.server.migrations.Bootstrap
-import com.snowplowanalytics.iglu.server.model.Schema.SupersedingInfo
 import com.snowplowanalytics.iglu.server.model.{Permission, Schema, SchemaDraft}
 import com.snowplowanalytics.iglu.server.model.SchemaDraft.DraftId
 
@@ -62,12 +61,16 @@ class Postgres[F[_]](xa: Transactor[F], logger: Logger[F]) extends Storage[F] { 
     logger.debug(s"getPermission") *>
       Postgres.Sql.getPermission(apikey).option.transact(xa)
 
-  def addSchema(schemaMap: SchemaMap, body: Json, isPublic: Boolean)(
+  def addSchema(schemaMap: SchemaMap, body: Json, isPublic: Boolean, supersedes: List[SchemaVer.Full])(
     implicit C: Clock[F],
     M: Bracket[F, Throwable]
   ): F[Unit] =
     logger.debug(s"addSchema ${schemaMap.schemaKey.toSchemaUri}") *>
-      Postgres.Sql.addSchema(schemaMap, body, isPublic).run.void.transact(xa)
+      (Postgres.Sql.addSchema(schemaMap, body, isPublic).run.void *>
+        (supersedes match {
+          case head :: tail => Postgres.Sql.updateSupersedingVersion(schemaMap, NonEmptyList(head, tail)).run.void
+          case _            => doobie.free.connection.unit
+        })).transact(xa)
 
   def updateSchema(schemaMap: SchemaMap, body: Json, isPublic: Boolean)(
     implicit C: Clock[F],
@@ -124,31 +127,6 @@ class Postgres[F[_]](xa: Transactor[F], logger: Logger[F]) extends Storage[F] { 
       logger.debug(s"Automatic migrations done")
 
   def bootstrap(implicit F: Bracket[F, Throwable]): F[Int] = Bootstrap.initialize(xa)
-
-  def updateSupersedingVersion(
-    vendor: String,
-    name: String,
-    supersedingInfo: SupersedingInfo.Pair
-  )(implicit F: Bracket[F, Throwable]): F[Unit] =
-    logger.debug(s"updateSupersedingVersion: $vendor - $name - $supersedingInfo") *>
-      (for {
-        supersedingSchema <- Postgres
-          .Sql
-          .getSchema(SchemaMap(vendor, name, "jsonschema", supersedingInfo.supersedingVersion))
-          .option
-        actualSupersedingVersion = supersedingSchema match {
-          case Some(Schema(_, _, _, Some(SupersedingInfo.SupersededBy(version)))) => version
-          case _                                                                  => supersedingInfo.supersedingVersion
-        }
-        _ <- Postgres
-          .Sql
-          .updateSupersedingVersion(
-            vendor,
-            name,
-            supersedingInfo.copy(supersedingVersion = actualSupersedingVersion)
-          )
-          .run
-      } yield ()).transact(xa)
 }
 
 object Postgres {
@@ -314,19 +292,18 @@ object Postgres {
       sql"DROP TYPE IF EXISTS key_action".update
 
     def updateSupersedingVersion(
-      vendor: String,
-      name: String,
-      supersedingInfo: SupersedingInfo.Pair
+      schemaMap: SchemaMap,
+      supersedes: NonEmptyList[SchemaVer.Full]
     ): Update0 =
       sql"""
         UPDATE $SchemasTable
-        SET superseded_by = ${supersedingInfo.supersedingVersion.asString}
+        SET superseded_by = ${schemaMap.schemaKey.version.asString}
         WHERE ${Fragments.and(
-        supersededByInferiorFr(supersedingInfo.supersedingVersion),
+        supersededByInferiorFr(schemaMap.schemaKey.version),
         supersededListFr(
-          vendor,
-          name,
-          supersedingInfo.supersededVersions
+          schemaMap.schemaKey.vendor,
+          schemaMap.schemaKey.name,
+          supersedes
         )
       )}""".update
 

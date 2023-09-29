@@ -683,37 +683,29 @@ trait SchemaServiceSpecBase extends org.specs2.Specification with StorageAgnosti
 
   def e20 = {
     val (schema100, schemaKey100) = testSchema(SchemaVer.Full(1, 0, 0))
-    val (schema101, schemaKey101) = testSchema(SchemaVer.Full(1, 0, 1))
-    val (schema100supersededByBigger, _) = testSchema(
-      version = SchemaVer.Full(1, 0, 0),
-      supersedingInfo = Schema.SupersedingInfo.Supersedes(NonEmptyList.of(SchemaVer.Full(1, 0, 1))).some
+    val (schema200, schemaKey200) = testSchema(SchemaVer.Full(2, 0, 0))
+    val (schema101, schemaKey101) = testSchema(
+      SchemaVer.Full(1, 0, 1),
+      supersedingInfo = Schema.SupersedingInfo.Supersedes(NonEmptyList.of(SchemaVer.Full(2, 0, 0))).some
     )
-    val (schema102Supersedes, schemaKey102) = testSchema(
-      version = SchemaVer.Full(1, 0, 2),
-      supersedingInfo = Schema
-        .SupersedingInfo
-        .Supersedes(
-          NonEmptyList.of(
-            SchemaVer.Full(1, 0, 0),
-            SchemaVer.Full(1, 0, 3)
-          )
-        )
-        .some
+    val (schema101again, _) = testSchema(
+      version = SchemaVer.Full(1, 0, 1),
+      supersedingInfo = Schema.SupersedingInfo.Supersedes(NonEmptyList.of(SchemaVer.Full(1, 0, 2))).some
     )
 
     val reqs = List(
       Request[IO](Method.PUT, schemaKey100.uri)
         .withHeaders(Headers.of(Header("apikey", SpecHelpers.superKey.toString)))
         .withEntity(schema100),
+      Request[IO](Method.PUT, schemaKey200.uri)
+        .withHeaders(Headers.of(Header("apikey", SpecHelpers.superKey.toString)))
+        .withEntity(schema200),
       Request[IO](Method.PUT, schemaKey101.uri)
         .withHeaders(Headers.of(Header("apikey", SpecHelpers.superKey.toString)))
         .withEntity(schema101),
-      Request[IO](Method.PUT, schemaKey100.uri)
+      Request[IO](Method.PUT, schemaKey101.uri)
         .withHeaders(Headers.of(Header("apikey", SpecHelpers.superKey.toString)))
-        .withEntity(schema100supersededByBigger),
-      Request[IO](Method.PUT, schemaKey102.uri)
-        .withHeaders(Headers.of(Header("apikey", SpecHelpers.superKey.toString)))
-        .withEntity(schema102Supersedes)
+        .withEntity(schema101again)
     )
 
     val expectedResponseBodies = List(
@@ -728,11 +720,11 @@ trait SchemaServiceSpecBase extends org.specs2.Specification with StorageAgnosti
         {
           "message" : "Schema created",
           "updated" : false,
-          "location" : "iglu:com.acme/nonexistent/jsonschema/1-0-1",
+          "location" : "iglu:com.acme/nonexistent/jsonschema/2-0-0",
           "status" : 201
         }""",
-      json"""{"message" : "There are superseded schema versions greater than superseding schema version"}""",
-      json"""{"message" : "There are superseded schema versions greater than superseding schema version"}"""
+      json"""{"message" : "Superseded schema version(s) must be below the superseding version"}""",
+      json"""{"message" : "Superseded schema version(s) do not exist"}"""
     )
 
     val expectedResponseStatus = List(Status.Created, Status.Created, Status.Conflict, Status.Conflict)
