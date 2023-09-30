@@ -600,15 +600,14 @@ trait SchemaServiceSpecBase extends org.specs2.Specification with StorageAgnosti
     val (schema102, schemaKey102) = testSchema(SchemaVer.Full(1, 0, 2))
     val (schema103, schemaKey103) = testSchema(
       version = SchemaVer.Full(1, 0, 3),
-      supersedingInfo = Schema
-        .SupersedingInfo(
-          None,
-          List(
-            SchemaVer.Full(1, 0, 0),
-            SchemaVer.Full(1, 0, 1),
-            SchemaVer.Full(1, 0, 2)
-          )
+      supersedingInfo = Schema.SupersedingInfo(
+        None,
+        List(
+          SchemaVer.Full(1, 0, 0),
+          SchemaVer.Full(1, 0, 1),
+          SchemaVer.Full(1, 0, 2)
         )
+      )
     )
 
     val (expectedSchema100, _) = testSchema(
@@ -625,15 +624,14 @@ trait SchemaServiceSpecBase extends org.specs2.Specification with StorageAgnosti
     )
     val (expectedSchema103, _) = testSchema(
       version = SchemaVer.Full(1, 0, 3),
-      supersedingInfo = Schema
-        .SupersedingInfo(
-          None,
-          List(
-            SchemaVer.Full(1, 0, 0),
-            SchemaVer.Full(1, 0, 1),
-            SchemaVer.Full(1, 0, 2)
-          )
+      supersedingInfo = Schema.SupersedingInfo(
+        None,
+        List(
+          SchemaVer.Full(1, 0, 0),
+          SchemaVer.Full(1, 0, 1),
+          SchemaVer.Full(1, 0, 2)
         )
+      )
     )
 
     val reqs = List(

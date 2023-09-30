@@ -23,7 +23,7 @@ import cats.implicits._
 import cats.effect.{Bracket, Clock, Sync}
 import cats.effect.concurrent.Ref
 import io.circe.Json
-import com.snowplowanalytics.iglu.core.{SchemaKey, SchemaMap, SchemaVer}
+import com.snowplowanalytics.iglu.core.{SchemaMap, SchemaVer}
 import com.snowplowanalytics.iglu.server.model.Schema.SupersedingInfo
 import com.snowplowanalytics.iglu.server.model.{Permission, Schema, SchemaDraft}
 import com.snowplowanalytics.iglu.server.model.SchemaDraft.DraftId
@@ -52,7 +52,9 @@ case class InMemory[F[_]](ref: Ref[F, InMemory.State]) extends Storage[F] {
       addedAtMillis <- C.realTime(TimeUnit.MILLISECONDS)
       addedAt = Instant.ofEpochMilli(addedAtMillis)
       meta    = Schema.Metadata(addedAt, addedAt, isPublic)
-      schema  = Schema(schemaMap, meta, body, SupersedingInfo.empty)
+      // supersededBy is not stored here, but in db.superseding
+      // hence setting it to None
+      schema = Schema(schemaMap, meta, body, SupersedingInfo(None, supersedes))
       _ <- ref.update(_.copy(schemas = db.schemas.updated(schemaMap, schema)))
       _ <- updateSupersedingVersion(schemaMap, supersedes.toSet)
     } yield ()
@@ -116,23 +118,8 @@ case class InMemory[F[_]](ref: Ref[F, InMemory.State]) extends Storage[F] {
     Bracket[F, Throwable].unit
 
   def addSupersedingInfo(db: InMemory.State)(schema: Schema): Schema =
-    db.superseding.get(schema.schemaMap) match {
-      case Some(version) => schema.copy(supersedingInfo = schema.supersedingInfo.copy(supersededBy = Some(version)))
-      case None =>
-        val vendor         = schema.schemaMap.schemaKey.vendor
-        val name           = schema.schemaMap.schemaKey.name
-        val currentVersion = schema.schemaMap.schemaKey.version
-        val superseded = db
-          .superseding
-          .toList
-          .collect {
-            case (SchemaMap(SchemaKey(`vendor`, `name`, _, version)), `currentVersion`) => version
-          }
-          .sorted
-        superseded match {
-          case head :: tail => schema.copy(supersedingInfo = schema.supersedingInfo.copy(supersedes = head :: tail))
-          case _            => schema
-        }
+    db.superseding.get(schema.schemaMap).fold(schema) { version =>
+      schema.copy(supersedingInfo = schema.supersedingInfo.copy(supersededBy = Some(version)))
     }
 
   def updateSupersedingVersion(

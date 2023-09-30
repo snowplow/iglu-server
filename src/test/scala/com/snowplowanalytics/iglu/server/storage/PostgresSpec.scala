@@ -88,7 +88,12 @@ class PostgresSpec extends Specification with BeforeAll with IOChecker {
       check(
         Postgres
           .Sql
-          .addSchema(SchemaMap("does", "not", "exist", SchemaVer.Full(1, 0, 0)), Json.fromFields(List.empty), true)
+          .addSchema(
+            SchemaMap("does", "not", "exist", SchemaVer.Full(1, 0, 0)),
+            Json.fromFields(List.empty),
+            true,
+            List(SchemaVer.Full(1, 0, 0))
+          )
       )
     }
 

@@ -8,6 +8,7 @@ import com.snowplowanalytics.iglu.server.model.SchemaSpec.testSchema
 import com.snowplowanalytics.iglu.server.{SpecHelpers, Webhook}
 import com.snowplowanalytics.iglu.server.SpecHelpers.SchemaKeyUri
 import io.circe._
+import io.circe.literal._
 import org.http4s.circe._
 import org.http4s.rho.swagger.syntax.io.createRhoMiddleware
 import org.http4s.{Header, Headers, Method, Request, Response}
@@ -50,7 +51,7 @@ trait SupersedingLogicSpecBase extends org.specs2.Specification with StorageAgno
     val result = for {
       responses <- sendRequests(putRequests ::: getRequests)
       json      <- responses._1.map(_.as[Json]).sequence
-    } yield json.drop(schemas.length)
+    } yield json.drop(schemas.length).filterNot(_ == json"""{ "message": "The schema is not found" }""")
     result.unsafeRunSync()
   }
 
@@ -114,14 +115,14 @@ trait SupersedingLogicSpecBase extends org.specs2.Specification with StorageAgno
     val input = List(
       S((1, 0, 0)),
       S((1, 0, 1)),
-      S((1, 0, 2)),
-      S((1, 0, 1), supersedes = List((1, 0, 2)))
+      S((2, 0, 0)),
+      S((1, 0, 2), supersedes = List((2, 0, 0)))
     )
 
     val expected = List(
       S((1, 0, 0)),
       S((1, 0, 1)),
-      S((1, 0, 2))
+      S((2, 0, 0))
     )
 
     validate(input, expected)
@@ -152,7 +153,7 @@ trait SupersedingLogicSpecBase extends org.specs2.Specification with StorageAgno
 
     val expected = List(
       S((1, 0, 0), supersededBy = Some((1, 0, 2))),
-      S((1, 0, 1)),
+      S((1, 0, 1), supersedes = List((1, 0, 0))),
       S((1, 0, 2), supersedes = List((1, 0, 0)))
     )
 
@@ -168,8 +169,8 @@ trait SupersedingLogicSpecBase extends org.specs2.Specification with StorageAgno
 
     val expected = List(
       S((1, 0, 0), supersededBy = Some((1, 0, 2))),
-      S((1, 0, 1), supersededBy = Some((1, 0, 2))),
-      S((1, 0, 2), supersedes = List((1, 0, 0), (1, 0, 1)))
+      S((1, 0, 1), supersededBy = Some((1, 0, 2)), supersedes = List((1, 0, 0))),
+      S((1, 0, 2), supersedes = List((1, 0, 1)))
     )
 
     validate(input, expected)
@@ -186,8 +187,8 @@ trait SupersedingLogicSpecBase extends org.specs2.Specification with StorageAgno
     val expected = List(
       S((1, 0, 0), supersededBy = Some((1, 0, 3))),
       S((1, 0, 1), supersededBy = Some((1, 0, 3))),
-      S((1, 0, 2), supersededBy = Some((1, 0, 3))),
-      S((1, 0, 3), supersedes = List((1, 0, 0), (1, 0, 1), (1, 0, 2)))
+      S((1, 0, 2), supersededBy = Some((1, 0, 3)), supersedes = List((1, 0, 0), (1, 0, 1))),
+      S((1, 0, 3), supersedes = List((1, 0, 2)))
     )
 
     validate(input, expected)
@@ -204,10 +205,10 @@ trait SupersedingLogicSpecBase extends org.specs2.Specification with StorageAgno
 
     val expected = List(
       S((1, 0, 0), supersededBy = Some((1, 0, 4))),
-      S((1, 0, 1), supersededBy = Some((1, 0, 4))),
-      S((1, 0, 2), supersededBy = Some((1, 0, 4))),
-      S((1, 0, 3), supersededBy = Some((1, 0, 4))),
-      S((1, 0, 4), supersedes = List((1, 0, 0), (1, 0, 1), (1, 0, 2), (1, 0, 3)))
+      S((1, 0, 1), supersededBy = Some((1, 0, 4)), supersedes = List((1, 0, 0))),
+      S((1, 0, 2), supersededBy = Some((1, 0, 4)), supersedes = List((1, 0, 1))),
+      S((1, 0, 3), supersededBy = Some((1, 0, 4)), supersedes = List((1, 0, 2))),
+      S((1, 0, 4), supersedes = List((1, 0, 3)))
     )
 
     validate(input, expected)

@@ -130,7 +130,12 @@ class SchemaSpec extends org.specs2.Specification {
 
     val selfDescribingResult =
       Schema.SchemaBody.schemaBodyCirceDecoder.decodeJson(schema1) must beRight.like {
-        case Schema.SchemaBody.SelfDescribing(SelfDescribingSchema(SchemaMap(`schemaKey1`), `bodyOnlyInput`), SupersedingInfo(None, Nil)) =>
+        case Schema
+              .SchemaBody
+              .SelfDescribing(
+              SelfDescribingSchema(SchemaMap(`schemaKey1`), `bodyOnlyInput`),
+              SupersedingInfo(None, Nil)
+              ) =>
           ok
         case e => ko(s"Unexpected decoded value $e")
       }

@@ -105,9 +105,8 @@ object Schema {
 
   sealed trait SchemaBody extends Product with Serializable
   object SchemaBody {
-    case class SelfDescribing(schema: SelfDescribingSchema[Json], supersedingInfo: SupersedingInfo)
-        extends SchemaBody
-    case class BodyOnly(schema: Json, supersedingInfo: SupersedingInfo) extends SchemaBody
+    case class SelfDescribing(schema: SelfDescribingSchema[Json], supersedingInfo: SupersedingInfo) extends SchemaBody
+    case class BodyOnly(schema: Json, supersedingInfo: SupersedingInfo)                             extends SchemaBody
 
     implicit val schemaBodyCirceDecoder: Decoder[SchemaBody] =
       Decoder.instance { cursor =>
@@ -131,16 +130,19 @@ object Schema {
       Decoder.instance { json =>
         for {
           supersededBy <- json.getOrElse[Option[SchemaVer.Full]](SupersededByField)(None)
-          supersedes <- json.getOrElse[List[SchemaVer.Full]](SupersedesField)(List.empty)
+          supersedes   <- json.getOrElse[List[SchemaVer.Full]](SupersedesField)(List.empty)
         } yield SupersedingInfo(supersededBy, supersedes)
       }
 
     implicit val supersedingInfoEncoder: Encoder[SupersedingInfo] =
       Encoder.instance { info =>
-        Json.obj(
-          SupersededByField -> info.supersededBy.map(_.asString).asJson,
-          SupersedesField -> info.supersedes.map(_.asString).asJson
-        ).dropNullValues.dropEmptyValues
+        Json
+          .obj(
+            SupersededByField -> info.supersededBy.map(_.asString).asJson,
+            SupersedesField   -> info.supersedes.map(_.asString).asJson
+          )
+          .dropNullValues
+          .dropEmptyValues
       }
 
     def removeSupersedingInfoFields(json: HCursor) =
@@ -221,8 +223,9 @@ object Schema {
     Read[Option[String]].map(_.flatMap(v => SchemaVer.parseFull(v).toOption))
 
   implicit val schemaVerFullList: Read[List[SchemaVer.Full]] =
-    Read[Option[String]]
-      .map(_.toList.flatMap(vs => vs.split(", ").toList.flatMap(v => SchemaVer.parseFull(v).toOption)))
+    Read[Option[List[String]]].map(_.fold(List.empty[SchemaVer.Full]) {
+      _.flatMap(v => SchemaVer.parseFull(v).toOption)
+    })
 
   implicit val schemaDoobieRead: Read[Schema] =
     Read[(SchemaMap, Metadata, Json, Option[SchemaVer.Full], List[SchemaVer.Full])].map {

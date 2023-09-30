@@ -63,7 +63,7 @@ END';"""
         body        JSON          NOT NULL,
 
         superseded_by VARCHAR(32) NULL,
-        PRIMARY KEY(vendor, name, format, model, revision, addition)
+        supersedes VARCHAR(32) ARRAY NULL
       )""")
 
   val draftsCreate = (fr"CREATE TABLE IF NOT EXISTS" ++ Postgres.DraftsTable ++ fr"""(

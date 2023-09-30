@@ -66,7 +66,7 @@ class Postgres[F[_]](xa: Transactor[F], logger: Logger[F]) extends Storage[F] { 
     M: Bracket[F, Throwable]
   ): F[Unit] =
     logger.debug(s"addSchema ${schemaMap.schemaKey.toSchemaUri}") *>
-      (Postgres.Sql.addSchema(schemaMap, body, isPublic).run.void *>
+      (Postgres.Sql.addSchema(schemaMap, body, isPublic, supersedes).run.void *>
         (supersedes match {
           case head :: tail => Postgres.Sql.updateSupersedingVersion(schemaMap, NonEmptyList(head, tail)).run.void
           case _            => doobie.free.connection.unit
@@ -123,23 +123,21 @@ class Postgres[F[_]](xa: Transactor[F], logger: Logger[F]) extends Storage[F] { 
   def runAutomaticMigrations(implicit F: Bracket[F, Throwable]): F[Unit] =
     logger.debug(s"Running automatic migrations") *>
       (Postgres.Sql.addSupersededByColumn.run.void *>
-        Postgres.Sql.addPrimaryKey.run.void).transact(xa) *>
+        Postgres.Sql.addSupersedesColumn.run.void).transact(xa) *>
       logger.debug(s"Automatic migrations done")
 
   def bootstrap(implicit F: Bracket[F, Throwable]): F[Int] = Bootstrap.initialize(xa)
 }
 
 object Postgres {
-  val SchemasTableName = "iglu_schemas"
-  val SchemasTable     = Fragment.const(SchemasTableName)
+  val SchemasTable     = Fragment.const("iglu_schemas")
   val DraftsTable      = Fragment.const("iglu_drafts")
   val PermissionsTable = Fragment.const("iglu_permissions")
 
   val schemaColumns =
     Fragment.const(
-      "vendor, name, format, model, revision, addition, created_at, updated_at, is_public, body, superseded_by"
+      "vendor, name, format, model, revision, addition, created_at, updated_at, is_public, body, superseded_by, supersedes"
     )
-  val uniqueSchemaColumns = Fragment.const("vendor, name, format, model, revision, addition")
   val schemaKeyColumns =
     Fragment.const("vendor, name, format, model, revision, addition, created_at, updated_at, is_public")
   val draftColumns = Fragment.const("vendor, name, format, version, created_at, updated_at, is_public, body")
@@ -192,59 +190,41 @@ object Postgres {
       fr"STRING_TO_ARRAY(superseded_by, '-')::int[] < STRING_TO_ARRAY(${supersedingVersion.asString}, '-')::int[]"
     )
 
-  val versionToStringFr =
-    Fragment.const(s"model || '-' || revision || '-' || addition")
-
   object Sql {
-    def baseSchemaQuery(filter: Fragment, limit: Fragment = Fragment.empty): Query0[Schema] =
-      sql"""
-        SELECT $schemaColumns, STRING_AGG(s_version, ', ') AS supersedes
-        FROM $SchemasTable
-        LEFT OUTER JOIN (
-          SELECT vendor AS s_vendor, name AS s_name,
-            $versionToStringFr AS s_version, superseded_by AS s_superseded_by
-          FROM $SchemasTable
-        ) superseded
-        ON (
-          s_vendor = vendor AND
-          s_name = name AND
-          s_superseded_by = $versionToStringFr
-        )
-        $filter
-        GROUP BY $uniqueSchemaColumns
-        $Ordering
-        $limit
-        """.query[Schema]
-
     def getSchema(schemaMap: SchemaMap): Query0[Schema] =
-      baseSchemaQuery(
-        fr"WHERE" ++ schemaMapFr(schemaMap),
-        fr"LIMIT 1"
-      )
+      (fr"SELECT" ++ schemaColumns ++ fr"FROM" ++ SchemasTable ++ fr"WHERE" ++ schemaMapFr(schemaMap) ++ fr"LIMIT 1")
+        .query[Schema]
 
     def getSchemasByName(vendor: String, name: String): Query0[Schema] =
-      baseSchemaQuery(fr"WHERE" ++ nameFr(vendor, name))
+      (fr"SELECT" ++ schemaColumns ++ fr"FROM" ++ SchemasTable ++ fr"WHERE" ++ nameFr(vendor, name) ++ Ordering)
+        .query[Schema]
 
     def getSchemasByVendor(vendor: String): Query0[Schema] =
-      baseSchemaQuery(fr"WHERE" ++ vendorFr(vendor))
+      (fr"SELECT" ++ schemaColumns ++ fr"FROM" ++ SchemasTable ++ fr"WHERE" ++ vendorFr(vendor) ++ Ordering)
+        .query[Schema]
 
     def getSchemasByModel(vendor: String, name: String, model: Int): Query0[Schema] =
-      baseSchemaQuery(fr"WHERE" ++ modelFr(vendor, name, model))
+      (fr"SELECT" ++ schemaColumns ++ fr"FROM" ++ SchemasTable ++ fr"WHERE" ++ modelFr(vendor, name, model) ++ Ordering)
+        .query[Schema]
 
     def deleteSchema(schemaMap: SchemaMap): Update0 =
       (fr"DELETE FROM" ++ SchemasTable ++ fr"WHERE" ++ schemaMapFr(schemaMap)).update
 
     def getSchemas: Query0[Schema] =
-      baseSchemaQuery(Fragment.empty)
+      (fr"SELECT" ++ schemaColumns ++ fr"FROM" ++ SchemasTable ++ Ordering).query[Schema]
 
     def getSchemasKeyOnly: Query0[(SchemaMap, Schema.Metadata)] =
       (fr"SELECT" ++ schemaKeyColumns ++ fr"FROM" ++ SchemasTable ++ Ordering).query[(SchemaMap, Schema.Metadata)]
 
-    def addSchema(schemaMap: SchemaMap, schema: Json, isPublic: Boolean): Update0 = {
+    def addSchema(schemaMap: SchemaMap, schema: Json, isPublic: Boolean, supersedes: List[SchemaVer.Full]): Update0 = {
       val key = schemaMap.schemaKey
       val ver = key.version
       (fr"INSERT INTO" ++ SchemasTable ++ fr"(" ++ schemaColumns ++ fr")" ++
-        fr"VALUES (${key.vendor}, ${key.name}, ${key.format}, ${ver.model}, ${ver.revision}, ${ver.addition}, current_timestamp, current_timestamp, $isPublic, $schema, null)").update
+        fr"""VALUES (
+          ${key.vendor}, ${key.name}, ${key.format},
+          ${ver.model}, ${ver.revision}, ${ver.addition},
+          current_timestamp, current_timestamp,
+          $isPublic, $schema, null, ${supersedes.map(_.asString)})""").update
     }
 
     def updateSchema(schemaMap: SchemaMap, schema: Json, isPublic: Boolean): Update0 =
@@ -310,17 +290,7 @@ object Postgres {
     def addSupersededByColumn: Update0 =
       (fr"ALTER TABLE" ++ SchemasTable ++ fr"ADD COLUMN IF NOT EXISTS superseded_by VARCHAR(32)").update
 
-    val addPrimaryKey: Update0 =
-      sql"""
-        DO $$$$ BEGIN
-          IF NOT EXISTS (
-            SELECT constraint_name
-            FROM information_schema.table_constraints
-            WHERE table_name = '${Fragment.const0(SchemasTableName)}' AND constraint_type = 'PRIMARY KEY'
-          ) THEN
-            ALTER TABLE $SchemasTable
-            ADD PRIMARY KEY ($uniqueSchemaColumns);
-          END IF;
-        END $$$$""".update
+    def addSupersedesColumn: Update0 =
+      (fr"ALTER TABLE" ++ SchemasTable ++ fr"ADD COLUMN IF NOT EXISTS supersedes VARCHAR(32) ARRAY").update
   }
 }
