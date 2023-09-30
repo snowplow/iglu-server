@@ -16,7 +16,6 @@ package com.snowplowanalytics.iglu.server
 package service
 
 import java.util.UUID
-import cats.data.NonEmptyList
 import cats.implicits._
 import cats.effect.IO
 import fs2.Stream
@@ -558,7 +557,7 @@ trait SchemaServiceSpecBase extends org.specs2.Specification with StorageAgnosti
     val (schema101, schemaKey101) = testSchema(SchemaVer.Full(1, 0, 1))
     val (schema100SupersededBy, _) = testSchema(
       version = SchemaVer.Full(1, 0, 0),
-      supersedingInfo = Schema.SupersedingInfo.SupersededBy(SchemaVer.Full(1, 0, 1)).some,
+      supersedingInfo = Schema.SupersedingInfo(Some(SchemaVer.Full(1, 0, 1)), List.empty),
       json"""{
         "properties": {
           "field_a": {
@@ -568,8 +567,7 @@ trait SchemaServiceSpecBase extends org.specs2.Specification with StorageAgnosti
       }"""
     )
     val (expectedSchema100, _) = testSchema(
-      version = SchemaVer.Full(1, 0, 0),
-      supersedingInfo = None
+      version = SchemaVer.Full(1, 0, 0)
     )
 
     val reqs = List(
@@ -603,41 +601,39 @@ trait SchemaServiceSpecBase extends org.specs2.Specification with StorageAgnosti
     val (schema103, schemaKey103) = testSchema(
       version = SchemaVer.Full(1, 0, 3),
       supersedingInfo = Schema
-        .SupersedingInfo
-        .Supersedes(
-          NonEmptyList.of(
+        .SupersedingInfo(
+          None,
+          List(
             SchemaVer.Full(1, 0, 0),
             SchemaVer.Full(1, 0, 1),
             SchemaVer.Full(1, 0, 2)
           )
         )
-        .some
     )
 
     val (expectedSchema100, _) = testSchema(
       version = SchemaVer.Full(1, 0, 0),
-      supersedingInfo = Schema.SupersedingInfo.SupersededBy(SchemaVer.Full(1, 0, 3)).some
+      supersedingInfo = Schema.SupersedingInfo(Some(SchemaVer.Full(1, 0, 3)), List.empty)
     )
     val (expectedSchema101, _) = testSchema(
       version = SchemaVer.Full(1, 0, 1),
-      supersedingInfo = Schema.SupersedingInfo.SupersededBy(SchemaVer.Full(1, 0, 3)).some
+      supersedingInfo = Schema.SupersedingInfo(Some(SchemaVer.Full(1, 0, 3)), List.empty)
     )
     val (expectedSchema102, _) = testSchema(
       version = SchemaVer.Full(1, 0, 2),
-      supersedingInfo = Schema.SupersedingInfo.SupersededBy(SchemaVer.Full(1, 0, 3)).some
+      supersedingInfo = Schema.SupersedingInfo(Some(SchemaVer.Full(1, 0, 3)), List.empty)
     )
     val (expectedSchema103, _) = testSchema(
       version = SchemaVer.Full(1, 0, 3),
       supersedingInfo = Schema
-        .SupersedingInfo
-        .Supersedes(
-          NonEmptyList.of(
+        .SupersedingInfo(
+          None,
+          List(
             SchemaVer.Full(1, 0, 0),
             SchemaVer.Full(1, 0, 1),
             SchemaVer.Full(1, 0, 2)
           )
         )
-        .some
     )
 
     val reqs = List(
@@ -686,11 +682,11 @@ trait SchemaServiceSpecBase extends org.specs2.Specification with StorageAgnosti
     val (schema200, schemaKey200) = testSchema(SchemaVer.Full(2, 0, 0))
     val (schema101, schemaKey101) = testSchema(
       SchemaVer.Full(1, 0, 1),
-      supersedingInfo = Schema.SupersedingInfo.Supersedes(NonEmptyList.of(SchemaVer.Full(2, 0, 0))).some
+      supersedingInfo = Schema.SupersedingInfo(None, List(SchemaVer.Full(2, 0, 0)))
     )
     val (schema101again, _) = testSchema(
       version = SchemaVer.Full(1, 0, 1),
-      supersedingInfo = Schema.SupersedingInfo.Supersedes(NonEmptyList.of(SchemaVer.Full(1, 0, 2))).some
+      supersedingInfo = Schema.SupersedingInfo(None, List(SchemaVer.Full(1, 0, 2)))
     )
 
     val reqs = List(

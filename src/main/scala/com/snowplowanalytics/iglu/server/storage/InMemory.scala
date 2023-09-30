@@ -19,7 +19,6 @@ import java.util.concurrent.TimeUnit
 import java.time.Instant
 import fs2.Stream
 import cats.Monad
-import cats.data.NonEmptyList
 import cats.implicits._
 import cats.effect.{Bracket, Clock, Sync}
 import cats.effect.concurrent.Ref
@@ -53,7 +52,7 @@ case class InMemory[F[_]](ref: Ref[F, InMemory.State]) extends Storage[F] {
       addedAtMillis <- C.realTime(TimeUnit.MILLISECONDS)
       addedAt = Instant.ofEpochMilli(addedAtMillis)
       meta    = Schema.Metadata(addedAt, addedAt, isPublic)
-      schema  = Schema(schemaMap, meta, body, None)
+      schema  = Schema(schemaMap, meta, body, SupersedingInfo.empty)
       _ <- ref.update(_.copy(schemas = db.schemas.updated(schemaMap, schema)))
       _ <- updateSupersedingVersion(schemaMap, supersedes.toSet)
     } yield ()
@@ -118,7 +117,7 @@ case class InMemory[F[_]](ref: Ref[F, InMemory.State]) extends Storage[F] {
 
   def addSupersedingInfo(db: InMemory.State)(schema: Schema): Schema =
     db.superseding.get(schema.schemaMap) match {
-      case Some(version) => schema.copy(supersedingInfo = Some(SupersedingInfo.SupersededBy(version)))
+      case Some(version) => schema.copy(supersedingInfo = schema.supersedingInfo.copy(supersededBy = Some(version)))
       case None =>
         val vendor         = schema.schemaMap.schemaKey.vendor
         val name           = schema.schemaMap.schemaKey.name
@@ -131,7 +130,7 @@ case class InMemory[F[_]](ref: Ref[F, InMemory.State]) extends Storage[F] {
           }
           .sorted
         superseded match {
-          case head :: tail => schema.copy(supersedingInfo = Some(SupersedingInfo.Supersedes(NonEmptyList(head, tail))))
+          case head :: tail => schema.copy(supersedingInfo = schema.supersedingInfo.copy(supersedes = head :: tail))
           case _            => schema
         }
     }

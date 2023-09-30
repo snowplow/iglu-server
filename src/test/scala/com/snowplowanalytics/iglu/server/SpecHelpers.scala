@@ -24,6 +24,7 @@ import org.http4s._
 import org.http4s.rho.AuthedContext
 import com.snowplowanalytics.iglu.core.{SchemaKey, SchemaMap, SchemaVer}
 import com.snowplowanalytics.iglu.server.model.Permission.{SchemaAction, Vendor}
+import com.snowplowanalytics.iglu.server.model.Schema.SupersedingInfo
 import model.{Permission, Schema, SchemaDraft}
 import storage.InMemory
 
@@ -53,20 +54,20 @@ object SpecHelpers {
       SchemaMap("com.acme", "event", "jsonschema", SchemaVer.Full(1, 0, 0)),
       Schema.Metadata(now, now, true),
       schemaZero,
-      None
+      SupersedingInfo.empty
     ),
     Schema(
       SchemaMap("com.acme", "event", "jsonschema", SchemaVer.Full(1, 0, 1)),
       Schema.Metadata(now, now, true),
       schemaOne,
-      None
+      SupersedingInfo.empty
     ),
     // private
     Schema(
       SchemaMap("com.acme", "secret", "jsonschema", SchemaVer.Full(1, 0, 0)),
       Schema.Metadata(now, now, false),
       schemaPrivate,
-      None
+      SupersedingInfo.empty
     )
   ).map(s => (s.schemaMap, s)).toMap
 

@@ -1,6 +1,5 @@
 package com.snowplowanalytics.iglu.server.service
 
-import cats.data.NonEmptyList
 import cats.effect.IO
 import cats.implicits._
 import com.snowplowanalytics.iglu.core.{SchemaKey, SchemaVer}
@@ -31,14 +30,7 @@ trait SupersedingLogicSpecBase extends org.specs2.Specification with StorageAgno
   ) {
     def encode = testSchema(
       tripletToVersion(version),
-      supersedingInfo = (supersededBy, supersedes) match {
-        case (_, head :: tail) =>
-          Some(SupersedingInfo.Supersedes(NonEmptyList(tripletToVersion(head), tail.map(tripletToVersion))))
-        case (Some(version), _) =>
-          Some(SupersedingInfo.SupersededBy(tripletToVersion(version)))
-        case _ =>
-          None
-      }
+      SupersedingInfo(supersededBy.map(tripletToVersion), supersedes.map(tripletToVersion))
     )
   }
 

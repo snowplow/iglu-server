@@ -174,7 +174,7 @@ class SchemaService[F[+_]: Sync](
     isPublic: Boolean,
     permission: Permission,
     schema: SelfDescribingSchema[Json],
-    supersedingInfo: Option[SupersedingInfo]
+    supersedingInfo: SupersedingInfo
   ) =
     if (permission.canCreateSchema(schema.self.schemaKey.vendor)) {
       ValidationService.validateJsonSchema(schema.normalize) match {
@@ -189,7 +189,7 @@ class SchemaService[F[+_]: Sync](
       case SchemaFormat.Uri =>
         db.getSchemasKeyOnly
           .map(_.filter(isReadablePair(permission)).map {
-            case (map, meta) => Schema(map, meta, Json.Null, None).withFormat(SchemaFormat.Uri)
+            case (map, meta) => Schema(map, meta, Json.Null, SupersedingInfo.empty).withFormat(SchemaFormat.Uri)
           })
       case _ =>
         db.getSchemas.map(_.filter(isReadable(permission)).map(_.withFormat(format)))
@@ -207,7 +207,7 @@ class SchemaService[F[+_]: Sync](
   private def addSchema(
     schema: SelfDescribingSchema[Json],
     isPublic: Boolean,
-    supersedingInfo: Option[SupersedingInfo]
+    supersedingInfo: SupersedingInfo
   ) =
     for {
       allowed <- isSchemaAllowed(db, schema.self, patchesAllowed, isPublic, supersedingInfo)
@@ -215,12 +215,8 @@ class SchemaService[F[+_]: Sync](
         case Right(_) =>
           for {
             existing <- db.getSchema(schema.self).map(_.isDefined)
-            supersedes = supersedingInfo match {
-              case Some(SupersedingInfo.Supersedes(versions)) => versions.toList
-              case _                                          => List.empty
-            }
             _ <- if (existing) db.updateSchema(schema.self, schema.schema, isPublic)
-            else db.addSchema(schema.self, schema.schema, isPublic, supersedes)
+            else db.addSchema(schema.self, schema.schema, isPublic, supersedingInfo.supersedes)
             payload = IgluResponse.SchemaUploaded(existing, schema.self.schemaKey): IgluResponse
             _        <- webhooks.schemaPublished(schema.self.schemaKey, existing)
             response <- if (existing) Ok(payload) else Created(payload)
@@ -256,21 +252,17 @@ object SchemaService {
     schemaMap: SchemaMap,
     patchesAllowed: Boolean,
     isPublic: Boolean,
-    supersedingInfo: Option[SupersedingInfo]
+    supersedingInfo: SupersedingInfo
   ): F[Either[Inconsistency, Unit]] =
     for {
       schemas <- db.getSchemasByName(schemaMap.schemaKey.vendor, schemaMap.schemaKey.name).compile.toList
       previousPublic = schemas.forall(_.metadata.isPublic)
       versions       = schemas.map(_.schemaMap.schemaKey.version)
-      supersedes = supersedingInfo match {
-        case Some(SupersedingInfo.Supersedes(supersededVersions)) => supersededVersions.toList
-        case _                                                    => List.empty
-      }
     } yield
       if (schemas.nonEmpty && (isPublic != previousPublic))
         Inconsistency.Availability(isPublic, previousPublic).asLeft
       else
-        VersionCursor.isAllowed(schemaMap.schemaKey.version, versions, patchesAllowed, supersedes)
+        VersionCursor.isAllowed(schemaMap.schemaKey.version, versions, patchesAllowed, supersedingInfo.supersedes)
 
   /** Extract schemas from database, available for particular permission */
   def isReadable(permission: Permission)(schema: Schema): Boolean =

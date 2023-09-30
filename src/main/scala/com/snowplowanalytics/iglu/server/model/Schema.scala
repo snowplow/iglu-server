@@ -16,12 +16,11 @@ package com.snowplowanalytics.iglu.server.model
 
 import java.time.Instant
 
-import cats.data.NonEmptyList
 import cats.implicits._
 
 import io.circe._
 import io.circe.syntax._
-import io.circe.{Decoder, Encoder, FailedCursor, Json}
+import io.circe.{Decoder, Encoder, Json}
 import io.circe.generic.semiauto._
 
 import doobie._
@@ -37,7 +36,7 @@ case class Schema(
   schemaMap: SchemaMap,
   metadata: Metadata,
   body: Json,
-  supersedingInfo: Option[Schema.SupersedingInfo]
+  supersedingInfo: Schema.SupersedingInfo
 ) {
   def withFormat(repr: Schema.Repr.Format): Schema.Repr = repr match {
     case Schema.Repr.Format.Canonical =>
@@ -75,7 +74,7 @@ object Schema {
   object Repr {
 
     /** Canonical self-describing representation */
-    case class Canonical(schema: SelfDescribingSchema[Json], supersedingInfo: Option[SupersedingInfo]) extends Repr
+    case class Canonical(schema: SelfDescribingSchema[Json], supersedingInfo: SupersedingInfo) extends Repr
 
     /** Non-vanilla representation for UIs/non-validation clients */
     case class Full(schema: Schema) extends Repr
@@ -85,7 +84,7 @@ object Schema {
 
     def apply(schema: Schema): Repr = Full(schema)
     def apply(uri: SchemaMap): Repr = Uri(uri.schemaKey)
-    def apply(schema: SelfDescribingSchema[Json], supersedingInfo: Option[SupersedingInfo]): Repr =
+    def apply(schema: SelfDescribingSchema[Json], supersedingInfo: SupersedingInfo): Repr =
       Canonical(schema, supersedingInfo)
 
     sealed trait Format extends Product with Serializable
@@ -106,15 +105,15 @@ object Schema {
 
   sealed trait SchemaBody extends Product with Serializable
   object SchemaBody {
-    case class SelfDescribing(schema: SelfDescribingSchema[Json], supersedingInfo: Option[SupersedingInfo])
+    case class SelfDescribing(schema: SelfDescribingSchema[Json], supersedingInfo: SupersedingInfo)
         extends SchemaBody
-    case class BodyOnly(schema: Json, supersedingInfo: Option[SupersedingInfo]) extends SchemaBody
+    case class BodyOnly(schema: Json, supersedingInfo: SupersedingInfo) extends SchemaBody
 
     implicit val schemaBodyCirceDecoder: Decoder[SchemaBody] =
       Decoder.instance { cursor =>
         for {
           removed         <- SupersedingInfo.removeSupersedingInfoFields(cursor)
-          supersedingInfo <- cursor.as[Option[SupersedingInfo]]
+          supersedingInfo <- cursor.as[SupersedingInfo]
           res <- SelfDescribingSchema.parse(removed) match {
             case Right(schema) => SelfDescribing(schema, supersedingInfo).asRight
             case Left(_)       => removed.as[JsonObject].map(obj => BodyOnly(Json.fromJsonObject(obj), supersedingInfo))
@@ -123,41 +122,32 @@ object Schema {
       }
   }
 
-  sealed trait SupersedingInfo extends Product with Serializable
+  case class SupersedingInfo(supersededBy: Option[SchemaVer.Full], supersedes: List[SchemaVer.Full])
+
   object SupersedingInfo {
-    case class SupersededBy(version: SchemaVer.Full)              extends SupersedingInfo
-    case class Supersedes(versions: NonEmptyList[SchemaVer.Full]) extends SupersedingInfo
+    def empty = SupersedingInfo(Option.empty, List.empty)
 
-    case class Pair(
-      supersedingVersion: SchemaVer.Full,
-      supersededVersions: NonEmptyList[SchemaVer.Full]
-    )
-
-    implicit val supersedingInfoDecoder: Decoder[Option[SupersedingInfo]] =
+    implicit val supersedingInfoDecoder: Decoder[SupersedingInfo] =
       Decoder.instance { json =>
-        json.downField(SupersededByField) match {
-          case _: FailedCursor =>
-            json.downField(SupersedesField) match {
-              case _: FailedCursor => None.asRight
-              case c               => c.as[NonEmptyList[SchemaVer.Full]].map(Supersedes(_).some)
-            }
-          case c => c.as[SchemaVer.Full].map(SupersededBy(_).some)
-        }
+        for {
+          supersededBy <- json.getOrElse[Option[SchemaVer.Full]](SupersededByField)(None)
+          supersedes <- json.getOrElse[List[SchemaVer.Full]](SupersedesField)(List.empty)
+        } yield SupersedingInfo(supersededBy, supersedes)
       }
 
-    implicit val supersedingInfoEncoder: Encoder[Option[SupersedingInfo]] =
-      Encoder.instance {
-        case Some(Supersedes(versions))  => Json.obj(SupersedesField -> versions.map(_.asString).asJson)
-        case Some(SupersededBy(version)) => Json.obj(SupersededByField -> version.asString.asJson)
-        case _                           => Json.obj()
+    implicit val supersedingInfoEncoder: Encoder[SupersedingInfo] =
+      Encoder.instance { info =>
+        Json.obj(
+          SupersededByField -> info.supersededBy.map(_.asString).asJson,
+          SupersedesField -> info.supersedes.map(_.asString).asJson
+        ).dropNullValues.dropEmptyValues
       }
 
     def removeSupersedingInfoFields(json: HCursor) =
       for {
-        map <- json.as[JsonObject].map(_.toMap)
-        r = map - SupersededByField - SupersedesField
-        j = Json.fromJsonObject(JsonObject.fromMap(r))
-      } yield j
+        obj <- json.as[JsonObject]
+        removed = obj.remove(SupersededByField).remove(SupersedesField)
+      } yield Json.fromJsonObject(removed)
   }
 
   sealed trait Format extends Product with Serializable
@@ -223,7 +213,7 @@ object Schema {
         body = bodyJson.toList.filterNot {
           case (key, _) => List("self", "metadata", SupersededByField, SupersedesField).contains(key)
         }
-        supersedingInfo <- cursor.value.as[Option[SupersedingInfo]]
+        supersedingInfo <- cursor.value.as[SupersedingInfo]
       } yield Schema(self, meta, Json.fromFields(body), supersedingInfo)
     }
 
@@ -236,11 +226,7 @@ object Schema {
 
   implicit val schemaDoobieRead: Read[Schema] =
     Read[(SchemaMap, Metadata, Json, Option[SchemaVer.Full], List[SchemaVer.Full])].map {
-      case (schemaMap, meta, body, Some(supersededBy), _) =>
-        Schema(schemaMap, meta, body, Some(SupersedingInfo.SupersededBy(supersededBy)))
-      case (schemaMap, meta, body, _, supersedes :: rest) =>
-        Schema(schemaMap, meta, body, Some(SupersedingInfo.Supersedes(NonEmptyList(supersedes, rest))))
-      case (schemaMap, meta, body, _, _) =>
-        Schema(schemaMap, meta, body, None)
+      case (schemaMap, meta, body, supersededBy, supersedes) =>
+        Schema(schemaMap, meta, body, SupersedingInfo(supersededBy, supersedes))
     }
 }
