@@ -71,12 +71,14 @@ trait SupersedingLogicSpecBase extends org.specs2.Specification with StorageAgno
 
   def is = sequential ^ s2"""
   Basics
-    Schema version can be superseded by a newer version $e1
+    Schema version can supersede an older version $e1
     Schema version can’t be superseded via patching $e2
-    Schema version can’t be superseded by an older version $e3
+    Schema version can’t supersede a newer version $e3a
+    Schema version can’t supersede a nonexistent version $e3b
     Schema version can supersede multiple versions $e4
   Chaining
-    If B<-A and C<-A, then C<-A $e5
+    If B<-A and C<-A, then C<-A $e5a
+    If C<-A and B<-A, then C<-A $e5b
     If B<-A and C<-B, then C<-A and C<-B $e6
     If C<-A and C<-B and D<-C, then D<-A and D<-B and D<-C $e7
     A long chain like E<-D<-C<-B<-A works $e8
@@ -111,7 +113,7 @@ trait SupersedingLogicSpecBase extends org.specs2.Specification with StorageAgno
     validate(input, expected)
   }
 
-  def e3 = {
+  def e3a = {
     val input = List(
       S((1, 0, 0)),
       S((1, 0, 1)),
@@ -123,6 +125,21 @@ trait SupersedingLogicSpecBase extends org.specs2.Specification with StorageAgno
       S((1, 0, 0)),
       S((1, 0, 1)),
       S((2, 0, 0))
+    )
+
+    validate(input, expected)
+  }
+
+  def e3b = {
+    val input = List(
+      S((1, 0, 0)),
+      S((1, 0, 1)),
+      S((2, 0, 0), supersedes = List((1, 0, 2)))
+    )
+
+    val expected = List(
+      S((1, 0, 0)),
+      S((1, 0, 1))
     )
 
     validate(input, expected)
@@ -144,7 +161,7 @@ trait SupersedingLogicSpecBase extends org.specs2.Specification with StorageAgno
     validate(input, expected)
   }
 
-  def e5 = {
+  def e5a = {
     val input = List(
       S((1, 0, 0)),
       S((1, 0, 1), supersedes = List((1, 0, 0))),
@@ -155,6 +172,22 @@ trait SupersedingLogicSpecBase extends org.specs2.Specification with StorageAgno
       S((1, 0, 0), supersededBy = Some((1, 0, 2))),
       S((1, 0, 1), supersedes = List((1, 0, 0))),
       S((1, 0, 2), supersedes = List((1, 0, 0)))
+    )
+
+    validate(input, expected)
+  }
+
+  def e5b = {
+    val input = List(
+      S((1, 0, 0)),
+      S((2, 0, 0), supersedes = List((1, 0, 0))),
+      S((1, 0, 1), supersedes = List((1, 0, 0)))
+    )
+
+    val expected = List(
+      S((1, 0, 0), supersededBy = Some((2, 0, 0))),
+      S((2, 0, 0), supersedes = List((1, 0, 0))),
+      S((1, 0, 1), supersedes = List((1, 0, 0)))
     )
 
     validate(input, expected)
