@@ -36,6 +36,7 @@ object Dependencies {
     val Postgresql = "42.5.1"
     val Jackson    = "2.14.1"
     val Snakeyaml  = "2.0"
+    val Guava      = "32.0.0-jre"
 
     val Specs2     = "4.5.1"
     val Logback    = "1.2.3"
@@ -73,6 +74,7 @@ object Dependencies {
     "org.postgresql"             % "postgresql"        % V.Postgresql,
     "com.fasterxml.jackson.core" % "jackson-databind"  % V.Jackson, // override transitive version to address security vulnerabilities
     "org.yaml"                   % "snakeyaml"         % V.Snakeyaml, // override transitive version to address security vulnerabilities
+    "com.google.guava"           % "guava"             % V.Guava, // override transitive version to address security vulnerabilities
 
 
     "org.tpolecat"          %% "doobie-specs2"         % V.Doobie     % Test,
