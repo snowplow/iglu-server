@@ -35,7 +35,7 @@ object Dependencies {
     val ScalaCache = "0.28.0"
     val Postgresql = "42.5.1"
     val Jackson    = "2.14.1"
-    val Snakeyaml  = "1.31"
+    val Snakeyaml  = "2.0"
 
     val Specs2     = "4.5.1"
     val Logback    = "1.2.3"
