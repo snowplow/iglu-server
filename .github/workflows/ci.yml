@@ -36,7 +36,7 @@ jobs:
       run: sbt +test
     - name: Check Scala formatting
       if: ${{ always() }}
-      run: sbt scalafmtCheckAll
+      run: sbt scalafmtSbtCheck scalafmtCheckAll
     - name: Check assets can be published
       if: ${{ always() }}
       run: sbt publishLocal
