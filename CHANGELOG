@@ -1,3 +1,8 @@
+Version 0.10.2 (2023-10-17)
+--------------------------
+Include 'supersedes' field to schema output (close #144)
+Make it possible to run tests with both InMemory storage and Postgres (close #143)
+
 Version 0.10.1 (2023-10-09)
 --------------------------
 Bump guava to 32.0.0-jre (#142)
