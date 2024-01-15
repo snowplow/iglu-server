@@ -36,7 +36,7 @@ import org.http4s.headers.`Content-Type`
 import org.http4s.client.blaze.BlazeClientBuilder
 import org.http4s.server.Router
 import org.http4s.server.blaze.BlazeServerBuilder
-import org.http4s.server.middleware.{AutoSlash, CORS, Logger}
+import org.http4s.server.middleware.{AutoSlash, CORS, HSTS, Logger}
 import org.http4s.syntax.string._
 import org.http4s.server.{defaults => Http4sDefaults}
 import org.http4s.util.{CaseInsensitiveString => CIString}
@@ -106,11 +106,13 @@ object Server {
     cache: CachingMiddleware.ResponseCache[IO],
     swaggerConfig: Config.Swagger,
     blocker: Blocker,
-    isHealthy: IO[Boolean]
+    isHealthy: IO[Boolean],
+    sendHstsHeader: Boolean
   )(implicit cs: ContextShift[IO]): HttpApp[IO] = {
     val serverRoutes =
       httpRoutes(storage, superKey, debug, patchesAllowed, webhook, cache, swaggerConfig, blocker, isHealthy)
-    Kleisli[IO, Request[IO], Response[IO]](req => Router(serverRoutes: _*).run(req).getOrElse(NotFound))
+    val server = Kleisli[IO, Request[IO], Response[IO]](req => Router(serverRoutes: _*).run(req).getOrElse(NotFound))
+    if (sendHstsHeader) HSTS(server) else server
   }
 
   def httpRoutes(
@@ -191,7 +193,8 @@ object Server {
           cache,
           config.swagger,
           blocker,
-          isHealthy
+          isHealthy,
+          config.repoServer.sendHstsHeader
         )
       )
       .withIdleTimeout(config.repoServer.idleTimeout.getOrElse(Http4sDefaults.IdleTimeout))

@@ -24,6 +24,7 @@ import org.http4s._
 import org.http4s.implicits._
 import org.http4s.circe._
 import org.http4s.client.blaze.BlazeClientBuilder
+import org.http4s.headers.`Strict-Transport-Security`
 
 import org.specs2.Specification
 
@@ -46,6 +47,7 @@ class ServerSpec extends Specification {
   Return 404 for unknown endpoint $e2
   Create a new private schema via PUT, return it with proper apikey, hide for no apikey $e3
   Create a new public schema via POST, get it from /schemas, delete it $e4
+  Return an HSTS header when configured to do so $e5
   ${action(System.clearProperty("org.slf4j.simpleLogger.defaultLogLevel"))}
   """
   import ServerSpec._
@@ -140,6 +142,43 @@ class ServerSpec extends Specification {
 
     execute(action) must beEqualTo(expected)
   }
+
+  def e5 = {
+    val schema = SelfDescribingSchema[Json](
+      SchemaMap("com.acme", "first", "jsonschema", SchemaVer.Full(1, 0, 0)),
+      json"""{"properties": {}}"""
+    ).normalize
+
+    val reqs = List(
+      Request[IO](Method.POST, uri"/".withQueryParam("isPublic", "true"))
+        .withEntity(schema)
+        .withHeaders(Header("apikey", InMemory.DummySuperKey.toString)),
+      Request[IO](Method.DELETE, uri"/com.acme/first/jsonschema/1-0-0")
+        .withHeaders(Header("apikey", InMemory.DummySuperKey.toString)),
+      Request[IO](Method.GET, uri"/"),
+      Request[IO](Method.GET, uri"/nonExistingEndpoint")
+    )
+
+    val expected = Some(
+      List(
+        `Strict-Transport-Security`.unsafeFromLong(365 * 24 * 3600, includeSubDomains = true),
+        `Strict-Transport-Security`.unsafeFromLong(365 * 24 * 3600, includeSubDomains = true),
+        `Strict-Transport-Security`.unsafeFromLong(365 * 24 * 3600, includeSubDomains = true),
+        `Strict-Transport-Security`.unsafeFromLong(365 * 24 * 3600, includeSubDomains = true)
+      )
+    )
+
+    def action(hsts: Boolean) =
+      for {
+        responses <- ServerSpec.executeRequests(reqs, hsts)
+        results = responses.traverse(res => res.headers.get(`Strict-Transport-Security`))
+      } yield results
+
+    val on  = execute(action(hsts = true), hsts = true) must beEqualTo(expected)
+    val off = execute(action(hsts = false), hsts = false) must beEqualTo(None)
+
+    on.and(off)
+  }
 }
 
 object ServerSpec {
@@ -151,7 +190,7 @@ object ServerSpec {
     .StorageConfig
     .ConnectionPool
     .Hikari(None, None, None, None, Config.ThreadPool.Cached, Config.ThreadPool.Cached)
-  val httpConfig = Config.Http("0.0.0.0", 8080, None, None, Config.ThreadPool.Cached)
+  def httpConfig(hsts: Boolean) = Config.Http("0.0.0.0", 8080, None, None, Config.ThreadPool.Cached, hsts)
   val storageConfig =
     Config
       .StorageConfig
@@ -166,29 +205,31 @@ object ServerSpec {
         dbPoolConfig,
         true
       )
-  val config = Config(storageConfig, httpConfig, false, true, Nil, Config.Swagger(""), None, 10.seconds, false)
+  def config(hsts: Boolean) =
+    Config(storageConfig, httpConfig(hsts), false, true, Nil, Config.Swagger(""), None, 10.seconds, false)
 
-  private val runServer = Server.buildServer(config, IO.pure(true)).flatMap(_.resource)
-  private val client    = BlazeClientBuilder[IO](global).resource
-  private val env       = client <* runServer
+  private def runServer(hsts: Boolean) = Server.buildServer(config(hsts), IO.pure(true)).flatMap(_.resource)
+  private val client                   = BlazeClientBuilder[IO](global).resource
+  private def env(hsts: Boolean)       = client <* runServer(hsts)
 
   /** Execute requests against fresh server (only one execution per test is allowed) */
-  def executeRequests(requests: List[Request[IO]]): IO[List[Response[IO]]] = {
+  def executeRequests(requests: List[Request[IO]], hsts: Boolean = false): IO[List[Response[IO]]] = {
     val r = requests.map { r =>
       if (r.uri.host.isDefined) r
       else r.withUri(uri"http://localhost:8080/api/schemas".addPath(r.uri.path))
     }
-    env.use(client => r.traverse(client.run(_).use(IO.pure)))
+    env(hsts).use(client => r.traverse(client.run(_).use(IO.pure)))
   }
 
-  val specification = Resource.make {
-    Storage.initialize[IO](storageConfig).use(s => s.asInstanceOf[Postgres[IO]].drop) *>
-      Server.setup(ServerSpec.config, None).void *>
-      Storage.initialize[IO](storageConfig).use(_.addPermission(InMemory.DummySuperKey, Permission.Super))
-  }(_ => Storage.initialize[IO](storageConfig).use(s => s.asInstanceOf[Postgres[IO]].drop))
+  def specification(hsts: Boolean) =
+    Resource.make {
+      Storage.initialize[IO](storageConfig).use(s => s.asInstanceOf[Postgres[IO]].drop) *>
+        Server.setup(ServerSpec.config(hsts), None).void *>
+        Storage.initialize[IO](storageConfig).use(_.addPermission(InMemory.DummySuperKey, Permission.Super))
+    }(_ => Storage.initialize[IO](storageConfig).use(s => s.asInstanceOf[Postgres[IO]].drop))
 
-  def execute[A](action: IO[A]): A =
-    specification.use(_ => action).unsafeRunSync()
+  def execute[A](action: IO[A], hsts: Boolean = false): A =
+    specification(hsts).use(_ => action).unsafeRunSync()
 
   case class TestResponse[E](status: Int, body: E)
 

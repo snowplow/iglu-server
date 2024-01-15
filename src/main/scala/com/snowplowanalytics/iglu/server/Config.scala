@@ -221,7 +221,8 @@ object Config {
     port: Int,
     idleTimeout: Option[FiniteDuration],
     maxConnections: Option[Int],
-    threadPool: ThreadPool
+    threadPool: ThreadPool,
+    sendHstsHeader: Boolean
   )
 
   implicit val httpConfigCirceEncoder: Encoder[Http] =
