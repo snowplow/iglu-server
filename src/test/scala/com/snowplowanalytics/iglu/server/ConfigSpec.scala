@@ -31,6 +31,8 @@ class ConfigSpec extends org.specs2.Specification {
   parse minimal config with dummy DB from file $e5
   """
 
+  val noHsts = Config.Hsts(enable = false, maxAge = 365.days)
+
   def e1 = {
     val input    = "--config foo.hocon"
     val expected = Config.ServerCommand.Run(Some(Paths.get("foo.hocon")))
@@ -67,7 +69,7 @@ class ConfigSpec extends org.specs2.Specification {
           pool,
           false
         ),
-      Config.Http("0.0.0.0", 8080, Some(10.seconds), None, Config.ThreadPool.Global),
+      Config.Http("0.0.0.0", 8080, Some(10.seconds), None, Config.ThreadPool.Global, noHsts),
       true,
       true,
       List(
@@ -95,7 +97,7 @@ class ConfigSpec extends org.specs2.Specification {
     val expected =
       Config(
         Config.StorageConfig.Dummy,
-        Config.Http("0.0.0.0", 8080, None, None, Config.ThreadPool.Fixed(2)),
+        Config.Http("0.0.0.0", 8080, None, None, Config.ThreadPool.Fixed(2), Config.Hsts(true, 365.days)),
         true,
         false,
         Nil,
@@ -123,7 +125,7 @@ class ConfigSpec extends org.specs2.Specification {
           Config.StorageConfig.ConnectionPool.NoPool(Config.ThreadPool.Fixed(2)),
           true
         ),
-      Config.Http("0.0.0.0", 8080, None, None, Config.ThreadPool.Global),
+      Config.Http("0.0.0.0", 8080, None, None, Config.ThreadPool.Global, noHsts),
       true,
       true,
       List(
@@ -163,7 +165,11 @@ class ConfigSpec extends org.specs2.Specification {
         "port" : 8080,
         "idleTimeout": null,
         "maxConnections": null,
-        "threadPool": "global"
+        "threadPool": "global",
+        "hsts": {
+          "enable": false,
+          "maxAge": "365 days"
+        }
       },
       "debug" : true,
       "patchesAllowed" : true,
@@ -218,7 +224,7 @@ class ConfigSpec extends org.specs2.Specification {
           pool,
           true
         ),
-      Config.Http("0.0.0.0", 8080, None, None, Config.ThreadPool.Fixed(4)),
+      Config.Http("0.0.0.0", 8080, None, None, Config.ThreadPool.Fixed(4), noHsts),
       false,
       false,
       Nil,
