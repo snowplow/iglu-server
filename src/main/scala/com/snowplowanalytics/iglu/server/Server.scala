@@ -16,23 +16,17 @@ package com.snowplowanalytics.iglu.server
 
 import java.util.concurrent.{ExecutorService, Executors}
 import java.util.UUID
-
 import scala.concurrent.duration._
 import scala.concurrent.ExecutionContext
-
 import cats.data.Kleisli
 import cats.effect.{Blocker, ContextShift, ExitCase, ExitCode, IO, Resource, Sync, Timer}
 import cats.effect.concurrent.Ref
-
 import io.circe.syntax._
-
 import org.typelevel.log4cats.slf4j.Slf4jLogger
-
 import fs2.Stream
 import fs2.concurrent.SignallingRef
-
 import org.http4s.{Headers, HttpApp, HttpRoutes, MediaType, Method, Request, Response, Status}
-import org.http4s.headers.`Content-Type`
+import org.http4s.headers.{`Content-Type`, `Strict-Transport-Security`}
 import org.http4s.client.blaze.BlazeClientBuilder
 import org.http4s.server.Router
 import org.http4s.server.blaze.BlazeServerBuilder
@@ -40,23 +34,19 @@ import org.http4s.server.middleware.{AutoSlash, CORS, HSTS, Logger}
 import org.http4s.syntax.string._
 import org.http4s.server.{defaults => Http4sDefaults}
 import org.http4s.util.{CaseInsensitiveString => CIString}
-
 import org.http4s.rho.{AuthedContext, RhoMiddleware}
 import org.http4s.rho.bits.PathAST.{PathMatch, TypedPath}
 import org.http4s.rho.swagger.syntax.{io => ioSwagger}
 import org.http4s.rho.swagger.models.{ApiKeyAuthDefinition, In, Info, SecurityRequirement}
 import org.http4s.rho.swagger.SwaggerMetadata
-
 import doobie.implicits._
 import doobie.util.transactor.Transactor
-
 import com.snowplowanalytics.iglu.server.migrations.{Bootstrap, MigrateFrom}
 import com.snowplowanalytics.iglu.server.codecs.Swagger
 import com.snowplowanalytics.iglu.server.middleware.{BadRequestHandler, CachingMiddleware}
 import com.snowplowanalytics.iglu.server.model.{IgluResponse, Permission}
 import com.snowplowanalytics.iglu.server.storage.Storage
 import com.snowplowanalytics.iglu.server.service._
-
 import generated.BuildInfo.version
 
 object Server {
@@ -107,13 +97,18 @@ object Server {
     swaggerConfig: Config.Swagger,
     blocker: Blocker,
     isHealthy: IO[Boolean],
-    sendHstsHeader: Boolean
+    hsts: Config.Hsts
   )(implicit cs: ContextShift[IO]): HttpApp[IO] = {
     val serverRoutes =
       httpRoutes(storage, superKey, debug, patchesAllowed, webhook, cache, swaggerConfig, blocker, isHealthy)
     val server = Kleisli[IO, Request[IO], Response[IO]](req => Router(serverRoutes: _*).run(req).getOrElse(NotFound))
-    if (sendHstsHeader) HSTS(server) else server
+    hstsMiddleware(hsts)(server)
   }
+
+  def hstsMiddleware(hsts: Config.Hsts): HttpApp[IO] => HttpApp[IO] =
+    if (hsts.enable)
+      HSTS(_, `Strict-Transport-Security`.unsafeFromDuration(hsts.maxAge))
+    else identity
 
   def httpRoutes(
     storage: Storage[IO],
@@ -194,7 +189,7 @@ object Server {
           config.swagger,
           blocker,
           isHealthy,
-          config.repoServer.sendHstsHeader
+          config.repoServer.hsts
         )
       )
       .withIdleTimeout(config.repoServer.idleTimeout.getOrElse(Http4sDefaults.IdleTimeout))

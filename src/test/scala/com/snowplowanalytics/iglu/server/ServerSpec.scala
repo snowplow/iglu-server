@@ -161,21 +161,24 @@ class ServerSpec extends Specification {
 
     val expected = Some(
       List(
-        `Strict-Transport-Security`.unsafeFromLong(365 * 24 * 3600, includeSubDomains = true),
-        `Strict-Transport-Security`.unsafeFromLong(365 * 24 * 3600, includeSubDomains = true),
-        `Strict-Transport-Security`.unsafeFromLong(365 * 24 * 3600, includeSubDomains = true),
-        `Strict-Transport-Security`.unsafeFromLong(365 * 24 * 3600, includeSubDomains = true)
+        `Strict-Transport-Security`.unsafeFromLong(180 * 24 * 3600, includeSubDomains = true),
+        `Strict-Transport-Security`.unsafeFromLong(180 * 24 * 3600, includeSubDomains = true),
+        `Strict-Transport-Security`.unsafeFromLong(180 * 24 * 3600, includeSubDomains = true),
+        `Strict-Transport-Security`.unsafeFromLong(180 * 24 * 3600, includeSubDomains = true)
       )
     )
 
-    def action(hsts: Boolean) =
+    def action(hsts: Config.Hsts) =
       for {
         responses <- ServerSpec.executeRequests(reqs, hsts)
         results = responses.traverse(res => res.headers.get(`Strict-Transport-Security`))
       } yield results
 
-    val on  = execute(action(hsts = true), hsts = true) must beEqualTo(expected)
-    val off = execute(action(hsts = false), hsts = false) must beEqualTo(None)
+    val hstsOn  = Config.Hsts(enable = true, 180.days)
+    val hstsOff = Config.Hsts(enable = false, 365.days)
+
+    val on  = execute(action(hstsOn), hstsOn) must beEqualTo(expected)
+    val off = execute(action(hstsOff), hstsOff) must beEqualTo(None)
 
     on.and(off)
   }
@@ -190,7 +193,7 @@ object ServerSpec {
     .StorageConfig
     .ConnectionPool
     .Hikari(None, None, None, None, Config.ThreadPool.Cached, Config.ThreadPool.Cached)
-  def httpConfig(hsts: Boolean) = Config.Http("0.0.0.0", 8080, None, None, Config.ThreadPool.Cached, hsts)
+  def httpConfig(hsts: Config.Hsts) = Config.Http("0.0.0.0", 8080, None, None, Config.ThreadPool.Cached, hsts)
   val storageConfig =
     Config
       .StorageConfig
@@ -205,15 +208,18 @@ object ServerSpec {
         dbPoolConfig,
         true
       )
-  def config(hsts: Boolean) =
+  def config(hsts: Config.Hsts) =
     Config(storageConfig, httpConfig(hsts), false, true, Nil, Config.Swagger(""), None, 10.seconds, false)
 
-  private def runServer(hsts: Boolean) = Server.buildServer(config(hsts), IO.pure(true)).flatMap(_.resource)
-  private val client                   = BlazeClientBuilder[IO](global).resource
-  private def env(hsts: Boolean)       = client <* runServer(hsts)
+  private def runServer(hsts: Config.Hsts) = Server.buildServer(config(hsts), IO.pure(true)).flatMap(_.resource)
+  private val client                       = BlazeClientBuilder[IO](global).resource
+  private def env(hsts: Config.Hsts)       = client <* runServer(hsts)
 
   /** Execute requests against fresh server (only one execution per test is allowed) */
-  def executeRequests(requests: List[Request[IO]], hsts: Boolean = false): IO[List[Response[IO]]] = {
+  def executeRequests(
+    requests: List[Request[IO]],
+    hsts: Config.Hsts = Config.Hsts(false, 365.days)
+  ): IO[List[Response[IO]]] = {
     val r = requests.map { r =>
       if (r.uri.host.isDefined) r
       else r.withUri(uri"http://localhost:8080/api/schemas".addPath(r.uri.path))
@@ -221,14 +227,14 @@ object ServerSpec {
     env(hsts).use(client => r.traverse(client.run(_).use(IO.pure)))
   }
 
-  def specification(hsts: Boolean) =
+  def specification(hsts: Config.Hsts) =
     Resource.make {
       Storage.initialize[IO](storageConfig).use(s => s.asInstanceOf[Postgres[IO]].drop) *>
         Server.setup(ServerSpec.config(hsts), None).void *>
         Storage.initialize[IO](storageConfig).use(_.addPermission(InMemory.DummySuperKey, Permission.Super))
     }(_ => Storage.initialize[IO](storageConfig).use(s => s.asInstanceOf[Postgres[IO]].drop))
 
-  def execute[A](action: IO[A], hsts: Boolean = false): A =
+  def execute[A](action: IO[A], hsts: Config.Hsts = Config.Hsts(false, 365.days)): A =
     specification(hsts).use(_ => action).unsafeRunSync()
 
   case class TestResponse[E](status: Int, body: E)

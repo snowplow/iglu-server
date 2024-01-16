@@ -16,15 +16,11 @@ package com.snowplowanalytics.iglu.server
 
 import java.nio.file.Path
 import java.util.UUID
-
 import cats.implicits._
-
 import com.monovore.decline._
-
 import io.circe.{Encoder, Json, JsonObject}
 import io.circe.syntax._
 import io.circe.generic.semiauto._
-
 import pureconfig._
 import pureconfig.generic.ProductHint
 import pureconfig.generic.semiauto._
@@ -32,7 +28,6 @@ import pureconfig.module.http4s._
 import migrations.MigrateFrom
 
 import scala.concurrent.duration.FiniteDuration
-
 import generated.BuildInfo.version
 
 /**
@@ -222,11 +217,19 @@ object Config {
     idleTimeout: Option[FiniteDuration],
     maxConnections: Option[Int],
     threadPool: ThreadPool,
-    sendHstsHeader: Boolean
+    hsts: Config.Hsts
   )
 
   implicit val httpConfigCirceEncoder: Encoder[Http] =
     deriveEncoder[Http]
+
+  case class Hsts(
+    enable: Boolean,
+    maxAge: FiniteDuration
+  )
+
+  implicit val hstsConfigCirceEncoder: Encoder[Hsts] =
+    deriveEncoder[Hsts]
 
   implicit val pureWebhookReader: ConfigReader[Webhook] = ConfigReader.fromCursor { cur =>
     for {
@@ -262,6 +265,8 @@ object Config {
   }
 
   implicit val pureHttpReader: ConfigReader[Http] = deriveReader[Http]
+
+  implicit val pureHstsReader: ConfigReader[Hsts] = deriveReader[Hsts]
 
   implicit val pureWebhooksReader: ConfigReader[List[Webhook]] = ConfigReader.fromCursor { cur =>
     for {
