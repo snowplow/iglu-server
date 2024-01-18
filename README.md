@@ -1,3 +1,5 @@
+[![License][license-image]][license]
+
 # Iglu Server
 
 A RESTful schema registry, allowing users to publish, test and serve schemas via an easy-to-use RESTful interface.
@@ -10,16 +12,10 @@ A RESTful schema registry, allowing users to publish, test and serve schemas via
 
 ## Copyright and license
 
-Iglu Server is copyright 2014-2023 Snowplow Analytics Ltd.
+Copyright (c) 2014-present Snowplow Analytics Ltd. All rights reserved.
 
-Licensed under the **[Apache License, Version 2.0][license]** (the "License");
-you may not use this software except in compliance with the License.
+Licensed under the [Snowplow Limited Use License Agreement][license]. _(If you are uncertain how it applies to your use case, check our answers to [frequently asked questions][faq].)_
 
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
 
 [techdocs-image]: https://d3i6fms1cm1j0i.cloudfront.net/github/images/techdocs.png
 [setup-image]: https://d3i6fms1cm1j0i.cloudfront.net/github/images/setup.png
@@ -31,5 +27,6 @@ limitations under the License.
 [roadmap]: https://github.com/snowplow/snowplow/projects/7
 [contributing]: https://docs.snowplow.io/docs/contributing/
 
-[license]: http://www.apache.org/licenses/LICENSE-2.0
-
+[license]: https://docs.snowplow.io/limited-use-license-1.0
+[license-image]: https://img.shields.io/badge/license-Snowplow--Limited--Use-blue.svg?style=flat
+[faq]: https://docs.snowplow.io/docs/contributing/limited-use-license-faq/

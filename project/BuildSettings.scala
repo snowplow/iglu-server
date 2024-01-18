@@ -24,14 +24,32 @@ import sbtbuildinfo.BuildInfoPlugin.autoImport.{BuildInfoKey, buildInfoKeys, bui
 
 import com.typesafe.sbt.packager.Keys.maintainer
 import com.typesafe.sbt.packager.linux.LinuxPlugin.autoImport._
+import com.typesafe.sbt.SbtNativePackager.Universal
+
+import de.heikoseeberger.sbtheader.HeaderPlugin.autoImport._
 
 object BuildSettings {
 
   lazy val projectSettings = Seq(
     organization := "com.snowplowanalytics",
     name := "iglu-server",
-    scalaVersion := "2.12.9",
-    licenses += ("Apache-2.0", url("http://www.apache.org/licenses/LICENSE-2.0.html"))
+    scalaVersion := "2.12.9"
+  )
+
+  lazy val licenseSettings = Seq(
+    licenses += ("Snowplow Limited Use License Agreement", url("https://docs.snowplow.io/limited-use-license-1.0")),
+    headerLicense := Some(HeaderLicense.Custom(
+      """|Copyright (c) 2014-present Snowplow Analytics Ltd. All rights reserved.
+         |
+         |This software is made available by Snowplow Analytics, Ltd.,
+         |under the terms of the Snowplow Limited Use License Agreement, Version 1.0
+         |located at https://docs.snowplow.io/limited-use-license-1.0
+         |BY INSTALLING, DOWNLOADING, ACCESSING, USING OR DISTRIBUTING ANY PORTION
+         |OF THE SOFTWARE, YOU AGREE TO THE TERMS OF SUCH LICENSE AGREEMENT.
+         |""".stripMargin
+    )),
+    headerMappings := headerMappings.value + (HeaderFileType.conf -> HeaderCommentStyle.hashLineComment),
+    Compile / unmanagedResources += file("LICENSE.md")
   )
 
   lazy val buildInfoSettings = Seq(
@@ -57,6 +75,10 @@ object BuildSettings {
   lazy val dynVerSettings = Seq(
     ThisBuild / dynverVTagPrefix := false, // Otherwise git tags required to have v-prefix
     ThisBuild / dynverSeparator := "-" // to be compatible with docker
+  )
+
+  lazy val additionalDockerSettings = Seq(
+    Universal / mappings += file("LICENSE.md") -> "/SNOWPLOW-LICENSE.md"
   )
 
   lazy val testsSettings = Seq(
