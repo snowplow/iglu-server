@@ -50,7 +50,8 @@ case class Config(
   swagger: Config.Swagger,
   superApiKey: Option[UUID],
   preTerminationPeriod: FiniteDuration,
-  preTerminationUnhealthy: Boolean
+  preTerminationUnhealthy: Boolean,
+  license: Config.License
 )
 
 object Config {
@@ -61,9 +62,12 @@ object Config {
     implicitly[Encoder[String]].contramap(_.toString)
 
   sealed trait ThreadPool extends Product with Serializable
+
   object ThreadPool {
-    case object Global          extends ThreadPool
-    case object Cached          extends ThreadPool
+    case object Global extends ThreadPool
+
+    case object Cached extends ThreadPool
+
     case class Fixed(size: Int) extends ThreadPool
 
     implicit val threadPoolReader: ConfigReader[ThreadPool] =
@@ -102,12 +106,15 @@ object Config {
   }
 
   sealed trait StorageConfig
+
   object StorageConfig {
 
     /** Frequently used HikariCP settings */
     sealed trait ConnectionPool extends Product with Serializable
+
     object ConnectionPool {
       case class NoPool(threadPool: ThreadPool) extends ConnectionPool
+
       case class Hikari(
         connectionTimeout: Option[FiniteDuration],
         maxLifetime: Option[FiniteDuration],
@@ -205,7 +212,7 @@ object Config {
     * Configuration options for the Iglu server.
     *
     * @param interface The server's host.
-    * @param port The server's port.
+    * @param port      The server's port.
     */
   case class Http(
     interface: String,
@@ -226,6 +233,13 @@ object Config {
 
   implicit val hstsConfigCirceEncoder: Encoder[Hsts] =
     deriveEncoder[Hsts]
+
+  case class License(
+    accept: Boolean
+  )
+
+  implicit val licenseConfigEncoder: Encoder[License] =
+    deriveEncoder[License]
 
   implicit val pureWebhookReader: ConfigReader[Webhook] = ConfigReader.fromCursor { cur =>
     for {
@@ -270,6 +284,17 @@ object Config {
       schemaPublishedCursors <- objCur.atKeyOrUndefined("schemaPublished").asList
       webhooks               <- schemaPublishedCursors.traverse(cur => pureWebhookReader.from(cur))
     } yield webhooks
+  }
+
+  implicit val pureLicenseReader: ConfigReader[License] = {
+    val truthy = Set("true", "yes", "on", "1")
+    ConfigReader.fromCursor { cur =>
+      for {
+        objCur    <- cur.asObjectCursor
+        acceptCur <- objCur.atKey("accept")
+        value     <- acceptCur.asString
+      } yield License(truthy(value.toLowerCase))
+    }
   }
 
   implicit val pureConfigReader: ConfigReader[Config] = deriveReader[Config]

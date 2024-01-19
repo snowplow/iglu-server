@@ -84,7 +84,8 @@ class ConfigSpec extends org.specs2.Specification {
       Config.Swagger("/custom/prefix"),
       None,
       42.seconds,
-      true
+      true,
+      Config.License(false)
     )
     val result = Config.serverCommand.parse(input.split(" ").toList).leftMap(_.toString).flatMap(_.read)
     result must beRight(expected)
@@ -104,7 +105,8 @@ class ConfigSpec extends org.specs2.Specification {
         Config.Swagger(""),
         None,
         1.seconds,
-        false
+        false,
+        Config.License(true)
       )
     val result = Config.serverCommand.parse(input.split(" ").toList).leftMap(_.toString).flatMap(_.read)
     result must beRight(expected)
@@ -139,7 +141,8 @@ class ConfigSpec extends org.specs2.Specification {
       Config.Swagger("/custom/prefix"),
       Some(UUID.fromString("a71aa7d9-6cde-40f7-84b1-046d65dedf9e")),
       10.seconds,
-      true
+      true,
+      Config.License(true)
     )
 
     val expected = json"""{
@@ -199,7 +202,10 @@ class ConfigSpec extends org.specs2.Specification {
       },
       "superApiKey": "******",
       "preTerminationPeriod": "10 seconds",
-      "preTerminationUnhealthy": true
+      "preTerminationUnhealthy": true,
+      "license": {
+        "accept": true
+      }
     }"""
 
     input.asJson must beEqualTo(expected)
@@ -231,7 +237,8 @@ class ConfigSpec extends org.specs2.Specification {
       Config.Swagger(""),
       None,
       1.seconds,
-      false
+      false,
+      Config.License(false)
     )
     val result = Config.serverCommand.parse(input.split(" ").toList).leftMap(_.toString).flatMap(_.read)
     result must beRight(expected)

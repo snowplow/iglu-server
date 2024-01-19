@@ -20,6 +20,7 @@ object Main extends IOApp {
     val cli = for {
       command <- EitherT.fromEither[IO](Config.serverCommand.parse(args).leftMap(_.toString))
       config  <- EitherT.fromEither[IO](command.read)
+      _       <- EitherT.fromEither[IO](checkLicense(config))
       result <- command match {
         case _: Config.ServerCommand.Run =>
           EitherT.liftF[IO, String, ExitCode](Server.run(config))
@@ -33,4 +34,11 @@ object Main extends IOApp {
       case Left(cliError) => IO(System.err.println(cliError)).as(ExitCode.Error)
     }
   }
+
+  def checkLicense(config: Config): Either[String, Unit] =
+    if (config.license.accept) Right(())
+    else
+      Left(
+        "Please accept the terms of the Snowplow Limited Use License Agreement to proceed. See https://docs.snowplow.io/docs/pipeline-components-and-applications/iglu/iglu-repositories/iglu-server/reference/#license for more information on the license and how to configure this."
+      )
 }
