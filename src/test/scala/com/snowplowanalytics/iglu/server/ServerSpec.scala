@@ -205,7 +205,18 @@ object ServerSpec {
         true
       )
   def config(hsts: Config.Hsts) =
-    Config(storageConfig, httpConfig(hsts), false, true, Nil, Config.Swagger(""), None, 10.seconds, false)
+    Config(
+      storageConfig,
+      httpConfig(hsts),
+      false,
+      true,
+      Nil,
+      Config.Swagger(""),
+      None,
+      10.seconds,
+      false,
+      Config.License(true)
+    )
 
   private def runServer(hsts: Config.Hsts) = Server.buildServer(config(hsts), IO.pure(true)).flatMap(_.resource)
   private val client                       = BlazeClientBuilder[IO](global).resource
