@@ -1,3 +1,9 @@
+Version 0.12.0 (2024-01-24)
+---------------------------
+Add mandatory SLULA acceptance flag (#150)
+Add an option to send HSTS header (#148)
+Update the license to SLULA (#150)
+
 Version 0.11.0 (2023-10-18)
 --------------------------
 Include 'supersedes' field to schema output (close #144)
