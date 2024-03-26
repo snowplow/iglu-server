@@ -33,7 +33,7 @@ object Dependencies {
     val SwaggerUi  = "4.15.5"
     val Slf4j      = "1.7.36"
     val ScalaCache = "0.28.0"
-    val Postgresql = "42.5.1"
+    val Postgresql = "42.5.5"
     val Jackson    = "2.14.1"
     val Snakeyaml  = "2.0"
     val Guava      = "32.0.0-jre"
