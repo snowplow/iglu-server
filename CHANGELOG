@@ -1,3 +1,7 @@
+Version 0.12.0 (2024-03-27)
+---------------------------
+Bump postgresql to 42.5.5 (#154)
+
 Version 0.12.0 (2024-01-24)
 ---------------------------
 Add mandatory SLULA acceptance flag (#150)
