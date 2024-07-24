@@ -2,8 +2,8 @@
  * Copyright (c) 2014-present Snowplow Analytics Ltd. All rights reserved.
  *
  * This software is made available by Snowplow Analytics, Ltd.,
- * under the terms of the Snowplow Limited Use License Agreement, Version 1.0
- * located at https://docs.snowplow.io/limited-use-license-1.0
+ * under the terms of the Snowplow Limited Use License Agreement, Version 1.1
+ * located at https://docs.snowplow.io/limited-use-license-1.1
  * BY INSTALLING, DOWNLOADING, ACCESSING, USING OR DISTRIBUTING ANY PORTION
  * OF THE SOFTWARE, YOU AGREE TO THE TERMS OF SUCH LICENSE AGREEMENT.
  */
@@ -15,6 +15,7 @@ import java.util.UUID
 import scala.concurrent.duration._
 import scala.concurrent.ExecutionContext
 import cats.data.Kleisli
+import cats.syntax.all._
 import cats.effect.{Blocker, ContextShift, ExitCase, ExitCode, IO, Resource, Sync, Timer}
 import cats.effect.concurrent.Ref
 import io.circe.syntax._
@@ -26,7 +27,7 @@ import org.http4s.headers.{`Content-Type`, `Strict-Transport-Security`}
 import org.http4s.client.blaze.BlazeClientBuilder
 import org.http4s.server.Router
 import org.http4s.server.blaze.BlazeServerBuilder
-import org.http4s.server.middleware.{AutoSlash, CORS, HSTS, Logger}
+import org.http4s.server.middleware.{AutoSlash, CORS, EntityLimiter, HSTS, Logger}
 import org.http4s.syntax.string._
 import org.http4s.server.{defaults => Http4sDefaults}
 import org.http4s.util.{CaseInsensitiveString => CIString}
@@ -65,6 +66,12 @@ object Server {
       .withBodyStream(Utils.toBytes(IgluResponse.EndpointNotFound: IgluResponse))
       .withContentType(`Content-Type`(MediaType.application.json))
 
+  val PayloadTooLarge: Response[IO] =
+    Response[IO]()
+      .withStatus(Status.PayloadTooLarge)
+      .withBodyStream(Utils.toBytes(IgluResponse.PayloadTooLarge: IgluResponse))
+      .withContentType(`Content-Type`(MediaType.application.json))
+
   def addSwagger(storage: Storage[IO], superKey: Option[UUID], config: Config.Swagger)(
     service: (String, RoutesConstructor)
   ) = {
@@ -93,18 +100,24 @@ object Server {
     swaggerConfig: Config.Swagger,
     blocker: Blocker,
     isHealthy: IO[Boolean],
-    hsts: Config.Hsts
+    hsts: Config.Hsts,
+    maxPayloadSize: Long
   )(implicit cs: ContextShift[IO]): HttpApp[IO] = {
     val serverRoutes =
       httpRoutes(storage, superKey, debug, patchesAllowed, webhook, cache, swaggerConfig, blocker, isHealthy)
     val server = Kleisli[IO, Request[IO], Response[IO]](req => Router(serverRoutes: _*).run(req).getOrElse(NotFound))
-    hstsMiddleware(hsts)(server)
+    entityLimiter(maxPayloadSize)(hstsMiddleware(hsts)(server))
   }
 
   def hstsMiddleware(hsts: Config.Hsts): HttpApp[IO] => HttpApp[IO] =
     if (hsts.enable)
       HSTS(_, `Strict-Transport-Security`.unsafeFromDuration(hsts.maxAge))
     else identity
+
+  def entityLimiter(maxPayloadSize: Long): HttpApp[IO] => HttpApp[IO] =
+    EntityLimiter(_, maxPayloadSize).recover {
+      case _: EntityLimiter.EntityTooLarge => PayloadTooLarge
+    }
 
   def httpRoutes(
     storage: Storage[IO],
@@ -185,7 +198,8 @@ object Server {
           config.swagger,
           blocker,
           isHealthy,
-          config.repoServer.hsts
+          config.repoServer.hsts,
+          config.repoServer.maxPayloadSize
         )
       )
       .withIdleTimeout(config.repoServer.idleTimeout.getOrElse(Http4sDefaults.IdleTimeout))

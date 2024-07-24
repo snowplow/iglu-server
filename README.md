@@ -27,6 +27,6 @@ Licensed under the [Snowplow Limited Use License Agreement][license]. _(If you a
 [roadmap]: https://github.com/snowplow/snowplow/projects/7
 [contributing]: https://docs.snowplow.io/docs/contributing/
 
-[license]: https://docs.snowplow.io/limited-use-license-1.0
+[license]: https://docs.snowplow.io/limited-use-license-1.1
 [license-image]: https://img.shields.io/badge/license-Snowplow--Limited--Use-blue.svg?style=flat
 [faq]: https://docs.snowplow.io/docs/contributing/limited-use-license-faq/

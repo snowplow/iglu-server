@@ -2,8 +2,8 @@
  * Copyright (c) 2014-present Snowplow Analytics Ltd. All rights reserved.
  *
  * This software is made available by Snowplow Analytics, Ltd.,
- * under the terms of the Snowplow Limited Use License Agreement, Version 1.0
- * located at https://docs.snowplow.io/limited-use-license-1.0
+ * under the terms of the Snowplow Limited Use License Agreement, Version 1.1
+ * located at https://docs.snowplow.io/limited-use-license-1.1
  * BY INSTALLING, DOWNLOADING, ACCESSING, USING OR DISTRIBUTING ANY PORTION
  * OF THE SOFTWARE, YOU AGREE TO THE TERMS OF SUCH LICENSE AGREEMENT.
  */
@@ -38,11 +38,13 @@ object IgluResponse {
   val DataInvalidationMessage    = "The data for a field instance is invalid against its schema"
   val NotFoundEndpoint           = "The endpoint does not exist"
   val NonSequentialSchemaVersion = "The schema version is not sequential"
+  val PayloadTooLargeError       = "The payload is too large"
 
   case object SchemaNotFound                                                      extends IgluResponse
   case object SchemaNonSequential                                                 extends IgluResponse
   case object EndpointNotFound                                                    extends IgluResponse
   case object InvalidSchema                                                       extends IgluResponse
+  case object PayloadTooLarge                                                     extends IgluResponse
   case class SchemaMismatch(uriSchemaKey: SchemaKey, payloadSchemaKey: SchemaKey) extends IgluResponse
   case class SchemaUploaded(updated: Boolean, location: SchemaKey)                extends IgluResponse
 
@@ -94,6 +96,8 @@ object IgluResponse {
         )
       case InvalidSchema =>
         Json.fromFields(List("message" -> Json.fromString(DecodeError)))
+      case PayloadTooLarge =>
+        Json.fromFields(List("message" -> Json.fromString(PayloadTooLargeError)))
       case SchemaNonSequential =>
         Json.fromFields(List("message" -> Json.fromString(NonSequentialSchemaVersion)))
       case SchemaValidationReport(report) =>
