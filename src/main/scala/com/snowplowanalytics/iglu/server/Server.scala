@@ -16,12 +16,12 @@ import scala.concurrent.duration._
 import scala.concurrent.ExecutionContext
 import cats.data.Kleisli
 import cats.syntax.all._
-import cats.effect.{Blocker, ContextShift, ExitCase, ExitCode, IO, Resource, Sync, Timer}
+import cats.effect.{Blocker, ContextShift, ExitCode, IO, Resource, Sync, Timer}
 import cats.effect.concurrent.Ref
 import io.circe.syntax._
 import org.typelevel.log4cats.slf4j.Slf4jLogger
 import fs2.Stream
-import fs2.concurrent.SignallingRef
+import fs2.concurrent.{Signal, SignallingRef}
 import org.http4s.{Headers, HttpApp, HttpRoutes, MediaType, Method, Request, Response, Status}
 import org.http4s.headers.{`Content-Type`, `Strict-Transport-Security`}
 import org.http4s.client.blaze.BlazeClientBuilder
@@ -38,6 +38,7 @@ import org.http4s.rho.swagger.models.{ApiKeyAuthDefinition, In, Info, SecurityRe
 import org.http4s.rho.swagger.SwaggerMetadata
 import doobie.implicits._
 import doobie.util.transactor.Transactor
+import sun.misc.{Signal => JvmSignal, SignalHandler}
 import com.snowplowanalytics.iglu.server.migrations.{Bootstrap, MigrateFrom}
 import com.snowplowanalytics.iglu.server.codecs.Swagger
 import com.snowplowanalytics.iglu.server.middleware.{BadRequestHandler, CachingMiddleware}
@@ -206,30 +207,53 @@ object Server {
       .withMaxConnections(config.repoServer.maxConnections.getOrElse(Http4sDefaults.MaxConnections))
 
   def run(config: Config)(implicit cs: ContextShift[IO], timer: Timer[IO]): IO[ExitCode] =
+    runStream(config).compile.lastOrError
+
+  def runStream(config: Config)(implicit cs: ContextShift[IO], timer: Timer[IO]): Stream[IO, ExitCode] =
     for {
-      signal    <- SignallingRef[IO, Boolean](false)
-      ref       <- Ref[IO].of(ExitCode.Success)
-      isHealthy <- Ref[IO].of(true)
-      stream = Stream.resource(buildServer(config, isHealthy.get)).flatMap(_.serveWhile(signal, ref))
-      exitCode <- stream.compile.lastOrError.start.bracketCase(_.join) {
-        case (_, ExitCase.Completed)    => IO.unit
-        case (_, ExitCase.Error(e))     => IO.raiseError(e)
-        case (fiber, ExitCase.Canceled) =>
-          // We received a SIGINT
-          for {
-            _ <- logger.warn("Received shutdown signal")
-            _ <- if (config.preTerminationUnhealthy) {
-              logger.warn(s"Setting health endpoint to unhealthy") *> isHealthy.set(false)
-            } else IO.unit
-            _ <- logger.warn(s"Sleeping for ${config.preTerminationPeriod}")
-            _ <- IO.sleep(config.preTerminationPeriod)
-            _ <- logger.warn("Terminating the server")
-            _ <- signal.set(true)
-            _ <- fiber.join
-            _ <- logger.warn("Server terminated")
-          } yield ()
-      }
+      sigToExit   <- Stream.eval(SignallingRef[IO, Boolean](false))
+      sigToPause  <- Stream.eval(SignallingRef[IO, Boolean](false))
+      refExitCode <- Stream.eval(Ref[IO].of(ExitCode.Success))
+      _           <- Stream.eval(addShutdownHook(sigToPause))
+      builder     <- Stream.resource(buildServer(config, getIsHealthy(config, sigToPause)))
+      exitCode    <- builder.serveWhile(sigToExit, refExitCode).concurrently(handleSigTerm(config, sigToPause, sigToExit))
     } yield exitCode
+
+  def handleSigTerm(config: Config, sigToPause: Signal[IO, Boolean], sigToExit: Ref[IO, Boolean])(
+    implicit timer: Timer[IO]
+  ): Stream[IO, Unit] =
+    sigToPause.discrete.evalMap {
+      case true =>
+        // We got a SIGTERM
+        for {
+          _ <- logger.warn(
+            s"Initiating server shutdown. Sleeping for ${config.preTerminationPeriod} as part of graceful shutdown."
+          )
+          _ <- IO.sleep(config.preTerminationPeriod)
+          _ <- logger.warn("Terminating the server")
+          _ <- sigToExit.set(true)
+        } yield ()
+      case false =>
+        IO.unit
+    }
+
+  def getIsHealthy(config: Config, sigToPause: Ref[IO, Boolean]): IO[Boolean] =
+    if (config.preTerminationUnhealthy)
+      sigToPause.get.map { isTerminating =>
+        // healthy if not terminating
+        !isTerminating
+      }
+    else IO.pure(true)
+
+  def addShutdownHook(received: Ref[IO, Boolean]): IO[Unit] =
+    IO.delay {
+      val handler = new SignalHandler {
+        override def handle(signal: JvmSignal): Unit =
+          received.set(true).unsafeRunSync()
+      }
+      JvmSignal.handle(new JvmSignal("TERM"), handler)
+      ()
+    }
 
   def setup(config: Config, migrate: Option[MigrateFrom])(implicit cs: ContextShift[IO]): IO[ExitCode] =
     config.database match {
