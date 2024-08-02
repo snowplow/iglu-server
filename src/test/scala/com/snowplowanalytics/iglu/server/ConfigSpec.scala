@@ -85,7 +85,8 @@ class ConfigSpec extends org.specs2.Specification {
       None,
       42.seconds,
       true,
-      Config.License(false)
+      Config.License(false),
+      40
     )
     val result = Config.serverCommand.parse(input.split(" ").toList).leftMap(_.toString).flatMap(_.read)
     result must beRight(expected)
@@ -106,7 +107,8 @@ class ConfigSpec extends org.specs2.Specification {
         None,
         1.seconds,
         false,
-        Config.License(true)
+        Config.License(true),
+        50
       )
     val result = Config.serverCommand.parse(input.split(" ").toList).leftMap(_.toString).flatMap(_.read)
     result must beRight(expected)
@@ -142,7 +144,8 @@ class ConfigSpec extends org.specs2.Specification {
       Some(UUID.fromString("a71aa7d9-6cde-40f7-84b1-046d65dedf9e")),
       10.seconds,
       true,
-      Config.License(true)
+      Config.License(true),
+      100
     )
 
     val expected = json"""{
@@ -206,7 +209,8 @@ class ConfigSpec extends org.specs2.Specification {
       "preTerminationUnhealthy": true,
       "license": {
         "accept": true
-      }
+      },
+      "maxJsonDepth": 100
     }"""
 
     input.asJson must beEqualTo(expected)
@@ -239,7 +243,8 @@ class ConfigSpec extends org.specs2.Specification {
       None,
       1.seconds,
       false,
-      Config.License(false)
+      Config.License(false),
+      40
     )
     val result = Config.serverCommand.parse(input.split(" ").toList).leftMap(_.toString).flatMap(_.read)
     result must beRight(expected)

@@ -32,7 +32,7 @@ import java.time.Instant
 trait SchemaServiceSpecBase extends org.specs2.Specification with StorageAgnosticSpec {
   def sendRequests(requests: List[Request[IO]], patchesAllowed: Boolean): IO[Response[IO]] =
     sendRequestsGetResponse(storage =>
-      SchemaService.asRoutes(patchesAllowed, Webhook.WebhookClient(List(), client))(
+      SchemaService.asRoutes(patchesAllowed, Webhook.WebhookClient(List(), client), 20)(
         storage,
         None,
         SpecHelpers.ctx,
@@ -42,7 +42,7 @@ trait SchemaServiceSpecBase extends org.specs2.Specification with StorageAgnosti
 
   def getState(requests: List[Request[IO]], patchesAllowed: Boolean): IO[(List[Response[IO]], List[Schema])] =
     sendRequestsGetState(storage =>
-      SchemaService.asRoutes(patchesAllowed, Webhook.WebhookClient(List(), client))(
+      SchemaService.asRoutes(patchesAllowed, Webhook.WebhookClient(List(), client), 20)(
         storage,
         None,
         SpecHelpers.ctx,

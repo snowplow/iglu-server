@@ -23,15 +23,15 @@ import org.http4s.rho.swagger.syntax.io.createRhoMiddleware
 import SpecHelpers.toBytes
 
 class ValidationServiceSpec extends org.specs2.Specification with StorageAgnosticSpec with InMemoryStorageSpec {
-  def sendRequests(requests: List[Request[IO]]) =
-    sendRequestsGetState(storage => ValidationService.asRoutes(storage, None, SpecHelpers.ctx, createRhoMiddleware()))(
-      _ => IO.unit
-    )(
+  def sendRequests(requests: List[Request[IO]], maxJsonDepth: Int = 20) =
+    sendRequestsGetState(storage =>
+      ValidationService.asRoutes(maxJsonDepth)(storage, None, SpecHelpers.ctx, createRhoMiddleware())
+    )(_ => IO.unit)(
       requests
     )
 
-  def sendRequest(req: Request[IO]) =
-    sendRequests(List(req)).flatMap { case (responses, _) => responses.last.as[Json] }.unsafeRunSync()
+  def sendRequest(req: Request[IO], maxJsonDepth: Int = 20) =
+    sendRequests(List(req), maxJsonDepth).flatMap { case (responses, _) => responses.last.as[Json] }.unsafeRunSync()
 
   def sendRequestGetText(req: Request[IO]) =
     sendRequests(List(req))
@@ -46,6 +46,7 @@ class ValidationServiceSpec extends org.specs2.Specification with StorageAgnosti
   POST /validate/schema/jsonschema reports malformed request for non-json body $e5
   POST /validate/schema/jsonschema reports malformed JSON Schema on unknown properties $e11
   POST /validate/schema/jsonschema reports about invalid schema name $e12
+  POST /validate/schema/jsonschema reports about schema that exceeds maximum allowed JSON depth $e13
 
   POST /validate/instance reports invalid instance for the root of an instance $e6
   POST /validate/instance reports valid instance $e7
@@ -320,5 +321,58 @@ class ValidationServiceSpec extends org.specs2.Specification with StorageAgnosti
 
     response must beEqualTo(expected)
 
+  }
+
+  def e13 = {
+    val selfDescribingSchema = json"""
+      {
+        "$$schema" : "http://iglucentral.com/schemas/com.snowplowanalytics.self-desc/schema/jsonschema/1-0-0#",
+        "description": "Schema for an example event",
+        "self": {
+            "vendor": "com.snowplowanalytics",
+            "name": "example_event",
+            "format": "jsonschema",
+            "version": "1-0-0"
+        },
+        "type": "object",
+        "properties": {
+            "example_field": {
+                "type": "array",
+                "description": "the example_field is a collection of user names",
+                "users": {
+                    "type": "object",
+                    "properties": {
+                        "name": {
+                            "type": "string",
+                            "maxLength": 128
+                        }
+                    },
+                    "required": [
+                        "id"
+                    ],
+                    "additionalProperties": false
+                }
+            }
+        }
+      }"""
+
+    val expected = json"""{
+      "message" : "The schema does not conform to a JSON Schema v4 specification",
+      "report" : [
+        {
+          "message" : "Maximum allowed JSON depth exceeded",
+          "level" : "ERROR",
+          "pointer" : "/"
+        }
+      ]
+    }"""
+
+    val request = Request[IO](Method.POST, uri"/validate/schema/jsonschema")
+      .withContentType(headers.`Content-Type`(MediaType.application.json))
+      .withBodyStream(toBytes(selfDescribingSchema))
+
+    val response = sendRequest(request, 5)
+
+    response must beEqualTo(expected)
   }
 }

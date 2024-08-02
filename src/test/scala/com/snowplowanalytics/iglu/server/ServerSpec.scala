@@ -264,7 +264,8 @@ object ServerSpec {
       None,
       10.seconds,
       false,
-      Config.License(true)
+      Config.License(true),
+      20
     )
 
   private def runServer(hsts: Config.Hsts) = Server.buildServer(config(hsts), IO.pure(true)).flatMap(_.resource)

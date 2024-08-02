@@ -42,7 +42,8 @@ class SchemaService[F[+_]: Sync](
   ctx: AuthedContext[F, Permission],
   db: Storage[F],
   patchesAllowed: Boolean,
-  webhooks: Webhook.WebhookClient[F]
+  webhooks: Webhook.WebhookClient[F],
+  maxJsonDepth: Int
 ) extends RhoRoutes[F] {
 
   import swagger._
@@ -58,7 +59,7 @@ class SchemaService[F[+_]: Sync](
 
   val schemaOrJson = jsonOf[F, SchemaBody]
 
-  private val validationService = new ValidationService[F](swagger, ctx, db)
+  private val validationService = new ValidationService[F](swagger, ctx, db, maxJsonDepth)
 
   "Get a particular schema by its Iglu URI" **
     GET / 'vendor / 'name / 'format / version +? reprCanonical >>> ctx.auth |>> getSchema _
@@ -172,7 +173,7 @@ class SchemaService[F[+_]: Sync](
     supersedingInfo: SupersedingInfo
   ) =
     if (permission.canCreateSchema(schema.self.schemaKey.vendor)) {
-      ValidationService.validateJsonSchema(schema.normalize) match {
+      ValidationService.validateJsonSchema(schema.normalize, maxJsonDepth) match {
         case Validated.Invalid(report) if report.exists(_.level == Linter.Level.Error) =>
           BadRequest(IgluResponse.SchemaValidationReport(report): IgluResponse)
         case _ => addSchema(schema, isPublic, supersedingInfo)
@@ -228,14 +229,16 @@ object SchemaService {
 
   def asRoutes(
     patchesAllowed: Boolean,
-    webhook: Webhook.WebhookClient[IO]
+    webhook: Webhook.WebhookClient[IO],
+    maxJsonDepth: Int
   )(
     db: Storage[IO],
     superKey: Option[UUID],
     ctx: AuthedContext[IO, Permission],
     rhoMiddleware: RhoMiddleware[IO]
   ): HttpRoutes[IO] = {
-    val service = new SchemaService(swaggerSyntax, ctx, db, patchesAllowed, webhook).toRoutes(rhoMiddleware)
+    val service =
+      new SchemaService(swaggerSyntax, ctx, db, patchesAllowed, webhook, maxJsonDepth).toRoutes(rhoMiddleware)
     PermissionMiddleware.wrapService(db, superKey, ctx, service)
   }
 

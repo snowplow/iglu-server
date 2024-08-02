@@ -51,7 +51,8 @@ case class Config(
   superApiKey: Option[UUID],
   preTerminationPeriod: FiniteDuration,
   preTerminationUnhealthy: Boolean,
-  license: Config.License
+  license: Config.License,
+  maxJsonDepth: Int
 )
 
 object Config {

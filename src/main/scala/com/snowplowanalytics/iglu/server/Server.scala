@@ -102,10 +102,22 @@ object Server {
     blocker: Blocker,
     isHealthy: IO[Boolean],
     hsts: Config.Hsts,
-    maxPayloadSize: Long
+    maxPayloadSize: Long,
+    maxJsonDepth: Int
   )(implicit cs: ContextShift[IO]): HttpApp[IO] = {
     val serverRoutes =
-      httpRoutes(storage, superKey, debug, patchesAllowed, webhook, cache, swaggerConfig, blocker, isHealthy)
+      httpRoutes(
+        storage,
+        superKey,
+        debug,
+        patchesAllowed,
+        webhook,
+        cache,
+        swaggerConfig,
+        blocker,
+        isHealthy,
+        maxJsonDepth
+      )
     val server = Kleisli[IO, Request[IO], Response[IO]](req => Router(serverRoutes: _*).run(req).getOrElse(NotFound))
     entityLimiter(maxPayloadSize)(hstsMiddleware(hsts)(server))
   }
@@ -129,13 +141,14 @@ object Server {
     cache: CachingMiddleware.ResponseCache[IO],
     swaggerConfig: Config.Swagger,
     blocker: Blocker,
-    isHealthy: IO[Boolean]
+    isHealthy: IO[Boolean],
+    maxJsonDepth: Int
   )(implicit cs: ContextShift[IO]): List[(String, HttpRoutes[IO])] = {
     val services: List[(String, RoutesConstructor)] = List(
       "/api/meta"       -> MetaService.asRoutes(debug, patchesAllowed, isHealthy),
-      "/api/schemas"    -> SchemaService.asRoutes(patchesAllowed, webhook),
+      "/api/schemas"    -> SchemaService.asRoutes(patchesAllowed, webhook, maxJsonDepth),
       "/api/auth"       -> AuthService.asRoutes,
-      "/api/validation" -> ValidationService.asRoutes,
+      "/api/validation" -> ValidationService.asRoutes(maxJsonDepth),
       "/api/drafts"     -> DraftService.asRoutes
     )
 
@@ -200,7 +213,8 @@ object Server {
           blocker,
           isHealthy,
           config.repoServer.hsts,
-          config.repoServer.maxPayloadSize
+          config.repoServer.maxPayloadSize,
+          config.maxJsonDepth
         )
       )
       .withIdleTimeout(config.repoServer.idleTimeout.getOrElse(Http4sDefaults.IdleTimeout))

@@ -40,8 +40,13 @@ import com.snowplowanalytics.iglu.server.model.{IgluResponse, Permission, Schema
 import com.snowplowanalytics.iglu.server.codecs.JsonCodecs._
 import com.snowplowanalytics.iglu.server.codecs.UriParsers._
 
-class ValidationService[F[+_]: Sync](swagger: SwaggerSyntax[F], ctx: AuthedContext[F, Permission], db: Storage[F])
-    extends RhoRoutes[F] {
+class ValidationService[F[+_]: Sync](
+  swagger: SwaggerSyntax[F],
+  ctx: AuthedContext[F, Permission],
+  db: Storage[F],
+  maxJsonDepth: Int
+) extends RhoRoutes[F] {
+
   import swagger._
   import ValidationService._
 
@@ -56,7 +61,7 @@ class ValidationService[F[+_]: Sync](swagger: SwaggerSyntax[F], ctx: AuthedConte
   def validateSchema(format: Schema.Format, schema: Json) =
     format match {
       case Schema.Format.Jsonschema =>
-        validateJsonSchema(schema) match {
+        validateJsonSchema(schema, maxJsonDepth) match {
           case Validated.Valid(sd) =>
             val message = s"The schema provided is a valid self-describing ${sd.self.schemaKey.toSchemaUri} schema"
             Ok(IgluResponse.Message(message): IgluResponse)
@@ -93,13 +98,13 @@ class ValidationService[F[+_]: Sync](swagger: SwaggerSyntax[F], ctx: AuthedConte
 
 object ValidationService {
 
-  def asRoutes(
+  def asRoutes(maxJsonDepth: Int)(
     db: Storage[IO],
     superKey: Option[UUID],
     ctx: AuthedContext[IO, Permission],
     rhoMiddleware: RhoMiddleware[IO]
   ): HttpRoutes[IO] = {
-    val service = new ValidationService[IO](io, ctx, db).toRoutes(rhoMiddleware)
+    val service = new ValidationService[IO](io, ctx, db, maxJsonDepth).toRoutes(rhoMiddleware)
     PermissionMiddleware.wrapService(db, superKey, ctx, service)
   }
 
@@ -108,9 +113,9 @@ object ValidationService {
   val NotSelfDescribing = Message(Pointer.Root, "JSON Schema is not self-describing", Level.Error)
   val NotSchema         = Message(Pointer.Root, "Cannot extract JSON Schema", Level.Error)
 
-  def validateJsonSchema(schema: Json): LintReport[SelfDescribingSchema[Json]] = {
+  def validateJsonSchema(schema: Json, maxJsonDepth: Int): LintReport[SelfDescribingSchema[Json]] = {
     val generalCheck =
-      SelfSyntaxChecker.validateSchema(schema)
+      SelfSyntaxChecker.validateSchema(schema, maxJsonDepth)
 
     val selfDescribingCheck = SelfDescribingSchema
       .parse(schema)

@@ -26,7 +26,7 @@ import org.http4s.{Header, Headers, Method, Request, Response}
 trait SupersedingLogicSpecBase extends org.specs2.Specification with StorageAgnosticSpec {
   private def sendRequests(requests: List[Request[IO]]): IO[(List[Response[IO]], Unit)] =
     sendRequestsGetState(storage =>
-      SchemaService.asRoutes(patchesAllowed = true, Webhook.WebhookClient(List(), client))(
+      SchemaService.asRoutes(patchesAllowed = true, Webhook.WebhookClient(List(), client), 20)(
         storage,
         None,
         SpecHelpers.ctx,
