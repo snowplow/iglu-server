@@ -86,8 +86,9 @@ class SchemaService[F[+_]: Sync](
     POST +? isPublic >>> ctx.auth ^ schemaOrJson |>> postSchema _
 
   "Schema validation endpoint (deprecated)" **
-    POST / "validate" / 'vendor / 'name / "jsonschema" / 'version ^ jsonDecoder[F] |>> {
-    (_: String, _: String, _: String, json: Json) => validationService.validateSchema(Schema.Format.Jsonschema, json)
+    POST / "validate" / 'vendor / 'name / "jsonschema" / 'version >>> ctx.auth ^ jsonDecoder[F] |>> {
+    (_: String, _: String, _: String, authInfo: Permission, json: Json) =>
+      validationService.validateSchema(Schema.Format.Jsonschema, authInfo, json)
   }
 
   def getSchema(

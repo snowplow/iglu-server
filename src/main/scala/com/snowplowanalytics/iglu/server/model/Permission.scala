@@ -58,6 +58,10 @@ case class Permission(
   /** Check if user has enough rights to create particular schema */
   def canCreatePermission(requestedVendor: String): Boolean =
     key.contains(Permission.KeyAction.Create) && vendor.check(requestedVendor)
+
+  /** It is enough to have any valid apikey to perform validation */
+  def canValidate: Boolean =
+    schema.nonEmpty || key.nonEmpty
 }
 
 object Permission {

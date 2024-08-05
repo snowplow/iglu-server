@@ -53,45 +53,53 @@ class ValidationService[F[+_]: Sync](
   val schemaFormat = pathVar[Schema.Format]("format", "Schema format, e.g. jsonschema")
 
   "This route allows you to validate schemas" **
-    POST / "validate" / "schema" / schemaFormat ^ jsonDecoder[F] |>> validateSchema _
+    POST / "validate" / "schema" / schemaFormat >>> ctx.auth ^ jsonDecoder[F] |>> validateSchema _
 
   "This route allows you to validate self-describing instances" **
     POST / "validate" / "instance" >>> ctx.auth ^ jsonDecoder[F] |>> validateData _
 
-  def validateSchema(format: Schema.Format, schema: Json) =
-    format match {
-      case Schema.Format.Jsonschema =>
-        validateJsonSchema(schema, maxJsonDepth) match {
-          case Validated.Valid(sd) =>
-            val message = s"The schema provided is a valid self-describing ${sd.self.schemaKey.toSchemaUri} schema"
-            Ok(IgluResponse.Message(message): IgluResponse)
-          case Validated.Invalid(report) =>
-            Ok(IgluResponse.SchemaValidationReport(report): IgluResponse)
-        }
+  def validateSchema(format: Schema.Format, authInfo: Permission, schema: Json) =
+    if (!authInfo.canValidate) {
+      Forbidden("")
+    } else {
+      format match {
+        case Schema.Format.Jsonschema =>
+          validateJsonSchema(schema, maxJsonDepth) match {
+            case Validated.Valid(sd) =>
+              val message = s"The schema provided is a valid self-describing ${sd.self.schemaKey.toSchemaUri} schema"
+              Ok(IgluResponse.Message(message): IgluResponse)
+            case Validated.Invalid(report) =>
+              Ok(IgluResponse.SchemaValidationReport(report): IgluResponse)
+          }
+      }
     }
 
   def validateData(authInfo: Permission, instance: Json) =
-    SelfDescribingData.parse(instance) match {
-      case Right(SelfDescribingData(key, data)) =>
-        for {
-          schema <- db.getSchema(SchemaMap(key))
-          response <- schema match {
-            case Some(Schema(_, meta, schemaBody, _)) if meta.isPublic || authInfo.canRead(key.vendor) =>
-              CirceValidator.validate(data, schemaBody) match {
-                case Left(ValidatorError.InvalidData(report)) =>
-                  Ok(IgluResponse.InstanceValidationReport(report): IgluResponse)
-                case Left(ValidatorError.InvalidSchema(_)) =>
-                  val message = s"Schema ${key.toSchemaUri} fetched from DB is invalid"
-                  InternalServerError(IgluResponse.Message(message): IgluResponse)
-                case Right(_) =>
-                  Ok(IgluResponse.Message(s"Instance is valid ${key.toSchemaUri}"): IgluResponse)
-              }
-            case _ =>
-              NotFound(IgluResponse.SchemaNotFound: IgluResponse)
-          }
-        } yield response
-      case Left(error) =>
-        BadRequest(IgluResponse.Message(s"JSON payload is not self-describing, ${error.code}"): IgluResponse)
+    if (!authInfo.canValidate) {
+      NotFound(IgluResponse.SchemaNotFound: IgluResponse)
+    } else {
+      SelfDescribingData.parse(instance) match {
+        case Right(SelfDescribingData(key, data)) =>
+          for {
+            schema <- db.getSchema(SchemaMap(key))
+            response <- schema match {
+              case Some(Schema(_, meta, schemaBody, _)) if meta.isPublic || authInfo.canRead(key.vendor) =>
+                CirceValidator.validate(data, schemaBody) match {
+                  case Left(ValidatorError.InvalidData(report)) =>
+                    Ok(IgluResponse.InstanceValidationReport(report): IgluResponse)
+                  case Left(ValidatorError.InvalidSchema(_)) =>
+                    val message = s"Schema ${key.toSchemaUri} fetched from DB is invalid"
+                    InternalServerError(IgluResponse.Message(message): IgluResponse)
+                  case Right(_) =>
+                    Ok(IgluResponse.Message(s"Instance is valid ${key.toSchemaUri}"): IgluResponse)
+                }
+              case _ =>
+                NotFound(IgluResponse.SchemaNotFound: IgluResponse)
+            }
+          } yield response
+        case Left(error) =>
+          BadRequest(IgluResponse.Message(s"JSON payload is not self-describing, ${error.code}"): IgluResponse)
+      }
     }
 
 }
