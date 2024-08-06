@@ -1,3 +1,13 @@
+Version 0.13.0 (2024-08-06)
+---------------------------
+Bump jackson to 2.15.0
+Add auth to validation endpoint
+Make maxJsonDepth in SelfSyntaxChecker.validateSchema configurable
+Fix graceful shutdown to be more selective about when it sleeps
+Bump sbt-snowplow-release to 0.3.2
+Do not allow requests with too large payload
+Change SLULA license from 1.0 to 1.1
+
 Version 0.12.1 (2024-03-29)
 ---------------------------
 Bump postgresql to 42.5.5 (#154)
