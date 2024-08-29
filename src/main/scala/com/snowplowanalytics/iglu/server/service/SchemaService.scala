@@ -19,8 +19,7 @@ import cats.implicits._
 
 import io.circe.Json
 
-import org.http4s.HttpRoutes
-import org.http4s.circe._
+import org.http4s.{DecodeResult, HttpRoutes, InvalidMessageBodyFailure}
 import org.http4s.rho.{AuthedContext, RhoMiddleware, RhoRoutes}
 import org.http4s.rho.swagger.SwaggerSyntax
 import org.http4s.rho.swagger.syntax.{io => swaggerSyntax}
@@ -57,7 +56,19 @@ class SchemaService[F[+_]: Sync](
   val version  = pathVar[SchemaVer.Full]("version", "SchemaVer")
   val isPublic = paramD[Boolean]("isPublic", false, "Should schema be created as public")
 
-  val schemaOrJson = jsonOf[F, SchemaBody]
+  val schemaOrJson = Utils.jsonDecoderWithDepthCheck(maxJsonDepth).flatMapR { json =>
+    json
+      .as[SchemaBody]
+      .fold(
+        failure =>
+          DecodeResult.failureT[F, SchemaBody](
+            InvalidMessageBodyFailure(s"Could not decode JSON: ${json.noSpaces}", Some(failure))
+          ),
+        DecodeResult.successT[F, SchemaBody](_)
+      )
+  }
+
+  val jsonBody = Utils.jsonDecoderWithDepthCheck(maxJsonDepth)
 
   private val validationService = new ValidationService[F](swagger, ctx, db, maxJsonDepth)
 
@@ -86,7 +97,7 @@ class SchemaService[F[+_]: Sync](
     POST +? isPublic >>> ctx.auth ^ schemaOrJson |>> postSchema _
 
   "Schema validation endpoint (deprecated)" **
-    POST / "validate" / 'vendor / 'name / "jsonschema" / 'version >>> ctx.auth ^ jsonDecoder[F] |>> {
+    POST / "validate" / 'vendor / 'name / "jsonschema" / 'version >>> ctx.auth ^ jsonBody |>> {
     (_: String, _: String, _: String, authInfo: Permission, json: Json) =>
       validationService.validateSchema(Schema.Format.Jsonschema, authInfo, json)
   }

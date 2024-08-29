@@ -24,7 +24,7 @@ import com.snowplowanalytics.iglu.core.{SchemaKey, SchemaMap, SchemaVer, SelfDes
 import com.snowplowanalytics.iglu.server.codecs.JsonCodecs._
 import com.snowplowanalytics.iglu.server.model.{IgluResponse, Schema}
 import com.snowplowanalytics.iglu.server.model.SchemaSpec.testSchema
-import com.snowplowanalytics.iglu.server.SpecHelpers.SchemaKeyUri
+import com.snowplowanalytics.iglu.server.SpecHelpers._
 import org.http4s.rho.swagger.syntax.io.createRhoMiddleware
 
 import java.time.Instant
@@ -73,6 +73,7 @@ trait SchemaServiceSpecBase extends org.specs2.Specification with StorageAgnosti
     PUT request with 'supersededBy' field adds schema with superseding info when patches aren't allowed $e18
     PUT request with 'supersedes' field adds schema with superseding info $e19
     Prohibits adding schema superseded by version smaller than itself $e20
+    Doesn't accept JSON body that exceeds maximum allowed JSON depth $e21
   """
 
   def e1 = {
@@ -728,6 +729,32 @@ trait SchemaServiceSpecBase extends org.specs2.Specification with StorageAgnosti
       .and(responseStatus must beEqualTo(expectedResponseStatus))
 
     matchStatement.unsafeRunSync()
+  }
+
+  def e21 = {
+    val deepJsonSchema = createDeepJsonSchema(100000)
+    val deepJsonArray  = createDeepJsonArray(1000000)
+    val testSchemaURI  = uri"/com.acme/deep/jsonschema/1-0-0"
+
+    val expected = (422, "The request body was invalid.")
+
+    def executeTest(httpMethod: Method, uri: Uri, body: String) = {
+      val request = Request[IO](httpMethod, uri)
+        .withHeaders(Headers.of(Header("apikey", SpecHelpers.superKey.toString)))
+        .withContentType(headers.`Content-Type`(MediaType.application.json))
+        .withBodyStream(toBytes(body))
+      val response = sendRequests(List(request), false)
+        .map(r => (r.status.code, r.bodyText.compile.foldMonoid.unsafeRunSync()))
+        .unsafeRunSync()
+      response must beEqualTo(expected)
+    }
+
+    executeTest(Method.PUT, testSchemaURI, deepJsonSchema)
+      .and(executeTest(Method.PUT, testSchemaURI, deepJsonArray))
+      .and(executeTest(Method.POST, uri"", deepJsonSchema))
+      .and(executeTest(Method.POST, uri"", deepJsonArray))
+      .and(executeTest(Method.POST, uri"/validate/com.acme/deep/jsonschema/1-0-0", deepJsonSchema))
+      .and(executeTest(Method.POST, uri"/validate/com.acme/deep/jsonschema/1-0-0", deepJsonArray))
   }
 }
 

@@ -20,7 +20,7 @@ import org.http4s.{Service => _, _}
 import org.http4s.implicits._
 import org.http4s.circe._
 import org.http4s.rho.swagger.syntax.io.createRhoMiddleware
-import SpecHelpers.toBytes
+import SpecHelpers._
 
 class ValidationServiceSpec extends org.specs2.Specification with StorageAgnosticSpec with InMemoryStorageSpec {
   def sendRequests(requests: List[Request[IO]], maxJsonDepth: Int = 20) =
@@ -46,7 +46,6 @@ class ValidationServiceSpec extends org.specs2.Specification with StorageAgnosti
   POST /validate/schema/jsonschema reports malformed request for non-json body $e5
   POST /validate/schema/jsonschema reports malformed JSON Schema on unknown properties $e11
   POST /validate/schema/jsonschema reports about invalid schema name $e12
-  POST /validate/schema/jsonschema reports about schema that exceeds maximum allowed JSON depth $e13
   POST /validate/schema/jsonschema returns error when given apikey doesn't exist $e14
   POST /validate/schema/jsonschema performs as expected with any existing key $e15
 
@@ -56,6 +55,8 @@ class ValidationServiceSpec extends org.specs2.Specification with StorageAgnosti
   POST /validate/instance validates an instance with private schema if apikey is appropriate $e9
   POST /validate/instance pretends a private schema does not exist if apikey is inappropriate $e10
   POST /validate/instance pretends a private schema does not exist if apikey doesn't exist $e16
+
+  POST /validate endpoints don't accept JSON body that exceeds maximum allowed JSON depth $e17
   """
 
   def e1 = {
@@ -340,60 +341,6 @@ class ValidationServiceSpec extends org.specs2.Specification with StorageAgnosti
 
   }
 
-  def e13 = {
-    val selfDescribingSchema = json"""
-      {
-        "$$schema" : "http://iglucentral.com/schemas/com.snowplowanalytics.self-desc/schema/jsonschema/1-0-0#",
-        "description": "Schema for an example event",
-        "self": {
-            "vendor": "com.snowplowanalytics",
-            "name": "example_event",
-            "format": "jsonschema",
-            "version": "1-0-0"
-        },
-        "type": "object",
-        "properties": {
-            "example_field": {
-                "type": "array",
-                "description": "the example_field is a collection of user names",
-                "users": {
-                    "type": "object",
-                    "properties": {
-                        "name": {
-                            "type": "string",
-                            "maxLength": 128
-                        }
-                    },
-                    "required": [
-                        "id"
-                    ],
-                    "additionalProperties": false
-                }
-            }
-        }
-      }"""
-
-    val expected = json"""{
-      "message" : "The schema does not conform to a JSON Schema v4 specification",
-      "report" : [
-        {
-          "message" : "Maximum allowed JSON depth exceeded",
-          "level" : "ERROR",
-          "pointer" : "/"
-        }
-      ]
-    }"""
-
-    val request = Request[IO](Method.POST, uri"/validate/schema/jsonschema")
-      .withHeaders(Headers.of(Header("apikey", SpecHelpers.readKey.toString)))
-      .withContentType(headers.`Content-Type`(MediaType.application.json))
-      .withBodyStream(toBytes(selfDescribingSchema))
-
-    val response = sendRequest(request, 5)
-
-    response must beEqualTo(expected)
-  }
-
   def e14 = {
     val selfDescribingSchema = json"""
         {
@@ -470,5 +417,31 @@ class ValidationServiceSpec extends org.specs2.Specification with StorageAgnosti
     val bodyExpectation   = response.as[Json].unsafeRunSync() must beEqualTo(expected)
     val statusExpectation = response.status.code must beEqualTo(404)
     bodyExpectation.and(statusExpectation)
+  }
+
+  def e17 = {
+    val deepJsonSchema = createDeepJsonSchema(100000)
+    val deepJsonArray  = createDeepJsonArray(1000000)
+    val deepSDJ        = createDeepSDJ(100000)
+    val expected       = List((422, "The request body was invalid."))
+
+    def executeTest(uri: Uri, body: String) = {
+      val request = Request[IO](Method.POST, uri)
+        .withHeaders(Headers.of(Header("apikey", SpecHelpers.readKey.toString)))
+        .withContentType(headers.`Content-Type`(MediaType.application.json))
+        .withBodyStream(toBytes(body))
+      val response = sendRequests(List(request), 40)
+        .map {
+          case (responses, _) =>
+            responses.map(r => (r.status.code, r.bodyText.compile.foldMonoid.unsafeRunSync()))
+        }
+        .unsafeRunSync()
+      response must beEqualTo(expected)
+    }
+
+    executeTest(uri"/validate/schema/jsonschema", deepJsonSchema)
+      .and(executeTest(uri"/validate/schema/jsonschema", deepJsonArray))
+      .and(executeTest(uri"/validate/instance", deepSDJ))
+      .and(executeTest(uri"/validate/instance", deepJsonArray))
   }
 }

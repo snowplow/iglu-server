@@ -83,10 +83,60 @@ object SpecHelpers {
     drafts
   )
 
-  def toBytes(entity: Json) =
-    Stream.emits(entity.noSpaces.stripMargin.getBytes).covary[IO]
+  def toBytes(entity: Json): Stream[IO, Byte] =
+    toBytes(entity.noSpaces.stripMargin)
+
+  def toBytes(string: String): Stream[IO, Byte] =
+    Stream.emits(string.getBytes).covary[IO]
 
   implicit class SchemaKeyUri(schemaKey: SchemaKey) {
     def uri: Uri = Uri.unsafeFromString(schemaKey.toPath)
+  }
+
+  def createDeepJsonSchema(depth: Int): String = {
+    val s = createDeepJson(
+      depth,
+      """{"l": { "properties": """,
+      """, "type": "object", "description": "l"}}""",
+      s"""{ "stop_$depth": { "type": "string", "maxLength": 100, "description": "stop"}}"""
+    )
+    s"""
+      {
+        "$$schema": "http://iglucentral.com/schemas/com.snowplowanalytics.self-desc/schema/jsonschema/1-0-0#",
+        "type": "object",
+        "description": "Deep schema for testing",
+        "self": {
+          "vendor": "com.acme",
+          "format": "jsonschema",
+          "version": "1-0-0",
+          "name": "deep"
+        },
+        "properties": $s
+      }
+    """
+  }
+
+  def createDeepSDJ(depth: Int): String = {
+    val s = createDeepJson(depth, """{"1":""", "}", s""""depth-$depth"""")
+    s"""
+      {
+        "schema":"iglu:com.acme/deep/jsonschema/1-0-0",
+        "data": $s
+      }
+    """
+  }
+
+  def createDeepJsonArray(depth: Int): String =
+    createDeepJson(depth, "[", "]", s""""depth-$depth"""")
+
+  def createDeepJson(
+    depth: Int,
+    p: String,
+    s: String,
+    middle: String
+  ): String = {
+    val prefix = (1 to depth).map(_ => p).mkString
+    val suffix = (1 to depth).map(_ => s).mkString
+    s"""$prefix$middle$suffix"""
   }
 }

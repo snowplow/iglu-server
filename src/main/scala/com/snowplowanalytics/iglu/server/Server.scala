@@ -149,7 +149,7 @@ object Server {
       "/api/schemas"    -> SchemaService.asRoutes(patchesAllowed, webhook, maxJsonDepth),
       "/api/auth"       -> AuthService.asRoutes,
       "/api/validation" -> ValidationService.asRoutes(maxJsonDepth),
-      "/api/drafts"     -> DraftService.asRoutes
+      "/api/drafts"     -> DraftService.asRoutes(maxJsonDepth)
     )
 
     val debugRoute  = "/api/debug" -> DebugService.asRoutes(storage, ioSwagger.createRhoMiddleware())

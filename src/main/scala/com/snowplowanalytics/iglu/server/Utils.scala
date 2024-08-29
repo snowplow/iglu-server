@@ -10,10 +10,16 @@
 
 package com.snowplowanalytics.iglu.server
 
-import io.circe.Encoder
+import io.circe.{Encoder, Json}
 import io.circe.syntax._
 
+import cats.implicits._
+import cats.effect.Sync
+
 import fs2.{Stream, text}
+
+import org.http4s.{EntityDecoder, InvalidMessageBodyFailure}
+import org.http4s.circe.jsonDecoder
 
 import com.snowplowanalytics.iglu.core.{SchemaKey, SchemaMap, SchemaVer}
 
@@ -25,4 +31,24 @@ object Utils {
   def toBytes[F[_], A: Encoder](a: A): Stream[F, Byte] =
     Stream.emit(a.asJson.noSpaces).through(text.utf8Encode)
 
+  def jsonDecoderWithDepthCheck[F[_]: Sync](maxJsonDepth: Int): EntityDecoder[F, Json] =
+    jsonDecoder[F].transform(
+      _.flatMap { json =>
+        if (checkIfExceedMaxDepth(json, maxJsonDepth))
+          InvalidMessageBodyFailure("Maximum allowed JSON depth exceeded").asLeft
+        else json.asRight
+      }
+    )
+
+  private def checkIfExceedMaxDepth(json: Json, maxJsonDepth: Int): Boolean =
+    if (maxJsonDepth <= 0) true
+    else
+      json.fold(
+        jsonNull = false,
+        jsonBoolean = _ => false,
+        jsonNumber = _ => false,
+        jsonString = _ => false,
+        jsonArray = _.exists(checkIfExceedMaxDepth(_, maxJsonDepth - 1)),
+        jsonObject = _.toList.exists { case (_, j) => checkIfExceedMaxDepth(j, maxJsonDepth - 1) }
+      )
 }

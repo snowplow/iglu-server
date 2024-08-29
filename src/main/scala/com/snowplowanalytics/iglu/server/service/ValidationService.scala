@@ -15,7 +15,6 @@ import java.util.UUID
 import io.circe.Json
 
 import org.http4s.HttpRoutes
-import org.http4s.circe._
 import org.http4s.rho.{AuthedContext, RhoMiddleware, RhoRoutes}
 import org.http4s.rho.swagger.SwaggerSyntax
 import org.http4s.rho.swagger.syntax.io
@@ -34,6 +33,7 @@ import com.snowplowanalytics.iglu.schemaddl.jsonschema.{Pointer, SelfSyntaxCheck
 import com.snowplowanalytics.iglu.schemaddl.jsonschema.SanityLinter.lint
 import com.snowplowanalytics.iglu.schemaddl.jsonschema.Linter.{Level, Message, allLintersMap}
 
+import com.snowplowanalytics.iglu.server.Utils
 import com.snowplowanalytics.iglu.server.storage.Storage
 import com.snowplowanalytics.iglu.server.middleware.PermissionMiddleware
 import com.snowplowanalytics.iglu.server.model.{IgluResponse, Permission, Schema}
@@ -50,13 +50,15 @@ class ValidationService[F[+_]: Sync](
   import swagger._
   import ValidationService._
 
+  val jsonBody = Utils.jsonDecoderWithDepthCheck(maxJsonDepth)
+
   val schemaFormat = pathVar[Schema.Format]("format", "Schema format, e.g. jsonschema")
 
   "This route allows you to validate schemas" **
-    POST / "validate" / "schema" / schemaFormat >>> ctx.auth ^ jsonDecoder[F] |>> validateSchema _
+    POST / "validate" / "schema" / schemaFormat >>> ctx.auth ^ jsonBody |>> validateSchema _
 
   "This route allows you to validate self-describing instances" **
-    POST / "validate" / "instance" >>> ctx.auth ^ jsonDecoder[F] |>> validateData _
+    POST / "validate" / "instance" >>> ctx.auth ^ jsonBody |>> validateData _
 
   def validateSchema(format: Schema.Format, authInfo: Permission, schema: Json) =
     if (!authInfo.canValidate) {
