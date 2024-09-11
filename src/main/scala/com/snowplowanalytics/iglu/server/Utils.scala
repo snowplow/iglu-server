@@ -10,7 +10,7 @@
 
 package com.snowplowanalytics.iglu.server
 
-import io.circe.{Encoder, Json}
+import io.circe.{Decoder, Encoder, Json}
 import io.circe.syntax._
 
 import cats.implicits._
@@ -18,7 +18,7 @@ import cats.effect.Sync
 
 import fs2.{Stream, text}
 
-import org.http4s.{EntityDecoder, InvalidMessageBodyFailure}
+import org.http4s.{DecodeResult, EntityDecoder, InvalidMessageBodyFailure}
 import org.http4s.circe.jsonDecoder
 
 import com.snowplowanalytics.iglu.core.{SchemaKey, SchemaMap, SchemaVer}
@@ -30,6 +30,19 @@ object Utils {
 
   def toBytes[F[_], A: Encoder](a: A): Stream[F, Byte] =
     Stream.emit(a.asJson.noSpaces).through(text.utf8Encode)
+
+  def jsonOfWithDepthCheck[F[_]: Sync, A: Decoder](maxJsonDepth: Int): EntityDecoder[F, A] =
+    jsonDecoderWithDepthCheck(maxJsonDepth).flatMapR { json =>
+      json
+        .as[A]
+        .fold(
+          failure =>
+            DecodeResult.failureT[F, A](
+              InvalidMessageBodyFailure(s"Could not decode JSON body", Some(failure))
+            ),
+          DecodeResult.successT[F, A](_)
+        )
+    }
 
   def jsonDecoderWithDepthCheck[F[_]: Sync](maxJsonDepth: Int): EntityDecoder[F, Json] =
     jsonDecoder[F].transform(

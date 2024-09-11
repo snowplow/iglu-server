@@ -18,11 +18,16 @@ import org.http4s.rho.swagger.syntax.io.createRhoMiddleware
 
 import java.util.UUID
 import com.snowplowanalytics.iglu.server.storage.InMemory
+import com.snowplowanalytics.iglu.server.SpecHelpers._
 
 class AuthServiceSpec extends org.specs2.Specification with StorageAgnosticSpec with InMemoryStorageSpec {
-  def getState(request: Request[IO], superApiKey: Option[UUID] = None): IO[(List[Response[IO]], InMemory.State)] =
+  def getState(
+    request: Request[IO],
+    superApiKey: Option[UUID] = None,
+    maxJsonDepth: Int = 20
+  ): IO[(List[Response[IO]], InMemory.State)] =
     sendRequestsGetState[InMemory.State](storage =>
-      AuthService.asRoutes(storage, superApiKey, SpecHelpers.ctx, createRhoMiddleware())
+      AuthService.asRoutes(maxJsonDepth)(storage, superApiKey, SpecHelpers.ctx, createRhoMiddleware())
     )(storage => storage.asInstanceOf[InMemory[IO]].ref.get)(List(request))
 
   def is = s2"""
@@ -32,6 +37,7 @@ class AuthServiceSpec extends org.specs2.Specification with StorageAgnosticSpec 
   /keygen doesn't authorize without apikey header $e4
   /keygen doesn't authorize with unkown apikey in header $e5
   /keygen deletes key $e6
+  /keygen rejects JSON body that exceeds maximum allowed JSON depth $e7
   """
 
   def e1 = {
@@ -149,5 +155,32 @@ class AuthServiceSpec extends org.specs2.Specification with StorageAgnosticSpec 
     val deletedResponse    = responses.map(_.status) must beEqualTo(List(Status.Ok))
 
     nokey.and(deletedResponse)
+  }
+
+  def e7 = {
+    val deepJsonSchema = createDeepJsonSchema(100000)
+    val deepJsonArray  = createDeepJsonArray(1000000)
+    val wrongApikey    = "c99ce0f9-cb5b-4b6f-88f3-2baed041be9b"
+
+    def executeTest(body: String, apikey: String) = {
+      val req = Request(
+        Method.POST,
+        Uri.uri("/keygen"),
+        headers = Headers.of(Header("apikey", apikey)),
+        body = toBytes(body)
+      )
+
+      val expected = List((422, "The request body was invalid."))
+
+      val (resp, _) = getState(req).unsafeRunSync()
+      val result    = resp.map(r => (r.status.code, r.bodyText.compile.foldMonoid.unsafeRunSync()))
+
+      result must beEqualTo(expected)
+    }
+
+    executeTest(deepJsonSchema, SpecHelpers.superKey.toString)
+    executeTest(deepJsonArray, wrongApikey)
+    executeTest(deepJsonSchema, SpecHelpers.superKey.toString)
+    executeTest(deepJsonArray, wrongApikey)
   }
 }

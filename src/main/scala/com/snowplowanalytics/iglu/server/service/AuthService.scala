@@ -33,18 +33,24 @@ import com.snowplowanalytics.iglu.server.model.Permission
 import com.snowplowanalytics.iglu.server.model.IgluResponse
 import com.snowplowanalytics.iglu.server.storage.Storage
 
-class AuthService[F[+_]: Sync](swagger: SwaggerSyntax[F], ctx: AuthedContext[F, Permission], db: Storage[F])
-    extends RhoRoutes[F] {
+class AuthService[F[+_]: Sync](
+  swagger: SwaggerSyntax[F],
+  ctx: AuthedContext[F, Permission],
+  db: Storage[F],
+  maxJsonDepth: Int
+) extends RhoRoutes[F] {
   import swagger._
   import AuthService._
 
   val apikey = paramD[UUID]("key", "UUID apikey to delete")
 
+  val jsonGenerateKey = Utils.jsonOfWithDepthCheck[F, GenerateKey](maxJsonDepth)
+
   "Route to delete api key" **
     DELETE / "keygen" +? apikey >>> ctx.auth |>> deleteKey _
 
   "Route to generate new keys" **
-    POST / "keygen" >>> ctx.auth ^ jsonOf[F, GenerateKey] |>> { (authInfo: Permission, gk: GenerateKey) =>
+    POST / "keygen" >>> ctx.auth ^ jsonGenerateKey |>> { (authInfo: Permission, gk: GenerateKey) =>
     if (authInfo.key.contains(Permission.KeyAction.Create)) {
       val vendorPrefix = Permission.Vendor.parse(gk.vendorPrefix)
       if (authInfo.canCreatePermission(vendorPrefix.asString)) {
@@ -71,13 +77,13 @@ object AuthService {
 
   implicit val schemaGenerateReq: Decoder[GenerateKey] = deriveDecoder[GenerateKey]
 
-  def asRoutes(
+  def asRoutes(maxJsonDepth: Int)(
     db: Storage[IO],
     superKey: Option[UUID],
     ctx: AuthedContext[IO, Permission],
     rhoMiddleware: RhoMiddleware[IO]
   ): HttpRoutes[IO] = {
-    val service = new AuthService(swaggerSyntax, ctx, db).toRoutes(rhoMiddleware)
+    val service = new AuthService(swaggerSyntax, ctx, db, maxJsonDepth).toRoutes(rhoMiddleware)
     PermissionMiddleware.wrapService(db, superKey, ctx, service)
   }
 }

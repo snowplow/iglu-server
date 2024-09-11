@@ -147,7 +147,7 @@ object Server {
     val services: List[(String, RoutesConstructor)] = List(
       "/api/meta"       -> MetaService.asRoutes(debug, patchesAllowed, isHealthy),
       "/api/schemas"    -> SchemaService.asRoutes(patchesAllowed, webhook, maxJsonDepth),
-      "/api/auth"       -> AuthService.asRoutes,
+      "/api/auth"       -> AuthService.asRoutes(maxJsonDepth),
       "/api/validation" -> ValidationService.asRoutes(maxJsonDepth),
       "/api/drafts"     -> DraftService.asRoutes(maxJsonDepth)
     )
