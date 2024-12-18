@@ -32,6 +32,8 @@ jobs:
       uses: actions/setup-java@v1
       with:
         java-version: 11
+    - name: Install sbt
+      uses: sbt/setup-sbt@v1
     - name: Run tests
       run: sbt +test
     - name: Check Scala formatting
@@ -52,6 +54,8 @@ jobs:
       uses: actions/setup-java@v1
       with:
         java-version: 11
+    - name: Install sbt
+      uses: sbt/setup-sbt@v1
     - name: Get current version
       id: ver
       run: echo "::set-output name=tag::${GITHUB_REF#refs/tags/}"
@@ -80,6 +84,8 @@ jobs:
       uses: actions/setup-java@v1
       with:
         java-version: 11
+    - name: Install sbt
+      uses: sbt/setup-sbt@v1
     - name: Docker login
       run: docker login -u $DOCKER_USERNAME -p $DOCKER_PASSWORD
       env:
