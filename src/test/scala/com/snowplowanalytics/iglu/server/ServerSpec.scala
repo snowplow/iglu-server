@@ -2,8 +2,8 @@
  * Copyright (c) 2014-present Snowplow Analytics Ltd. All rights reserved.
  *
  * This software is made available by Snowplow Analytics, Ltd.,
- * under the terms of the Snowplow Limited Use License Agreement, Version 1.0
- * located at https://docs.snowplow.io/limited-use-license-1.0
+ * under the terms of the Snowplow Limited Use License Agreement, Version 1.1
+ * located at https://docs.snowplow.io/limited-use-license-1.1
  * BY INSTALLING, DOWNLOADING, ACCESSING, USING OR DISTRIBUTING ANY PORTION
  * OF THE SOFTWARE, YOU AGREE TO THE TERMS OF SUCH LICENSE AGREEMENT.
  */
@@ -14,6 +14,7 @@ import cats.implicits._
 import cats.effect.{ContextShift, IO, Resource, Timer}
 
 import io.circe.Json
+import io.circe.parser.{parse => parseJson}
 import io.circe.literal._
 
 import org.http4s._
@@ -44,6 +45,8 @@ class ServerSpec extends Specification {
   Create a new private schema via PUT, return it with proper apikey, hide for no apikey $e3
   Create a new public schema via POST, get it from /schemas, delete it $e4
   Return an HSTS header when configured to do so $e5
+  Return 413 when size of the schema that is sent to /schemas exceeds the max payload size $e6
+  Return 413 when size of the schema that is sent to /validation exceeds the max payload size $e7
   ${action(System.clearProperty("org.slf4j.simpleLogger.defaultLogLevel"))}
   """
   import ServerSpec._
@@ -178,6 +181,52 @@ class ServerSpec extends Specification {
 
     on.and(off)
   }
+
+  def e6 = {
+    val schema = SelfDescribingSchema[Json](
+      SchemaMap("com.acme", "first", "jsonschema", SchemaVer.Full(1, 0, 0)),
+      parseJson(s"""{"properties": {"${"a" * 10000}": {"type": "string"}}}""").toOption.get
+    ).normalize
+
+    val reqs = List(
+      Request[IO](Method.POST, uri"/".withQueryParam("isPublic", "true"))
+        .withEntity(schema)
+        .withHeaders(Header("apikey", InMemory.DummySuperKey.toString))
+    )
+
+    val expected = List(
+      TestResponse(413, json"""{"message":"The payload is too large"}""")
+    )
+
+    val action = for {
+      responses <- ServerSpec.executeRequests(reqs)
+      results   <- responses.traverse(res => TestResponse.build[Json](res))
+    } yield results
+
+    execute(action) must beEqualTo(expected)
+  }
+
+  def e7 = {
+    val schema = SelfDescribingSchema[Json](
+      SchemaMap("com.acme", "first", "jsonschema", SchemaVer.Full(1, 0, 0)),
+      parseJson(s"""{"properties": {"${"a" * 10000}": {"type": "string"}}}""").toOption.get
+    ).normalize
+
+    val reqs = List(
+      Request[IO](Method.POST, uri"http://localhost:8080/api/validation/validate/schema/jsonschema").withEntity(schema)
+    )
+
+    val expected = List(
+      TestResponse(413, json"""{"message":"The payload is too large"}""")
+    )
+
+    val action = for {
+      responses <- ServerSpec.executeRequests(reqs)
+      results   <- responses.traverse(res => TestResponse.build[Json](res))
+    } yield results
+
+    execute(action) must beEqualTo(expected)
+  }
 }
 
 object ServerSpec {
@@ -189,7 +238,7 @@ object ServerSpec {
     .StorageConfig
     .ConnectionPool
     .Hikari(None, None, None, None, Config.ThreadPool.Cached, Config.ThreadPool.Cached)
-  def httpConfig(hsts: Config.Hsts) = Config.Http("0.0.0.0", 8080, None, None, Config.ThreadPool.Cached, hsts)
+  def httpConfig(hsts: Config.Hsts) = Config.Http("0.0.0.0", 8080, None, None, Config.ThreadPool.Cached, hsts, 10000)
   val storageConfig =
     Config
       .StorageConfig
@@ -215,7 +264,8 @@ object ServerSpec {
       None,
       10.seconds,
       false,
-      Config.License(true)
+      Config.License(true),
+      20
     )
 
   private def runServer(hsts: Config.Hsts) = Server.buildServer(config(hsts), IO.pure(true)).flatMap(_.resource)

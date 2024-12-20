@@ -2,8 +2,8 @@
  * Copyright (c) 2014-present Snowplow Analytics Ltd. All rights reserved.
  *
  * This software is made available by Snowplow Analytics, Ltd.,
- * under the terms of the Snowplow Limited Use License Agreement, Version 1.0
- * located at https://docs.snowplow.io/limited-use-license-1.0
+ * under the terms of the Snowplow Limited Use License Agreement, Version 1.1
+ * located at https://docs.snowplow.io/limited-use-license-1.1
  * BY INSTALLING, DOWNLOADING, ACCESSING, USING OR DISTRIBUTING ANY PORTION
  * OF THE SOFTWARE, YOU AGREE TO THE TERMS OF SUCH LICENSE AGREEMENT.
  */
@@ -69,7 +69,7 @@ class ConfigSpec extends org.specs2.Specification {
           pool,
           false
         ),
-      Config.Http("0.0.0.0", 8080, Some(10.seconds), None, Config.ThreadPool.Global, noHsts),
+      Config.Http("0.0.0.0", 8080, Some(10.seconds), None, Config.ThreadPool.Global, noHsts, 100000),
       true,
       true,
       List(
@@ -85,7 +85,8 @@ class ConfigSpec extends org.specs2.Specification {
       None,
       42.seconds,
       true,
-      Config.License(false)
+      Config.License(false),
+      40
     )
     val result = Config.serverCommand.parse(input.split(" ").toList).leftMap(_.toString).flatMap(_.read)
     result must beRight(expected)
@@ -98,7 +99,7 @@ class ConfigSpec extends org.specs2.Specification {
     val expected =
       Config(
         Config.StorageConfig.Dummy,
-        Config.Http("0.0.0.0", 8080, None, None, Config.ThreadPool.Fixed(2), Config.Hsts(true, 365.days)),
+        Config.Http("0.0.0.0", 8080, None, None, Config.ThreadPool.Fixed(2), Config.Hsts(true, 365.days), 5000),
         true,
         false,
         Nil,
@@ -106,7 +107,8 @@ class ConfigSpec extends org.specs2.Specification {
         None,
         1.seconds,
         false,
-        Config.License(true)
+        Config.License(true),
+        50
       )
     val result = Config.serverCommand.parse(input.split(" ").toList).leftMap(_.toString).flatMap(_.read)
     result must beRight(expected)
@@ -127,7 +129,7 @@ class ConfigSpec extends org.specs2.Specification {
           Config.StorageConfig.ConnectionPool.NoPool(Config.ThreadPool.Fixed(2)),
           true
         ),
-      Config.Http("0.0.0.0", 8080, None, None, Config.ThreadPool.Global, noHsts),
+      Config.Http("0.0.0.0", 8080, None, None, Config.ThreadPool.Global, noHsts, 3000),
       true,
       true,
       List(
@@ -142,7 +144,8 @@ class ConfigSpec extends org.specs2.Specification {
       Some(UUID.fromString("a71aa7d9-6cde-40f7-84b1-046d65dedf9e")),
       10.seconds,
       true,
-      Config.License(true)
+      Config.License(true),
+      100
     )
 
     val expected = json"""{
@@ -172,7 +175,8 @@ class ConfigSpec extends org.specs2.Specification {
         "hsts": {
           "enable": false,
           "maxAge": "365 days"
-        }
+        },
+        "maxPayloadSize": 3000
       },
       "debug" : true,
       "patchesAllowed" : true,
@@ -205,7 +209,8 @@ class ConfigSpec extends org.specs2.Specification {
       "preTerminationUnhealthy": true,
       "license": {
         "accept": true
-      }
+      },
+      "maxJsonDepth": 100
     }"""
 
     input.asJson must beEqualTo(expected)
@@ -230,7 +235,7 @@ class ConfigSpec extends org.specs2.Specification {
           pool,
           true
         ),
-      Config.Http("0.0.0.0", 8080, None, None, Config.ThreadPool.Fixed(4), noHsts),
+      Config.Http("0.0.0.0", 8080, None, None, Config.ThreadPool.Fixed(4), noHsts, 100000),
       false,
       false,
       Nil,
@@ -238,7 +243,8 @@ class ConfigSpec extends org.specs2.Specification {
       None,
       1.seconds,
       false,
-      Config.License(false)
+      Config.License(false),
+      40
     )
     val result = Config.serverCommand.parse(input.split(" ").toList).leftMap(_.toString).flatMap(_.read)
     result must beRight(expected)

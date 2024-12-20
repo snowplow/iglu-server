@@ -2,8 +2,8 @@
  * Copyright (c) 2014-present Snowplow Analytics Ltd. All rights reserved.
  *
  * This software is made available by Snowplow Analytics, Ltd.,
- * under the terms of the Snowplow Limited Use License Agreement, Version 1.0
- * located at https://docs.snowplow.io/limited-use-license-1.0
+ * under the terms of the Snowplow Limited Use License Agreement, Version 1.1
+ * located at https://docs.snowplow.io/limited-use-license-1.1
  * BY INSTALLING, DOWNLOADING, ACCESSING, USING OR DISTRIBUTING ANY PORTION
  * OF THE SOFTWARE, YOU AGREE TO THE TERMS OF SUCH LICENSE AGREEMENT.
  */
@@ -26,7 +26,7 @@ import org.http4s.{Header, Headers, Method, Request, Response}
 trait SupersedingLogicSpecBase extends org.specs2.Specification with StorageAgnosticSpec {
   private def sendRequests(requests: List[Request[IO]]): IO[(List[Response[IO]], Unit)] =
     sendRequestsGetState(storage =>
-      SchemaService.asRoutes(patchesAllowed = true, Webhook.WebhookClient(List(), client))(
+      SchemaService.asRoutes(patchesAllowed = true, Webhook.WebhookClient(List(), client), 20)(
         storage,
         None,
         SpecHelpers.ctx,

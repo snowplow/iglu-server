@@ -2,8 +2,8 @@
  * Copyright (c) 2014-present Snowplow Analytics Ltd. All rights reserved.
  *
  * This software is made available by Snowplow Analytics, Ltd.,
- * under the terms of the Snowplow Limited Use License Agreement, Version 1.0
- * located at https://docs.snowplow.io/limited-use-license-1.0
+ * under the terms of the Snowplow Limited Use License Agreement, Version 1.1
+ * located at https://docs.snowplow.io/limited-use-license-1.1
  * BY INSTALLING, DOWNLOADING, ACCESSING, USING OR DISTRIBUTING ANY PORTION
  * OF THE SOFTWARE, YOU AGREE TO THE TERMS OF SUCH LICENSE AGREEMENT.
  */
@@ -20,7 +20,6 @@ import cats.implicits._
 import io.circe.Json
 
 import org.http4s.HttpRoutes
-import org.http4s.circe._
 import org.http4s.rho.{AuthedContext, RhoMiddleware, RhoRoutes}
 import org.http4s.rho.swagger.SwaggerSyntax
 import org.http4s.rho.swagger.syntax.{io => swaggerSyntax}
@@ -42,7 +41,8 @@ class SchemaService[F[+_]: Sync](
   ctx: AuthedContext[F, Permission],
   db: Storage[F],
   patchesAllowed: Boolean,
-  webhooks: Webhook.WebhookClient[F]
+  webhooks: Webhook.WebhookClient[F],
+  maxJsonDepth: Int
 ) extends RhoRoutes[F] {
 
   import swagger._
@@ -56,9 +56,11 @@ class SchemaService[F[+_]: Sync](
   val version  = pathVar[SchemaVer.Full]("version", "SchemaVer")
   val isPublic = paramD[Boolean]("isPublic", false, "Should schema be created as public")
 
-  val schemaOrJson = jsonOf[F, SchemaBody]
+  val schemaOrJson = Utils.jsonOfWithDepthCheck[F, SchemaBody](maxJsonDepth)
 
-  private val validationService = new ValidationService[F](swagger, ctx, db)
+  val jsonBody = Utils.jsonDecoderWithDepthCheck(maxJsonDepth)
+
+  private val validationService = new ValidationService[F](swagger, ctx, db, maxJsonDepth)
 
   "Get a particular schema by its Iglu URI" **
     GET / 'vendor / 'name / 'format / version +? reprCanonical >>> ctx.auth |>> getSchema _
@@ -85,8 +87,9 @@ class SchemaService[F[+_]: Sync](
     POST +? isPublic >>> ctx.auth ^ schemaOrJson |>> postSchema _
 
   "Schema validation endpoint (deprecated)" **
-    POST / "validate" / 'vendor / 'name / "jsonschema" / 'version ^ jsonDecoder[F] |>> {
-    (_: String, _: String, _: String, json: Json) => validationService.validateSchema(Schema.Format.Jsonschema, json)
+    POST / "validate" / 'vendor / 'name / "jsonschema" / 'version >>> ctx.auth ^ jsonBody |>> {
+    (_: String, _: String, _: String, authInfo: Permission, json: Json) =>
+      validationService.validateSchema(Schema.Format.Jsonschema, authInfo, json)
   }
 
   def getSchema(
@@ -172,7 +175,7 @@ class SchemaService[F[+_]: Sync](
     supersedingInfo: SupersedingInfo
   ) =
     if (permission.canCreateSchema(schema.self.schemaKey.vendor)) {
-      ValidationService.validateJsonSchema(schema.normalize) match {
+      ValidationService.validateJsonSchema(schema.normalize, maxJsonDepth) match {
         case Validated.Invalid(report) if report.exists(_.level == Linter.Level.Error) =>
           BadRequest(IgluResponse.SchemaValidationReport(report): IgluResponse)
         case _ => addSchema(schema, isPublic, supersedingInfo)
@@ -228,14 +231,16 @@ object SchemaService {
 
   def asRoutes(
     patchesAllowed: Boolean,
-    webhook: Webhook.WebhookClient[IO]
+    webhook: Webhook.WebhookClient[IO],
+    maxJsonDepth: Int
   )(
     db: Storage[IO],
     superKey: Option[UUID],
     ctx: AuthedContext[IO, Permission],
     rhoMiddleware: RhoMiddleware[IO]
   ): HttpRoutes[IO] = {
-    val service = new SchemaService(swaggerSyntax, ctx, db, patchesAllowed, webhook).toRoutes(rhoMiddleware)
+    val service =
+      new SchemaService(swaggerSyntax, ctx, db, patchesAllowed, webhook, maxJsonDepth).toRoutes(rhoMiddleware)
     PermissionMiddleware.wrapService(db, superKey, ctx, service)
   }
 

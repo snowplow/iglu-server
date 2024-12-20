@@ -1,3 +1,16 @@
+Version 0.14.0 (2024-12-20)
+---------------------------
+Install sbt in GitHub workflows
+Check if JSON entity exceeds max depth during conversion from String to Circe JSON
+Add max JSON depth check to /keygen endpoint
+Do not allow requests with too large payload
+Fix graceful shutdown to be more selective about when it sleeps
+Make maxJsonDepth in SelfSyntaxChecker.validateSchema configurable
+Add auth to validation endpoint
+Bump sbt-snowplow-release to 0.3.2
+Bump jackson to 2.15.0
+Change SLULA license from 1.0 to 1.1
+
 Version 0.12.1 (2024-03-29)
 ---------------------------
 Bump postgresql to 42.5.5 (#154)

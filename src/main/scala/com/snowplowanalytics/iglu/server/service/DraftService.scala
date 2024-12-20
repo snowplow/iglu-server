@@ -2,8 +2,8 @@
  * Copyright (c) 2014-present Snowplow Analytics Ltd. All rights reserved.
  *
  * This software is made available by Snowplow Analytics, Ltd.,
- * under the terms of the Snowplow Limited Use License Agreement, Version 1.0
- * located at https://docs.snowplow.io/limited-use-license-1.0
+ * under the terms of the Snowplow Limited Use License Agreement, Version 1.1
+ * located at https://docs.snowplow.io/limited-use-license-1.1
  * BY INSTALLING, DOWNLOADING, ACCESSING, USING OR DISTRIBUTING ANY PORTION
  * OF THE SOFTWARE, YOU AGREE TO THE TERMS OF SUCH LICENSE AGREEMENT.
  */
@@ -18,26 +18,30 @@ import cats.implicits._
 import io.circe._
 
 import org.http4s.HttpRoutes
-import org.http4s.circe._
 import org.http4s.rho.{AuthedContext, RhoMiddleware, RhoRoutes}
 import org.http4s.rho.swagger.SwaggerSyntax
 import org.http4s.rho.swagger.syntax.io
 
+import com.snowplowanalytics.iglu.server.Utils
 import com.snowplowanalytics.iglu.server.storage.Storage
 import com.snowplowanalytics.iglu.server.middleware.PermissionMiddleware
 import com.snowplowanalytics.iglu.server.model.{DraftVersion, IgluResponse, Permission, SchemaDraft}
 import com.snowplowanalytics.iglu.server.codecs.UriParsers._
 import com.snowplowanalytics.iglu.server.codecs.JsonCodecs._
 
-class DraftService[F[+_]: Sync](swagger: SwaggerSyntax[F], db: Storage[F], ctx: AuthedContext[F, Permission])
-    extends RhoRoutes[F] {
+class DraftService[F[+_]: Sync](
+  swagger: SwaggerSyntax[F],
+  db: Storage[F],
+  ctx: AuthedContext[F, Permission],
+  maxJsonDepth: Int
+) extends RhoRoutes[F] {
   import swagger._
   import DraftService._
   implicit val C: Clock[F] = Clock.create[F]
 
   val version    = pathVar[DraftVersion]("version", "Draft version")
   val isPublic   = paramD[Boolean]("isPublic", false, "Should schema be created as public")
-  val schemaBody = jsonOf[F, Json]
+  val schemaBody = Utils.jsonDecoderWithDepthCheck(maxJsonDepth)
 
   "Get a particular draft by its URI" **
     GET / 'vendor / 'name / 'format / version >>> ctx.auth |>> getDraft _
@@ -80,13 +84,13 @@ class DraftService[F[+_]: Sync](swagger: SwaggerSyntax[F], db: Storage[F], ctx: 
 
 object DraftService {
 
-  def asRoutes(
+  def asRoutes(maxJsonDepth: Int)(
     db: Storage[IO],
     superKey: Option[UUID],
     ctx: AuthedContext[IO, Permission],
     rhoMiddleware: RhoMiddleware[IO]
   ): HttpRoutes[IO] = {
-    val service = new DraftService(io, db, ctx).toRoutes(rhoMiddleware)
+    val service = new DraftService(io, db, ctx, maxJsonDepth).toRoutes(rhoMiddleware)
     PermissionMiddleware.wrapService(db, superKey, ctx, service)
   }
 
