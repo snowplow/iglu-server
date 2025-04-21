@@ -56,5 +56,5 @@ class PermissionSpec extends org.specs2.Specification {
   }
 
   def e8 =
-    Vendor.parse(" ") must beEqualTo(Vendor.wildcard)
+    Vendor.parse(" ", true) must beEqualTo(Vendor.wildcard)
 }

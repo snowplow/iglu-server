@@ -59,7 +59,7 @@ class PostgresSpec extends Specification with BeforeAll with IOChecker {
 
   val trivial = sql"SELECT 42".query[Int]
 
-  "Postgres speciication" should {
+  "Postgres specification" should {
     "check connection" in {
       check(trivial)
     }
@@ -99,6 +99,23 @@ class PostgresSpec extends Specification with BeforeAll with IOChecker {
 
     "typecheck getPermission" in {
       check(Postgres.Sql.getPermission(UUID.fromString("6907ba19-b6e0-4126-a931-dd236eec2736")))
+    }
+
+    "check getPermission read wildcard = false correctly" in {
+      val permission = Permission(Permission.Vendor(List("com", "acme"), wildcard = false), None, Set.empty)
+      val uuid       = UUID.fromString("6907ba19-b6e0-4126-a931-dd236eec2736")
+      val addPerm: IO[Int] = Postgres
+        .Sql
+        .addPermission(
+          uuid,
+          permission
+        )
+        .run
+        .transact(transactor)
+      val readPerm: IO[Option[Permission]] =
+        Postgres.Sql.getPermission(uuid).option.transact(transactor)
+      val optPerm = (addPerm *> readPerm).unsafeRunSync()
+      optPerm must beSome(permission)
     }
 
     "typecheck addPermission" in {

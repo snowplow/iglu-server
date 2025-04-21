@@ -52,7 +52,7 @@ class AuthService[F[+_]: Sync](
   "Route to generate new keys" **
     POST / "keygen" >>> ctx.auth ^ jsonGenerateKey |>> { (authInfo: Permission, gk: GenerateKey) =>
     if (authInfo.key.contains(Permission.KeyAction.Create)) {
-      val vendorPrefix = Permission.Vendor.parse(gk.vendorPrefix)
+      val vendorPrefix = Permission.Vendor.parse(gk.vendorPrefix, true)
       if (authInfo.canCreatePermission(vendorPrefix.asString)) {
         for {
           keyPair    <- Permission.KeyPair.generate[F]
