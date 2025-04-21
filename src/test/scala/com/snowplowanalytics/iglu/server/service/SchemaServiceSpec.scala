@@ -74,6 +74,10 @@ trait SchemaServiceSpecBase extends org.specs2.Specification with StorageAgnosti
     PUT request with 'supersedes' field adds schema with superseding info $e19
     Prohibits adding schema superseded by version smaller than itself $e20
     Doesn't accept JSON body that exceeds maximum allowed JSON depth $e21
+    Prohibits adding new 1-0-0 schema if vendor_name clash exists $e22
+    Doesn't prohibit adding 1-0-1 schema even if vendor_name clash exists $e23
+    Patches 1-0-0 schema even if vendor_name clash exists and patches are allowed $e24
+    Doesn't prohibit creating 1-0-0 schema if vendor_name clash exists with a private schema $e25
   """
 
   def e1 = {
@@ -140,7 +144,7 @@ trait SchemaServiceSpecBase extends org.specs2.Specification with StorageAgnosti
       body     <- response.as[List[Schema]]
     } yield (response.status, body)
 
-    val expectedBody = SpecHelpers.schemas.filter { case (_, m) => m.metadata.isPublic }.map(_._2)
+    val expectedBody = SpecHelpers.schemas.filter { case (_, m) => m.metadata.isPublic }.values.toList
     def ignoreTimestamps(schema: Schema) =
       schema.copy(metadata =
         schema
@@ -153,7 +157,7 @@ trait SchemaServiceSpecBase extends org.specs2.Specification with StorageAgnosti
 
     val (status, body) = result.unsafeRunSync()
     (status must beEqualTo(Status.Ok))
-      .and(body.map(ignoreTimestamps) must beEqualTo(expectedBody.map(ignoreTimestamps)))
+      .and(body.map(ignoreTimestamps) must containTheSameElementsAs(expectedBody.map(ignoreTimestamps)))
   }
 
   def e10 = {
@@ -163,12 +167,12 @@ trait SchemaServiceSpecBase extends org.specs2.Specification with StorageAgnosti
     val result = for {
       response <- sendRequests(List(req), false)
       body     <- response.as[List[SelfDescribingSchema[Json]]]
-    } yield (response.status, body.map(_.self))
+    } yield (response.status, body.map(_.self.schemaKey))
 
-    val expectedBody = SpecHelpers.schemas.filter { case (_, m) => m.metadata.isPublic }.map(_._2.schemaMap)
+    val expectedBody = SpecHelpers.schemas.filter { case (_, m) => m.metadata.isPublic }.map(_._2.schemaMap.schemaKey)
 
     val (status, body) = result.unsafeRunSync()
-    (status must beEqualTo(Status.Ok)).and(body must beEqualTo(expectedBody))
+    (status must beEqualTo(Status.Ok)).and(body must containTheSameElementsAs(expectedBody.toList))
   }
 
   def e6 = {
@@ -199,11 +203,13 @@ trait SchemaServiceSpecBase extends org.specs2.Specification with StorageAgnosti
 
     val expected = List(
       SchemaKey("com.acme", "event", "jsonschema", SchemaVer.Full(1, 0, 0)),
+      SchemaKey("com.acme.clash", "test", "jsonschema", SchemaVer.Full(1, 0, 0)),
+      SchemaKey("com.acme", "clash_test", "jsonschema", SchemaVer.Full(1, 0, 0)),
       SchemaKey("com.acme", "event", "jsonschema", SchemaVer.Full(1, 0, 1))
     )
     val (status, body) = result.unsafeRunSync()
 
-    (status must beEqualTo(Status.Ok)).and(body must beEqualTo(expected))
+    (status must beEqualTo(Status.Ok)).and(body must containTheSameElementsAs(expected))
   }
 
   def e8 = {
@@ -217,12 +223,14 @@ trait SchemaServiceSpecBase extends org.specs2.Specification with StorageAgnosti
 
     val expected = List(
       SchemaKey("com.acme", "event", "jsonschema", SchemaVer.Full(1, 0, 0)),
+      SchemaKey("com.acme.clash", "test", "jsonschema", SchemaVer.Full(1, 0, 0)),
+      SchemaKey("com.acme", "clash_test", "jsonschema", SchemaVer.Full(1, 0, 0)),
       SchemaKey("com.acme", "event", "jsonschema", SchemaVer.Full(1, 0, 1)),
       SchemaKey("com.acme", "secret", "jsonschema", SchemaVer.Full(1, 0, 0))
     )
     val (status, body) = result.unsafeRunSync()
 
-    (status must beEqualTo(Status.Ok)).and(body must beEqualTo(expected))
+    (status must beEqualTo(Status.Ok)).and(body must containTheSameElementsAs(expected))
   }
 
   def e2 = {
@@ -755,6 +763,191 @@ trait SchemaServiceSpecBase extends org.specs2.Specification with StorageAgnosti
       .and(executeTest(Method.POST, uri"", deepJsonArray))
       .and(executeTest(Method.POST, uri"/validate/com.acme/deep/jsonschema/1-0-0", deepJsonSchema))
       .and(executeTest(Method.POST, uri"/validate/com.acme/deep/jsonschema/1-0-0", deepJsonArray))
+  }
+
+  def e22 = {
+    val schema1 =
+      json"""
+        {
+          "$$schema": "http://iglucentral.com/schemas/com.snowplowanalytics.self-desc/schema/jsonschema/1-0-0#",
+          "self": {
+            "vendor": "com.acme.test",
+            "name": "clash",
+            "format": "jsonschema",
+            "version": "1-0-0"
+          },
+          "type": "object"
+        }"""
+    val exampleSchema = Stream.emits(schema1.noSpaces.stripMargin.getBytes).covary[IO]
+
+    val schema2 =
+      json"""
+        {
+          "$$schema": "http://iglucentral.com/schemas/com.snowplowanalytics.self-desc/schema/jsonschema/1-0-0#",
+          "self": {
+            "vendor": "com.acme",
+            "name": "test_clash",
+            "format": "jsonschema",
+            "version": "1-0-0"
+          },
+          "type": "object"
+        }"""
+    val exampleSchema2 = Stream.emits(schema2.noSpaces.stripMargin.getBytes).covary[IO]
+
+    val reqs: List[Request[IO]] = List(
+      Request[IO](Method.PUT, uri"/com.acme.test/clash/jsonschema/1-0-0")
+        .withContentType(headers.`Content-Type`(MediaType.application.json))
+        .withHeaders(Headers.of(Header("apikey", SpecHelpers.superKey.toString)))
+        .withBodyStream(exampleSchema),
+      Request[IO](Method.PUT, uri"/com.acme/test_clash/jsonschema/1-0-0")
+        .withContentType(headers.`Content-Type`(MediaType.application.json))
+        .withHeaders(Headers.of(Header("apikey", SpecHelpers.superKey.toString)))
+        .withBodyStream(exampleSchema2)
+    )
+
+    val (responses, schemas) = getState(reqs, patchesAllowed = false).unsafeRunSync()
+    val dbExpectation = schemas.map(_.schemaMap.schemaKey) must not contain SchemaKey(
+      "com.acme",
+      "test_clash",
+      "jsonschema",
+      SchemaVer.Full(1, 0, 0)
+    )
+    val requestExpectation = responses.lastOption.map(_.status) must beSome(Status.Conflict)
+    val requestExpectation2 = responses.lastOption.map(r => r.bodyText.compile.string.unsafeRunSync()) must beSome(
+      """{"message":"{vendor}_{name} clash between iglu:com.acme/test_clash/jsonschema/1-0-0 and [(vendor=com.acme.test, name=clash)]"}"""
+    )
+    dbExpectation.and(requestExpectation).and(requestExpectation2)
+  }
+
+  def e23 = {
+    // assuming that db has com.acme/clash_test/jsonschema/1-0-0 and com.acme.clash/test/jsonschema/1-0-0
+    val schema =
+      json"""
+        {
+          "$$schema": "http://iglucentral.com/schemas/com.snowplowanalytics.self-desc/schema/jsonschema/1-0-0#",
+          "self": {
+            "vendor": "com.acme.clash",
+            "name": "test",
+            "format": "jsonschema",
+            "version": "1-0-1"
+          },
+          "type": "object",
+          "additionalProperties": true
+        }"""
+    val exampleSchema = Stream.emits(schema.noSpaces.stripMargin.getBytes).covary[IO]
+
+    val reqs: List[Request[IO]] = List(
+      Request[IO](Method.PUT, uri"/com.acme.clash/test/jsonschema/1-0-1?isPublic=true")
+        .withContentType(headers.`Content-Type`(MediaType.application.json))
+        .withHeaders(Headers.of(Header("apikey", SpecHelpers.superKey.toString)))
+        .withBodyStream(exampleSchema),
+      Request[IO](Method.GET, uri"/com.acme.clash/test/jsonschema/1-0-1")
+        .withContentType(headers.`Content-Type`(MediaType.application.json))
+        .withHeaders(Headers.of(Header("apikey", SpecHelpers.superKey.toString)))
+    )
+
+    val (responses, schemas) = getState(reqs, patchesAllowed = false).unsafeRunSync()
+    val dbExpectation = schemas.map(_.schemaMap.schemaKey) contains SchemaKey(
+      "com.acme.clash",
+      "test",
+      "jsonschema",
+      SchemaVer.Full(1, 0, 1)
+    )
+    val requestExpectation = responses.lastOption.map(_.status) must beSome(Status.Ok)
+    dbExpectation.and(requestExpectation)
+  }
+
+  def e24 = {
+    // assuming that db has com.acme/clash_test/jsonschema/1-0-0 and com.acme.clash/test/jsonschema/1-0-0
+
+    val schemaUpdate =
+      json"""
+        {
+          "$$schema": "http://iglucentral.com/schemas/com.snowplowanalytics.self-desc/schema/jsonschema/1-0-0#",
+          "self": {
+            "vendor": "com.acme.clash",
+            "name": "test",
+            "format": "jsonschema",
+            "version": "1-0-0"
+          },
+          "type": "object",
+          "additionalProperties": true
+        }"""
+    val newSchema = Stream.emits(schemaUpdate.noSpaces.stripMargin.getBytes).covary[IO]
+
+    val reqs: List[Request[IO]] = List(
+      Request[IO](Method.PUT, Uri.uri("/com.acme.clash/test/jsonschema/1-0-0?isPublic=true"))
+        .withContentType(headers.`Content-Type`(MediaType.application.json))
+        .withHeaders(Headers.of(Header("apikey", SpecHelpers.superKey.toString)))
+        .withBodyStream(newSchema),
+      Request[IO](Method.GET, Uri.uri("/com.acme.clash/test/jsonschema/1-0-0"))
+        .withHeaders(Headers.of(Header("apikey", SpecHelpers.superKey.toString)))
+    )
+
+    val (requests, schemas) = getState(reqs, patchesAllowed = true).unsafeRunSync()
+    val dbExpectation = schemas.map(s => (s.schemaMap, s.metadata.isPublic, s.body)) must contain(
+      (
+        SchemaMap("com.acme.clash", "test", "jsonschema", SchemaVer.Full(1, 0, 0)),
+        true,
+        json"""{"type": "object", "additionalProperties": true}"""
+      )
+    )
+    val requestExpectation = requests.lastOption.map(_.status) must beSome(Status.Ok)
+    dbExpectation.and(requestExpectation)
+  }
+
+  def e25 = {
+    val schema1 =
+      json"""
+        {
+          "$$schema": "http://iglucentral.com/schemas/com.snowplowanalytics.self-desc/schema/jsonschema/1-0-0#",
+          "self": {
+            "vendor": "com.acme.e25",
+            "name": "test",
+            "format": "jsonschema",
+            "version": "1-0-0"
+          },
+          "type": "object"
+        }"""
+    val exampleSchema = Stream.emits(schema1.noSpaces.stripMargin.getBytes).covary[IO]
+
+    val schema2 =
+      json"""
+        {
+          "$$schema": "http://iglucentral.com/schemas/com.snowplowanalytics.self-desc/schema/jsonschema/1-0-0#",
+          "self": {
+            "vendor": "com.acme",
+            "name": "e25-test",
+            "format": "jsonschema",
+            "version": "1-0-0"
+          },
+          "type": "object"
+        }"""
+    val exampleSchema2 = Stream.emits(schema2.noSpaces.stripMargin.getBytes).covary[IO]
+
+    val reqs: List[Request[IO]] = List(
+      Request[IO](Method.PUT, uri"/com.acme.e25/test/jsonschema/1-0-0")
+        .withContentType(headers.`Content-Type`(MediaType.application.json))
+        .withHeaders(Headers.of(Header("apikey", SpecHelpers.createKeyAcme25.toString)))
+        .withBodyStream(exampleSchema),
+      Request[IO](Method.PUT, uri"/com.acme/e25-test/jsonschema/1-0-0?isPublic=true")
+        .withContentType(headers.`Content-Type`(MediaType.application.json))
+        .withHeaders(Headers.of(Header("apikey", SpecHelpers.createKeyAcme.toString)))
+        .withBodyStream(exampleSchema2),
+      Request[IO](Method.GET, uri"/com.acme/e25-test/jsonschema/1-0-0")
+        .withHeaders(Headers.of(Header("apikey", SpecHelpers.readKey.toString)))
+    )
+
+    val (responses, schemas) = getState(reqs, patchesAllowed = false).unsafeRunSync()
+    val dbExpectation = schemas.map(s => (s.schemaMap, s.metadata.isPublic, s.body)) must contain(
+      (
+        SchemaMap("com.acme", "e25-test", "jsonschema", SchemaVer.Full(1, 0, 0)),
+        true,
+        json"""{"type": "object"}"""
+      )
+    )
+    val requestExpectation = responses.lastOption.map(_.status) must beSome(Status.Ok)
+    dbExpectation.and(requestExpectation)
   }
 }
 

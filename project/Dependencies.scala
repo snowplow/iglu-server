@@ -17,7 +17,7 @@ import sbt._
 object Dependencies {
 
   object V {
-    val IgluCore   = "1.1.2"
+    val IgluCore   = "1.1.4"
     val SchemaDdl  = "0.24.0"
     val IgluClient = "1.1.1"
 

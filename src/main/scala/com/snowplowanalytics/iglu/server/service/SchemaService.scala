@@ -24,7 +24,7 @@ import org.http4s.rho.{AuthedContext, RhoMiddleware, RhoRoutes}
 import org.http4s.rho.swagger.SwaggerSyntax
 import org.http4s.rho.swagger.syntax.{io => swaggerSyntax}
 
-import com.snowplowanalytics.iglu.core.{SchemaMap, SchemaVer, SelfDescribingSchema}
+import com.snowplowanalytics.iglu.core.{SchemaKey, SchemaMap, SchemaVer, SelfDescribingSchema}
 import com.snowplowanalytics.iglu.core.circe.implicits._
 
 import com.snowplowanalytics.iglu.schemaddl.jsonschema.Linter
@@ -178,7 +178,7 @@ class SchemaService[F[+_]: Sync](
       ValidationService.validateJsonSchema(schema.normalize, maxJsonDepth) match {
         case Validated.Invalid(report) if report.exists(_.level == Linter.Level.Error) =>
           BadRequest(IgluResponse.SchemaValidationReport(report): IgluResponse)
-        case _ => addSchema(schema, isPublic, supersedingInfo)
+        case _ => addSchema(schema, isPublic, supersedingInfo, permission)
       }
     } else Forbidden(IgluResponse.Forbidden: IgluResponse)
 
@@ -205,10 +205,11 @@ class SchemaService[F[+_]: Sync](
   private def addSchema(
     schema: SelfDescribingSchema[Json],
     isPublic: Boolean,
-    supersedingInfo: SupersedingInfo
+    supersedingInfo: SupersedingInfo,
+    permission: Permission
   ) =
     for {
-      allowed <- isSchemaAllowed(db, schema.self, patchesAllowed, isPublic, supersedingInfo)
+      allowed <- isSchemaAllowed(db, schema.self, patchesAllowed, isPublic, supersedingInfo, permission)
       response <- allowed match {
         case Right(_) =>
           for {
@@ -249,17 +250,38 @@ object SchemaService {
     schemaMap: SchemaMap,
     patchesAllowed: Boolean,
     isPublic: Boolean,
-    supersedingInfo: SupersedingInfo
+    supersedingInfo: SupersedingInfo,
+    permission: Permission
   ): F[Either[Inconsistency, Unit]] =
     for {
-      schemas <- db.getSchemasByName(schemaMap.schemaKey.vendor, schemaMap.schemaKey.name).compile.toList
+      allSchemaKeys <- db.getSchemasKeyOnly.map(_.filter(isReadablePair(permission))).map(_.map(_._1.schemaKey))
+      schemas       <- db.getSchemasByName(schemaMap.schemaKey.vendor, schemaMap.schemaKey.name).compile.toList
       previousPublic = schemas.forall(_.metadata.isPublic)
       versions       = schemas.map(_.schemaMap.schemaKey.version)
-    } yield
-      if (schemas.nonEmpty && (isPublic != previousPublic))
+    } yield {
+      lazy val isAllowedPatch    = allSchemaKeys.contains(schemaMap.schemaKey) && patchesAllowed
+      lazy val vendorNameClashes = filterClashingVendorNames(schemaMap.schemaKey, allSchemaKeys)
+      if (schemaMap.schemaKey.version.asString === "1-0-0" && !isAllowedPatch && vendorNameClashes.nonEmpty)
+        Inconsistency.VendorNameClash(schemaMap.schemaKey, vendorNameClashes).asLeft
+      else if (schemas.nonEmpty && (isPublic != previousPublic))
         Inconsistency.Availability(isPublic, previousPublic).asLeft
       else
         VersionCursor.isAllowed(schemaMap.schemaKey.version, versions, patchesAllowed, supersedingInfo.supersedes)
+    }
+
+  /**
+    * Filter schema keys whose vendorAsSnakeCase_nameAsSnakeCase clashes with given schema key's vendorAsSnakeCase_nameAsSnakeCase
+    *
+    * Return set of (vendor, name) tuples
+    */
+  def filterClashingVendorNames(schemaKey: SchemaKey, allSchemaKeys: List[SchemaKey]): Set[(String, String)] = {
+    lazy val target = s"${schemaKey.vendorAsSnakeCase}_${schemaKey.nameAsSnakeCase}"
+
+    allSchemaKeys
+      .filter(sk => s"${sk.vendorAsSnakeCase}_${sk.nameAsSnakeCase}" === target)
+      .map(sk => (sk.vendor, sk.name))
+      .toSet
+  }
 
   /** Extract schemas from database, available for particular permission */
   def isReadable(permission: Permission)(schema: Schema): Boolean =
