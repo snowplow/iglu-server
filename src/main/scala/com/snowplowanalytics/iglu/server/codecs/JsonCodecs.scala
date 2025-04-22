@@ -30,8 +30,7 @@ trait JsonCodecs {
 
   case class JsonArrayStream[F[_], A](nonArray: Stream[F, A])
 
-  implicit def arrayStreamEncoder[F[_]: Sync, A: EntityEncoder[F, ?]] = {
-    val W = implicitly[EntityEncoder[F, A]]
+  implicit def arrayStreamEncoder[F[_]: Sync, A](implicit W: EntityEncoder[F, A]) =
     new EntityEncoder[F, JsonArrayStream[F, A]] {
       override def toEntity(stream: JsonArrayStream[F, A]): Entity[F] = {
         val commaSeparated =
@@ -42,7 +41,6 @@ trait JsonCodecs {
 
       override def headers: Headers = W.headers
     }
-  }
 
   implicit def representationEntityDecoder[F[_]: Sync] =
     CirceEntityCodec.circeEntityDecoder[F, List[Schema]]
