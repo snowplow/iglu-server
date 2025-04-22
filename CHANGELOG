@@ -1,3 +1,9 @@
+Version 0.14.1 (2025-04-22)
+---------------------------
+Upgrade to Java 21 (#12)
+Prohibit adding new 1-0-0 schema if vendor_name clash exists (#11)
+Fix permission read (#13)
+
 Version 0.14.0 (2024-12-20)
 ---------------------------
 Install sbt in GitHub workflows
