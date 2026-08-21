@@ -12,7 +12,7 @@ package com.snowplowanalytics.iglu.server.model
 
 import cats.Show
 import cats.syntax.either._
-import com.snowplowanalytics.iglu.core.SchemaVer
+import com.snowplowanalytics.iglu.core.{SchemaKey, SchemaVer}
 
 /** ADT representing a place of schema in SchemaVer tree */
 sealed trait VersionCursor extends Product with Serializable
@@ -33,12 +33,13 @@ object VersionCursor {
 
   sealed trait Inconsistency extends Product with Serializable
   object Inconsistency {
-    case object PreviousMissing                                         extends Inconsistency
-    case object SupersededMissing                                       extends Inconsistency
-    case object SupersededInvalid                                       extends Inconsistency
-    case object NextRevisionExists                                      extends Inconsistency
-    case object AlreadyExists                                           extends Inconsistency
-    case class Availability(isPublic: Boolean, previousPublic: Boolean) extends Inconsistency
+    case object PreviousMissing                                               extends Inconsistency
+    case object SupersededMissing                                             extends Inconsistency
+    case object SupersededInvalid                                             extends Inconsistency
+    case object NextRevisionExists                                            extends Inconsistency
+    case object AlreadyExists                                                 extends Inconsistency
+    case class Availability(isPublic: Boolean, previousPublic: Boolean)       extends Inconsistency
+    case class VendorNameClash(sk: SchemaKey, clashes: Set[(String, String)]) extends Inconsistency
 
     implicit val inconsistencyShowInstance: Show[Inconsistency] =
       Show.show {
@@ -54,6 +55,11 @@ object VersionCursor {
           "Schema already exists"
         case Availability(isPublic, previousPublic) =>
           s"Inconsistent schema availability. Cannot add ${if (isPublic) "public" else "private"} schema, previous versions are ${if (previousPublic) "public" else "private"}"
+        case VendorNameClash(sk, clashes) =>
+          s"{vendor}_{name} clash between ${sk.toSchemaUri} and ${clashes
+            .toList
+            .map { case (v, n) => s"(vendor=$v, name=$n)" }
+            .mkString("[", ",", "]")}"
       }
   }
 

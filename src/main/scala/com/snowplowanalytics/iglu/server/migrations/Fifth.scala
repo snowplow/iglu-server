@@ -183,7 +183,7 @@ object Fifth {
     val query =
       (fr"SELECT uid, vendor_prefix, permission FROM" ++ OldPermissionsTable).query[(UUID, String, String)].map {
         case (id, prefix, perm) =>
-          val vendor = Permission.Vendor.parse(prefix)
+          val vendor = Permission.Vendor.parse(prefix, true)
           val (schemaAction, keyAction) = perm match {
             case "super" => (Permission.Super.schema, Permission.Super.key)
             case "read"  => (Some(Permission.SchemaAction.Read), Set.empty[Permission.KeyAction])

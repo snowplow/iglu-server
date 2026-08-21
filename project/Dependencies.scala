@@ -17,7 +17,7 @@ import sbt._
 object Dependencies {
 
   object V {
-    val IgluCore   = "1.1.2"
+    val IgluCore   = "1.1.4"
     val SchemaDdl  = "0.24.0"
     val IgluClient = "1.1.1"
 
@@ -33,10 +33,12 @@ object Dependencies {
     val SwaggerUi  = "4.15.5"
     val Slf4j      = "1.7.36"
     val ScalaCache = "0.28.0"
-    val Postgresql = "42.5.5"
-    val Jackson    = "2.15.0"
+    val Postgresql = "42.7.12"
+    val Jackson    = "2.18.9"
     val Snakeyaml  = "2.0"
     val Guava      = "32.0.0-jre"
+    val CommonsLang3 = "3.18.0"
+    val Fs2        = "2.5.13"
 
     val Specs2     = "4.5.1"
     val Logback    = "1.2.3"
@@ -75,6 +77,9 @@ object Dependencies {
     "com.fasterxml.jackson.core" % "jackson-databind"  % V.Jackson, // override transitive version to address security vulnerabilities
     "org.yaml"                   % "snakeyaml"         % V.Snakeyaml, // override transitive version to address security vulnerabilities
     "com.google.guava"           % "guava"             % V.Guava, // override transitive version to address security vulnerabilities
+    "org.apache.commons"         % "commons-lang3"     % V.CommonsLang3, // override transitive version to address security vulnerabilities
+    "co.fs2"                    %% "fs2-core"          % V.Fs2, // override transitive version to address security vulnerabilities
+    "co.fs2"                    %% "fs2-io"            % V.Fs2, // override transitive version to address security vulnerabilities
 
 
     "org.tpolecat"          %% "doobie-specs2"         % V.Doobie     % Test,

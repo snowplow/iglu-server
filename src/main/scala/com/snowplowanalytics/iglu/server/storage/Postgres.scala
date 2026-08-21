@@ -120,14 +120,73 @@ class Postgres[F[_]](xa: Transactor[F], logger: Logger[F]) extends Storage[F] { 
     logger.debug(s"Running automatic migrations") *>
       (Postgres.Sql.addSupersededByColumn.run.void *>
         Postgres.Sql.addSupersedesColumn.run.void).transact(xa) *>
+      addPrimaryKey(Postgres.SchemasTableName, Postgres.Sql.addSchemasPrimaryKey, Postgres.Sql.duplicateSchemas) *>
+      addPrimaryKey(Postgres.DraftsTableName, Postgres.Sql.addDraftsPrimaryKey, Postgres.Sql.duplicateDrafts) *>
       logger.debug(s"Automatic migrations done")
+
+  /**
+    * Best-effort creation of the primary key on an existing table.
+    *
+    * Adding the PK in-place can legitimately fail on production deployments (pre-existing duplicate
+    * rows, insufficient DDL privileges, lock contention, ...). In every such case we log as much
+    * detail as we can and carry on: the server works the same whether or not the constraint exists.
+    * If a PK is already present we skip the attempt entirely.
+    */
+  private def addPrimaryKey(
+    table: String,
+    addPk: Update0,
+    listDuplicates: Query0[String]
+  )(implicit F: Bracket[F, Throwable]): F[Unit] = {
+    val create = Postgres.Sql.hasPrimaryKey(table).unique.transact(xa).flatMap {
+      case true =>
+        logger.debug(s"Primary key already present on table $table, skipping creation")
+      case false =>
+        logger.info(s"Adding primary key to table $table") *>
+          addPk.run.void.transact(xa) *>
+          logger.info(s"Primary key successfully added to table $table")
+    }
+    create.handleErrorWith(logPrimaryKeyError(table, listDuplicates, _))
+  }
+
+  private def logPrimaryKeyError(
+    table: String,
+    listDuplicates: Query0[String],
+    error: Throwable
+  )(implicit F: Bracket[F, Throwable]): F[Unit] = {
+    val sqlState = error match {
+      case e: java.sql.SQLException => Option(e.getSQLState)
+      case _                        => None
+    }
+    val message =
+      s"Could not add the primary key to table $table; the server will keep running without it. " +
+        s"SQLState=${sqlState.getOrElse("n/a")}, message: ${error.getMessage}"
+    logger.error(error)(message) *> {
+      // 23505 = unique_violation: pre-existing duplicate rows block the unique index backing the PK
+      if (sqlState.contains("23505"))
+        listDuplicates
+          .to[List]
+          .transact(xa)
+          .flatMap { rows =>
+            logger.error(
+              s"Found ${rows.length} duplicate row(s) in table $table that prevent the primary key creation:"
+            ) *>
+              rows.traverse_(row => logger.error(s"  $table duplicate row: $row"))
+          }
+          .handleErrorWith(e => logger.error(e)(s"Could not list duplicate rows in table $table: ${e.getMessage}"))
+      else
+        F.unit
+    }
+  }
 
   def bootstrap(implicit F: Bracket[F, Throwable]): F[Int] = Bootstrap.initialize(xa)
 }
 
 object Postgres {
-  val SchemasTable     = Fragment.const("iglu_schemas")
-  val DraftsTable      = Fragment.const("iglu_drafts")
+  val SchemasTableName = "iglu_schemas"
+  val DraftsTableName  = "iglu_drafts"
+
+  val SchemasTable     = Fragment.const(SchemasTableName)
+  val DraftsTable      = Fragment.const(DraftsTableName)
   val PermissionsTable = Fragment.const("iglu_permissions")
 
   val schemaColumns =
@@ -288,5 +347,33 @@ object Postgres {
 
     def addSupersedesColumn: Update0 =
       (fr"ALTER TABLE" ++ SchemasTable ++ fr"ADD COLUMN IF NOT EXISTS supersedes VARCHAR(32) ARRAY").update
+
+    /** True if the given table already has a PRIMARY KEY constraint. */
+    def hasPrimaryKey(table: String): Query0[Boolean] =
+      sql"""SELECT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conrelid = $table::regclass AND contype = 'p'
+      )""".query[Boolean]
+
+    def addSchemasPrimaryKey: Update0 =
+      (fr"ALTER TABLE" ++ SchemasTable ++ fr"ADD PRIMARY KEY (vendor, name, format, model, revision, addition)").update
+
+    def addDraftsPrimaryKey: Update0 =
+      (fr"ALTER TABLE" ++ DraftsTable ++ fr"ADD PRIMARY KEY (vendor, name, format, version)").update
+
+    /**
+      * Whole rows (rendered as text) whose key tuple occurs more than once - what prevents the PK creation.
+      * Casting the row to text keeps this generic over the table's columns.
+      */
+    def duplicateSchemas: Query0[String] =
+      (fr"SELECT t::text FROM" ++ SchemasTable ++ fr"t WHERE (vendor, name, format, model, revision, addition) IN (" ++
+        fr"SELECT vendor, name, format, model, revision, addition FROM" ++ SchemasTable ++
+        fr"GROUP BY vendor, name, format, model, revision, addition HAVING COUNT(*) > 1)" ++
+        fr"ORDER BY vendor, name, format, model, revision, addition").query[String]
+
+    def duplicateDrafts: Query0[String] =
+      (fr"SELECT t::text FROM" ++ DraftsTable ++ fr"t WHERE (vendor, name, format, version) IN (" ++
+        fr"SELECT vendor, name, format, version FROM" ++ DraftsTable ++
+        fr"GROUP BY vendor, name, format, version HAVING COUNT(*) > 1)" ++
+        fr"ORDER BY vendor, name, format, version").query[String]
   }
 }

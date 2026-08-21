@@ -33,7 +33,13 @@ object BuildSettings {
   lazy val projectSettings = Seq(
     organization := "com.snowplowanalytics",
     name := "iglu-server",
-    scalaVersion := "2.12.9"
+    scalaVersion := "2.12.20",
+    // scala compiler 2.12.20 uses scala-xml 2.x
+    // refined 0.9.28 uses scala-xml 1.x
+    // this is added to pick scala-xml 2.x always so that sbt does not throw binary incompatible error
+    // remove this after not relying on scala-xml 1.x anymore
+    // See https://github.com/sbt/sbt/issues/6997 for details
+    libraryDependencySchemes += "org.scala-lang.modules" %% "scala-xml" % VersionScheme.Always
   )
 
   lazy val licenseSettings = Seq(
@@ -65,6 +71,7 @@ object BuildSettings {
     assembly / assemblyMergeStrategy := {
       case x if x.endsWith("module-info.class") => MergeStrategy.first
       case x if x.endsWith("nowarn.class") => MergeStrategy.first
+      case x if x.endsWith("nowarn$.class") => MergeStrategy.first
       case PathList("scala", "jdk", "CollectionConverters$.class") => MergeStrategy.first
       case x =>
         val oldStrategy = (assembly / assemblyMergeStrategy).value
@@ -87,7 +94,7 @@ object BuildSettings {
   )
 
   lazy val compilerSettings = Seq(
-    javacOptions := Seq("-source", "11", "-target", "11"),
+    javacOptions := Seq("-source", "21", "-target", "21"),
     addCompilerPlugin("org.spire-math" %% "kind-projector" % "0.9.9"),
     Compile / console / scalacOptions --= Seq("-Ywarn-unused:imports", "-Xfatal-warnings"),
     scalacOptions ++= Seq(

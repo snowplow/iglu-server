@@ -113,11 +113,11 @@ object Permission {
     /** Cannot be applied to any vendor */
     val noop = Vendor(Nil, false)
 
-    def parse(string: String): Vendor =
+    def parse(string: String, wc: Boolean): Vendor =
       string match {
         case "*"                      => wildcard
         case _ if string.trim.isEmpty => wildcard
-        case vendor                   => Vendor(vendor.split('.').toList, true)
+        case vendor                   => Vendor(vendor.split('.').toList, wc)
       }
 
     implicit val vendorCirceEncoder: Encoder[Vendor] =
@@ -194,7 +194,7 @@ object Permission {
   implicit val doobiePermissionRead: Read[Permission] =
     Read[(Option[String], Boolean, Option[SchemaAction], List[String])].map {
       case (ven, wildcard, schemaAction, keyAction) =>
-        val vendor     = ven.map(Vendor.parse).getOrElse(Vendor(Nil, wildcard))
+        val vendor     = ven.map(Vendor.parse(_, wildcard)).getOrElse(Vendor(Nil, wildcard))
         val keyActions = keyAction.traverse(KeyAction.parse).fold(e => throw IncompatibleStorage(e), identity)
         Permission(vendor, schemaAction, keyActions.toSet)
     }
