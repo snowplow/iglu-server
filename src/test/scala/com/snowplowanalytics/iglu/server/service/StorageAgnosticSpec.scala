@@ -10,15 +10,24 @@
 
 package com.snowplowanalytics.iglu.server.service
 
+import java.util.UUID
+
 import cats.implicits._
-import cats.effect.{ContextShift, IO, Resource, Timer}
+import cats.effect.{IO, Resource}
+import cats.effect.testing.specs2.CatsEffect
+import com.snowplowanalytics.iglu.server.http.Api
+import com.snowplowanalytics.iglu.server.middleware.PermissionMiddleware
 import com.snowplowanalytics.iglu.server.storage.{InMemory, Postgres, Storage}
 import com.snowplowanalytics.iglu.server.{Config, SpecHelpers}
 import org.http4s.{HttpApp, HttpRoutes, Request, Response, Status}
 import org.http4s.client.Client
 
-trait StorageAgnosticSpec {
+trait StorageAgnosticSpec extends CatsEffect {
   def storageResource: Resource[IO, Storage[IO]]
+
+  /** The routes of a service, authenticated as in the server */
+  def routes(api: Api[IO], storage: Storage[IO], superKey: Option[UUID] = None): HttpRoutes[IO] =
+    PermissionMiddleware.wrapService(storage, superKey, api.routes(""))
 
   val client: Client[IO] = Client.fromHttpApp(HttpApp[IO](r => Response[IO]().withEntity(r.body).pure[IO]))
 
@@ -50,14 +59,8 @@ trait InMemoryStorageSpec { self: StorageAgnosticSpec =>
 }
 
 trait PostgresStorageSpec { self: StorageAgnosticSpec =>
-  import scala.concurrent.ExecutionContext.global
-  implicit val cs: ContextShift[IO] = IO.contextShift(global)
-  implicit val timer: Timer[IO]     = IO.timer(global)
 
-  val dbPoolConfig = Config
-    .StorageConfig
-    .ConnectionPool
-    .Hikari(None, None, None, None, Config.ThreadPool.Cached, Config.ThreadPool.Cached)
+  val dbPoolConfig = Config.StorageConfig.ConnectionPool.Hikari(None, None, None, None, Config.ThreadPool.Cached)
 
   val storageConfig =
     Config
@@ -88,7 +91,10 @@ trait PostgresStorageSpec { self: StorageAgnosticSpec =>
           .schemas
           .values
           .toList
-          .map(schema => storage.addSchema(schema.schemaMap, schema.body, schema.metadata.isPublic, List.empty))
+          .map(schema =>
+            storage
+              .upsertSchema(schema.schemaMap, schema.body, schema.metadata.isPublic, List.empty, patchesAllowed = false)
+          )
           .sequence
       )
     } yield storage

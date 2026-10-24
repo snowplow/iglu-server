@@ -10,17 +10,15 @@
 
 package com.snowplowanalytics.iglu.server.service
 
-import java.util.UUID
-
 import io.circe.Json
 
-import org.http4s.HttpRoutes
-import org.http4s.rho.{AuthedContext, RhoMiddleware, RhoRoutes}
-import org.http4s.rho.swagger.SwaggerSyntax
-import org.http4s.rho.swagger.syntax.io
+import sttp.model.StatusCode
+import sttp.tapir.{PublicEndpoint, path, stringToPath}
+import sttp.tapir.json.circe.schemaForCirceJson
 
 import cats.data.{NonEmptyList, Validated, ValidatedNel}
-import cats.effect.{IO, Sync}
+import cats.Applicative
+import cats.effect.Async
 import cats.implicits._
 
 import com.snowplowanalytics.iglu.core.{SchemaMap, SelfDescribingData, SelfDescribingSchema}
@@ -34,89 +32,99 @@ import com.snowplowanalytics.iglu.schemaddl.jsonschema.SanityLinter.lint
 import com.snowplowanalytics.iglu.schemaddl.jsonschema.Linter.{Level, Message, allLintersMap}
 
 import com.snowplowanalytics.iglu.server.Utils
+import com.snowplowanalytics.iglu.server.http.Api
+import com.snowplowanalytics.iglu.server.http.Endpoints._
+import com.snowplowanalytics.iglu.server.http.Schemas.igluResponseSchema
 import com.snowplowanalytics.iglu.server.storage.Storage
-import com.snowplowanalytics.iglu.server.middleware.PermissionMiddleware
 import com.snowplowanalytics.iglu.server.model.{IgluResponse, Permission, Schema}
-import com.snowplowanalytics.iglu.server.codecs.JsonCodecs._
-import com.snowplowanalytics.iglu.server.codecs.UriParsers._
 
-class ValidationService[F[+_]: Sync](
-  swagger: SwaggerSyntax[F],
-  ctx: AuthedContext[F, Permission],
-  db: Storage[F],
-  maxJsonDepth: Int
-) extends RhoRoutes[F] {
+object ValidationService {
 
-  import swagger._
-  import ValidationService._
+  def validateSchemaEndpoint: PublicEndpoint[(Schema.Format, String), Failure, IgluResponse, Any] =
+    base(StatusCode.Forbidden)
+      .post
+      .in("validate" / "schema" / path[Schema.Format]("format").description("Schema format, e.g. jsonschema"))
+      .in(jsonIn[Json])
+      .out(jsonOut[IgluResponse])
+      .summary("This route allows you to validate schemas")
 
-  val jsonBody = Utils.jsonDecoderWithDepthCheck(maxJsonDepth)
+  def validateInstanceEndpoint: PublicEndpoint[String, Failure, IgluResponse, Any] =
+    base(StatusCode.BadRequest, StatusCode.NotFound, StatusCode.InternalServerError)
+      .post
+      .in("validate" / "instance")
+      .in(jsonIn[Json])
+      .out(jsonOut[IgluResponse])
+      .summary("This route allows you to validate self-describing instances")
 
-  val schemaFormat = pathVar[Schema.Format]("format", "Schema format, e.g. jsonschema")
+  def api[F[_]: Async](maxJsonDepth: Int)(db: Storage[F]): Api[F] = {
+    val jsonBody = Utils.jsonDecoderWithDepthCheck[F](maxJsonDepth)
 
-  "This route allows you to validate schemas" **
-    POST / "validate" / "schema" / schemaFormat >>> ctx.auth ^ jsonBody |>> validateSchema _
+    Api(
+      List(
+        Api.withPermission(validateSchemaEndpoint) { permission =>
+          {
+            case (format, body) =>
+              withBody(body, jsonBody)(json => Async[F].pure(validateSchema(format, permission, json, maxJsonDepth)))
+          }
+        },
+        Api.withPermission(validateInstanceEndpoint) { permission => body =>
+          withBody(body, jsonBody)(validateData(db, permission, _))
+        }
+      )
+    )
+  }
 
-  "This route allows you to validate self-describing instances" **
-    POST / "validate" / "instance" >>> ctx.auth ^ jsonBody |>> validateData _
-
-  def validateSchema(format: Schema.Format, authInfo: Permission, schema: Json) =
-    if (!authInfo.canValidate) {
-      Forbidden("")
-    } else {
+  def validateSchema(
+    format: Schema.Format,
+    authInfo: Permission,
+    schema: Json,
+    maxJsonDepth: Int
+  ): Either[Failure, IgluResponse] =
+    if (!authInfo.canValidate)
+      Failure.text(StatusCode.Forbidden, "").asLeft
+    else
       format match {
         case Schema.Format.Jsonschema =>
           validateJsonSchema(schema, maxJsonDepth) match {
             case Validated.Valid(sd) =>
               val message = s"The schema provided is a valid self-describing ${sd.self.schemaKey.toSchemaUri} schema"
-              Ok(IgluResponse.Message(message): IgluResponse)
+              (IgluResponse.Message(message): IgluResponse).asRight
             case Validated.Invalid(report) =>
-              Ok(IgluResponse.SchemaValidationReport(report): IgluResponse)
+              (IgluResponse.SchemaValidationReport(report): IgluResponse).asRight
           }
       }
-    }
 
-  def validateData(authInfo: Permission, instance: Json) =
-    if (!authInfo.canValidate) {
-      NotFound(IgluResponse.SchemaNotFound: IgluResponse)
-    } else {
+  def validateData[F[_]: Applicative](
+    db: Storage[F],
+    authInfo: Permission,
+    instance: Json
+  ): F[Either[Failure, IgluResponse]] =
+    if (!authInfo.canValidate)
+      Applicative[F].pure(Failure.json(StatusCode.NotFound, IgluResponse.SchemaNotFound).asLeft)
+    else
       SelfDescribingData.parse(instance) match {
         case Right(SelfDescribingData(key, data)) =>
-          for {
-            schema <- db.getSchema(SchemaMap(key))
-            response <- schema match {
-              case Some(Schema(_, meta, schemaBody, _)) if meta.isPublic || authInfo.canRead(key.vendor) =>
-                CirceValidator.validate(data, schemaBody) match {
-                  case Left(ValidatorError.InvalidData(report)) =>
-                    Ok(IgluResponse.InstanceValidationReport(report): IgluResponse)
-                  case Left(ValidatorError.InvalidSchema(_)) =>
-                    val message = s"Schema ${key.toSchemaUri} fetched from DB is invalid"
-                    InternalServerError(IgluResponse.Message(message): IgluResponse)
-                  case Right(_) =>
-                    Ok(IgluResponse.Message(s"Instance is valid ${key.toSchemaUri}"): IgluResponse)
-                }
-              case _ =>
-                NotFound(IgluResponse.SchemaNotFound: IgluResponse)
-            }
-          } yield response
+          db.getSchema(SchemaMap(key)).map {
+            case Some(Schema(_, meta, schemaBody, _)) if meta.isPublic || authInfo.canRead(key.vendor) =>
+              CirceValidator.validate(data, schemaBody) match {
+                case Left(ValidatorError.InvalidData(report)) =>
+                  (IgluResponse.InstanceValidationReport(report): IgluResponse).asRight
+                case Left(ValidatorError.InvalidSchema(_)) =>
+                  val message = s"Schema ${key.toSchemaUri} fetched from DB is invalid"
+                  Failure.json(StatusCode.InternalServerError, IgluResponse.Message(message)).asLeft
+                case Right(_) =>
+                  (IgluResponse.Message(s"Instance is valid ${key.toSchemaUri}"): IgluResponse).asRight
+              }
+            case _ =>
+              Failure.json(StatusCode.NotFound, IgluResponse.SchemaNotFound).asLeft
+          }
         case Left(error) =>
-          BadRequest(IgluResponse.Message(s"JSON payload is not self-describing, ${error.code}"): IgluResponse)
+          Applicative[F].pure(
+            Failure
+              .json(StatusCode.BadRequest, IgluResponse.Message(s"JSON payload is not self-describing, ${error.code}"))
+              .asLeft
+          )
       }
-    }
-
-}
-
-object ValidationService {
-
-  def asRoutes(maxJsonDepth: Int)(
-    db: Storage[IO],
-    superKey: Option[UUID],
-    ctx: AuthedContext[IO, Permission],
-    rhoMiddleware: RhoMiddleware[IO]
-  ): HttpRoutes[IO] = {
-    val service = new ValidationService[IO](io, ctx, db, maxJsonDepth).toRoutes(rhoMiddleware)
-    PermissionMiddleware.wrapService(db, superKey, ctx, service)
-  }
 
   type LintReport[A] = ValidatedNel[Message, A]
 

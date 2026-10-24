@@ -10,7 +10,7 @@
 
 package com.snowplowanalytics.iglu.server
 
-import cats.effect.BracketThrow
+import cats.effect.MonadCancelThrow
 import cats.implicits._
 
 import io.circe.{Encoder, Json}
@@ -32,10 +32,8 @@ object Webhook {
     usePost: Boolean
   ) extends Webhook
 
-  case class WebhookClient[F[_]](webhooks: List[Webhook], httpClient: Client[F]) {
-    def schemaPublished(schemaKey: SchemaKey, updated: Boolean)(
-      implicit F: BracketThrow[F]
-    ): F[List[Either[String, Unit]]] =
+  case class WebhookClient[F[_]: MonadCancelThrow](webhooks: List[Webhook], httpClient: Client[F]) {
+    def schemaPublished(schemaKey: SchemaKey, updated: Boolean): F[List[Either[String, Unit]]] =
       webhooks.traverse {
         case SchemaPublished(uri, prefixes, usePost)
             if prefixes.isEmpty || prefixes.getOrElse(List()).exists(schemaKey.vendor.startsWith(_)) =>
@@ -46,11 +44,11 @@ object Webhook {
             .withBodyStream(Utils.toBytes(event))
           httpClient.run(req).use { res: Response[F] =>
             res.status match {
-              case Status(code) if code < 200 || code > 299 => F.pure(code.toString.asLeft[Unit])
-              case _                                        => F.pure(().asRight[String])
+              case Status(code) if code < 200 || code > 299 => code.toString.asLeft[Unit].pure[F]
+              case _                                        => ().asRight[String].pure[F]
             }
           }
-        case _ => F.pure(().asRight)
+        case _ => ().asRight[String].pure[F]
       }
   }
 

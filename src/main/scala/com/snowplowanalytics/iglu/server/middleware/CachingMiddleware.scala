@@ -13,23 +13,19 @@ package com.snowplowanalytics.iglu.server.middleware
 import cats.Applicative
 import cats.data.{Kleisli, OptionT}
 import cats.implicits._
-import cats.effect.{Resource, Sync, Async => CatsAsync}
+import cats.effect.{Resource, Sync}
 
-import com.github.benmanes.caffeine.cache.Caffeine
+import com.github.benmanes.caffeine.cache.{Cache, Caffeine, Expiry}
 
+import org.typelevel.ci.CIString
 import org.typelevel.log4cats.slf4j.Slf4jLogger
 
 import org.http4s.{HttpRoutes, Method, Request, Response}
-import org.http4s.syntax.string._
 
-import scalacache.caffeine.CaffeineCache
-import scalacache.{Entry, Flags, Mode, removeAll}
-import scalacache.CatsEffect.modes._
-
-import scala.concurrent.duration.Duration
+import scala.concurrent.duration.FiniteDuration
 
 object CachingMiddleware {
-  def apply[F[_]](cache: ResponseCache[F])(service: HttpRoutes[F])(implicit F: CatsAsync[F]): HttpRoutes[F] = {
+  def apply[F[_]: Sync](cache: ResponseCache[F])(service: HttpRoutes[F]): HttpRoutes[F] = {
     val logger = Slf4jLogger.getLogger[F]
     Kleisli { req =>
       val result = keyer(req) match {
@@ -49,41 +45,56 @@ object CachingMiddleware {
     }
   }
 
-  def initResponseCache[F[_]: CatsAsync](size: Long, duration: Duration): Resource[F, ResponseCache[F]] =
+  def initResponseCache[F[_]: Sync](size: Long, duration: FiniteDuration): Resource[F, ResponseCache[F]] =
     Resource.make(Sync[F].delay {
-      val underlyingCaffeineCache =
-        Caffeine.newBuilder().maximumSize(size).build[String, Entry[Option[Response[F]]]]
-      val cache = CaffeineCache(underlyingCaffeineCache)
-      ResponseCache[F](duration, cache)
+      val schemas = Caffeine
+        .newBuilder()
+        .maximumSize(size)
+        .expireAfter[String, Entry[F]](new TtlExpiry[F])
+        .build[String, Entry[F]]()
+      ResponseCache[F](duration, schemas)
     })(_.destroy)
 
-  case class ResponseCache[F[_]] private (duration: Duration, schemas: CaffeineCache[Option[Response[F]]]) {
+  /** A cached response, with its own time to live */
+  final case class Entry[F[_]](response: Option[Response[F]], ttl: FiniteDuration)
 
-    def removeSchemas(implicit F: CatsAsync[F]): F[Unit] =
-      removeAll[Option[Response[F]]]()(schemas, implicitly[Mode[F]]).void
+  /** Expire an entry after its time to live since it was put in the cache */
+  private class TtlExpiry[F[_]] extends Expiry[String, Entry[F]] {
+    def expireAfterCreate(key: String, value: Entry[F], currentTime: Long): Long =
+      value.ttl.toNanos
+    def expireAfterUpdate(key: String, value: Entry[F], currentTime: Long, currentDuration: Long): Long =
+      value.ttl.toNanos
+    def expireAfterRead(key: String, value: Entry[F], currentTime: Long, currentDuration: Long): Long =
+      currentDuration
+  }
+
+  case class ResponseCache[F[_]: Sync] private (duration: FiniteDuration, schemas: Cache[String, Entry[F]]) {
+
+    def removeSchemas: F[Unit] =
+      Sync[F].delay(schemas.invalidateAll())
 
     /** Try to get `key` from a cache. If value is missing, execute `action` and put it into cache if result is success */
-    def wrap[A](key: String)(action: F[Option[Response[F]]])(implicit F: CatsAsync[F]): F[Option[Response[F]]] =
+    def wrap(key: String)(action: F[Option[Response[F]]]): F[Option[Response[F]]] =
       for {
-        cacheResult <- schemas.get[F](key)(implicitly[Mode[F]], Flags())
+        cacheResult <- Sync[F].delay(Option(schemas.getIfPresent(key)))
         response <- cacheResult match {
           case Some(cached) =>
-            Applicative[F].pure(cached)
+            Applicative[F].pure(cached.response)
           case None =>
             action.flatMap[Option[Response[F]]] {
               case r @ Some(response) if response.status.code >= 200 && response.status.code < 300 =>
-                schemas.put(key)(Some(response), Some(getDuration(key))).as(r)
+                Sync[F].delay(schemas.put(key, Entry(r, getDuration(key)))).as(r)
               case other =>
                 Applicative[F].pure(other)
             }
         }
       } yield response
 
-    def destroy(implicit F: CatsAsync[F]): F[Unit] =
-      schemas.close()(implicitly[Mode[F]]).void
+    def destroy: F[Unit] =
+      Sync[F].delay(schemas.invalidateAll()) *> Sync[F].delay(schemas.cleanUp())
 
     /** Lower duration for `/schemas/` endpoint */
-    def getDuration(key: String) = {
+    def getDuration(key: String): FiniteDuration = {
       val path = key
         .split(":")
         .toList
@@ -107,7 +118,7 @@ object CachingMiddleware {
   private def keyer[F[_]](req: Request[F]): CacheAction =
     req.method match {
       case Method.GET if req.uri.renderString.contains("/schemas") =>
-        val apikey = req.headers.get("apikey".ci).map(_.value).getOrElse("")
+        val apikey = req.headers.get(CIString(PermissionMiddleware.ApiKey)).map(_.head.value).getOrElse("")
         CacheAction.Get(s"${req.uri.renderString}:$apikey")
       case Method.PUT | Method.POST | Method.DELETE =>
         CacheAction.Clean

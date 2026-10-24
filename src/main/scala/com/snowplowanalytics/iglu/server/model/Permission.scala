@@ -22,7 +22,6 @@ import io.circe.syntax._
 import io.circe.generic.semiauto._
 
 import doobie._
-import doobie.postgres.implicits._
 
 import storage.Storage.IncompatibleStorage
 
@@ -69,8 +68,8 @@ object Permission {
   case class KeyPair(read: UUID, write: UUID)
 
   object KeyPair {
-    def generate[F[_]](implicit F: Sync[F]): F[KeyPair] =
-      F.delay(KeyPair(UUID.randomUUID(), UUID.randomUUID()))
+    def generate[F[_]: Sync]: F[KeyPair] =
+      Sync[F].delay(KeyPair(UUID.randomUUID(), UUID.randomUUID()))
 
     implicit val keyPairCirceEncoder: Encoder[KeyPair] =
       deriveEncoder[KeyPair]
@@ -175,6 +174,13 @@ object Permission {
     implicit val doobieKeyActionGet: Meta[KeyAction] =
       Meta[String].timap(x => parse(x).fold(e => throw IncompatibleStorage(e), identity))(_.show)
 
+    /** The `key_action[]` column */
+    implicit val doobieKeyActionsMeta: Meta[List[KeyAction]] =
+      Meta
+        .Advanced
+        .array[String]("key_action", "_key_action")
+        .timap(_.toList.traverse(parse).fold(e => throw IncompatibleStorage(e), identity))(_.map(_.show).toArray)
+
     implicit val keyActionCirceEncoder: Encoder[KeyAction] =
       Encoder.instance(_.show.asJson)
   }
@@ -192,10 +198,9 @@ object Permission {
   val Write = Permission(Vendor.wildcard, Some(SchemaAction.CreateVendor), Set.empty)
 
   implicit val doobiePermissionRead: Read[Permission] =
-    Read[(Option[String], Boolean, Option[SchemaAction], List[String])].map {
-      case (ven, wildcard, schemaAction, keyAction) =>
-        val vendor     = ven.map(Vendor.parse(_, wildcard)).getOrElse(Vendor(Nil, wildcard))
-        val keyActions = keyAction.traverse(KeyAction.parse).fold(e => throw IncompatibleStorage(e), identity)
+    Read[(Option[String], Boolean, Option[SchemaAction], List[KeyAction])].map {
+      case (ven, wildcard, schemaAction, keyActions) =>
+        val vendor = ven.map(Vendor.parse(_, wildcard)).getOrElse(Vendor(Nil, wildcard))
         Permission(vendor, schemaAction, keyActions.toSet)
     }
 }

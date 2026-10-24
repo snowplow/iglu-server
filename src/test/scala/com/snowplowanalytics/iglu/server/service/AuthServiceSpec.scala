@@ -12,9 +12,10 @@ package com.snowplowanalytics.iglu.server
 package service
 
 import cats.effect.IO
+import cats.effect.unsafe.implicits.global
 import fs2.Stream
 import org.http4s._
-import org.http4s.rho.swagger.syntax.io.createRhoMiddleware
+import org.http4s.implicits._
 
 import java.util.UUID
 import com.snowplowanalytics.iglu.server.storage.InMemory
@@ -27,7 +28,7 @@ class AuthServiceSpec extends org.specs2.Specification with StorageAgnosticSpec 
     maxJsonDepth: Int = 20
   ): IO[(List[Response[IO]], InMemory.State)] =
     sendRequestsGetState[InMemory.State](storage =>
-      AuthService.asRoutes(maxJsonDepth)(storage, superApiKey, SpecHelpers.ctx, createRhoMiddleware())
+      routes(AuthService.api[IO](maxJsonDepth)(storage), storage, superApiKey)
     )(storage => storage.asInstanceOf[InMemory[IO]].ref.get)(List(request))
 
   def is = s2"""
@@ -45,8 +46,8 @@ class AuthServiceSpec extends org.specs2.Specification with StorageAgnosticSpec 
 
     val req = Request(
       Method.POST,
-      Uri.uri("/keygen"),
-      headers = Headers.of(Header("apikey", SpecHelpers.superKey.toString)),
+      uri"/keygen",
+      headers = Headers("apikey" -> SpecHelpers.superKey.toString),
       body = Stream.emits("""{"vendorPrefix": "me.chuwy"}""").evalMap(c => IO.pure(c.toByte))
     )
 
@@ -68,8 +69,8 @@ class AuthServiceSpec extends org.specs2.Specification with StorageAgnosticSpec 
 
     val req = Request(
       Method.POST,
-      Uri.uri("/keygen"),
-      headers = Headers.of(Header("apikey", superApiKey.toString)),
+      uri"/keygen",
+      headers = Headers("apikey" -> superApiKey.toString),
       body = Stream.emits("""{"vendorPrefix": "me.chuwy"}""").evalMap(c => IO.pure(c.toByte))
     )
 
@@ -89,8 +90,8 @@ class AuthServiceSpec extends org.specs2.Specification with StorageAgnosticSpec 
 
     val req = Request(
       Method.POST,
-      Uri.uri("/keygen"),
-      headers = Headers.of(Header("apikey", SpecHelpers.superKey.toString)),
+      uri"/keygen",
+      headers = Headers("apikey" -> SpecHelpers.superKey.toString),
       body = Stream.emits("""vendor_prefix=ru.chuwy""").evalMap(c => IO.pure(c.toByte))
     ).withContentType(headers.`Content-Type`(MediaType.application.`x-www-form-urlencoded`))
 
@@ -109,7 +110,7 @@ class AuthServiceSpec extends org.specs2.Specification with StorageAgnosticSpec 
     val req =
       Request(
         Method.POST,
-        Uri.uri("/keygen"),
+        uri"/keygen",
         body = Stream.emits("""{"vendorPrefix": "me.chuwy"}""").evalMap(c => IO.pure(c.toByte))
       )
 
@@ -129,8 +130,8 @@ class AuthServiceSpec extends org.specs2.Specification with StorageAgnosticSpec 
     val req =
       Request(
         Method.POST,
-        Uri.uri("/keygen"),
-        headers = Headers.of(Header("apikey", unknownKey.toString)),
+        uri"/keygen",
+        headers = Headers("apikey" -> unknownKey.toString),
         body = Stream.emits("""{"vendorPrefix": "me.chuwy"}""").evalMap(c => IO.pure(c.toByte))
       )
 
@@ -145,8 +146,8 @@ class AuthServiceSpec extends org.specs2.Specification with StorageAgnosticSpec 
   def e6 = {
     val req = Request[IO](
       Method.DELETE,
-      Uri.uri("/keygen").withQueryParam("key", SpecHelpers.readKey.toString),
-      headers = Headers.of(Header("apikey", SpecHelpers.superKey.toString))
+      uri"/keygen".withQueryParam("key", SpecHelpers.readKey.toString),
+      headers = Headers("apikey" -> SpecHelpers.superKey.toString)
     )
 
     val response           = getState(req)
@@ -158,19 +159,22 @@ class AuthServiceSpec extends org.specs2.Specification with StorageAgnosticSpec 
   }
 
   def e7 = {
-    val deepJsonSchema = createDeepJsonSchema(100000)
-    val deepJsonArray  = createDeepJsonArray(1000000)
-    val wrongApikey    = "c99ce0f9-cb5b-4b6f-88f3-2baed041be9b"
+    // Deeper than maxJsonDepth: rejected by the depth check
+    val deepJsonSchema = createDeepJsonSchema(1000)
+    val deepJsonArray  = createDeepJsonArray(1000)
+    val invalid        = List((422, "The request body was invalid."))
+    // Deeper than jawn.parser.maxDepth (4096): rejected by the JSON parser, as invalid too
+    val veryDeepJsonSchema = createDeepJsonSchema(100000)
+    val veryDeepJsonArray  = createDeepJsonArray(1000000)
+    val wrongApikey        = "c99ce0f9-cb5b-4b6f-88f3-2baed041be9b"
 
-    def executeTest(body: String, apikey: String) = {
+    def executeTest(body: String, apikey: String, expected: List[(Int, String)]) = {
       val req = Request(
         Method.POST,
-        Uri.uri("/keygen"),
-        headers = Headers.of(Header("apikey", apikey)),
+        uri"/keygen",
+        headers = Headers("apikey" -> apikey),
         body = toBytes(body)
       )
-
-      val expected = List((422, "The request body was invalid."))
 
       val (resp, _) = getState(req).unsafeRunSync()
       val result    = resp.map(r => (r.status.code, r.bodyText.compile.foldMonoid.unsafeRunSync()))
@@ -178,9 +182,9 @@ class AuthServiceSpec extends org.specs2.Specification with StorageAgnosticSpec 
       result must beEqualTo(expected)
     }
 
-    executeTest(deepJsonSchema, SpecHelpers.superKey.toString)
-    executeTest(deepJsonArray, wrongApikey)
-    executeTest(deepJsonSchema, SpecHelpers.superKey.toString)
-    executeTest(deepJsonArray, wrongApikey)
+    executeTest(deepJsonSchema, SpecHelpers.superKey.toString, invalid)
+      .and(executeTest(deepJsonArray, wrongApikey, invalid))
+      .and(executeTest(veryDeepJsonSchema, SpecHelpers.superKey.toString, invalid))
+      .and(executeTest(veryDeepJsonArray, wrongApikey, invalid))
   }
 }

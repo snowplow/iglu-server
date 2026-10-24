@@ -10,7 +10,7 @@
 
 package com.snowplowanalytics.iglu.server.migrations
 
-import cats.effect.Bracket
+import cats.effect.MonadCancelThrow
 import cats.implicits._
 
 import doobie._
@@ -59,7 +59,9 @@ END';"""
         body        JSON          NOT NULL,
 
         superseded_by VARCHAR(32) NULL,
-        supersedes VARCHAR(32) ARRAY NULL
+        supersedes VARCHAR(32) ARRAY NULL,
+
+        PRIMARY KEY (vendor, name, format, model, revision, addition)
       )""")
 
   val draftsCreate = (fr"CREATE TABLE IF NOT EXISTS" ++ Postgres.DraftsTable ++ fr"""(
@@ -72,15 +74,14 @@ END';"""
         updated_at  TIMESTAMP    NOT NULL,
         is_public   BOOLEAN      NOT NULL,
 
-        body        JSON         NOT NULL
+        body        JSON         NOT NULL,
+
+        PRIMARY KEY (vendor, name, format, version)
       )""")
 
   val allStatements =
     List(keyActionCreate, schemaActionCreate, permissionsCreate, schemasCreate, draftsCreate)
 
-  def initialize[F[_]](xa: Transactor[F])(implicit F: Bracket[F, Throwable]) =
-    allStatements
-      .traverse[ConnectionIO, Int](sql => sql.updateWithLogHandler(LogHandler.jdkLogHandler).run)
-      .map(_.combineAll)
-      .transact(xa)
+  def initialize[F[_]: MonadCancelThrow](xa: Transactor[F]) =
+    allStatements.traverse[ConnectionIO, Int](_.update.run).map(_.combineAll).transact(xa)
 }

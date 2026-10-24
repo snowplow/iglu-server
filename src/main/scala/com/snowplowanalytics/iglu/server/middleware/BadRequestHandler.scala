@@ -11,7 +11,7 @@
 package com.snowplowanalytics.iglu.server.middleware
 
 import cats.data.{Kleisli, OptionT}
-import cats.effect.Effect
+import cats.effect.Concurrent
 import cats.implicits._
 
 import com.snowplowanalytics.iglu.server.Utils
@@ -24,7 +24,7 @@ import org.http4s.headers.`Content-Type`
 
 /** Wrap any non-JSON message into `{"message": original}` payload */
 object BadRequestHandler {
-  def apply[G[_]: Effect](http: HttpRoutes[G]): HttpRoutes[G] =
+  def apply[G[_]: Concurrent](http: HttpRoutes[G]): HttpRoutes[G] =
     Kleisli { req: Request[G] =>
       def handle(res: Response[G]): G[Response[G]] =
         if (res.status.code >= 400 && res.status.code < 500)
@@ -37,7 +37,7 @@ object BadRequestHandler {
             .map(s =>
               Response(res.status).withBodyStream(s).withContentType(`Content-Type`(MediaType.application.json))
             )
-        else Effect[G].pure(res)
+        else Concurrent[G].pure(res)
 
       OptionT[G, Response[G]](http(req).value.flatMap(o => o.traverse(handle)))
     }

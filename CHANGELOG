@@ -1,3 +1,17 @@
+Version 0.15.0 (2026-10-16)
+---------------------------
+Bump postgresql to 42.7.14 and jackson to 2.21.7 to fix CVEs (#43)
+Use the shared docker-publish workflow from github-action-modules (#42)
+Upgrade to cats-effect 3, http4s 0.23, tapir 1.x and doobie 1.0 (#41)
+Replace rho with tapir (#40)
+Add characterisation tests for the HTTP surface (#37)
+Move Docker publishing to the two-stage pipeline, publishing public and -private images (#35)
+Retry schema writes aborted by transient database errors (#33)
+Replace check-then-act schema upload with atomic UPSERT (#32)
+Make the primary key of iglu_schemas and iglu_drafts mandatory (#30)
+Restructure dependencies file (#31)
+ci: move the Snowman hook to the async tests-only model (#29)
+
 Version 0.14.2 (2025-07-30)
 ---------------------------
 Remove Snyk scanning (#25)

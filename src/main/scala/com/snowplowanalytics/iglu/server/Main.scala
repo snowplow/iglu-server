@@ -23,9 +23,9 @@ object Main extends IOApp {
       _       <- EitherT.fromEither[IO](checkLicense(config))
       result <- command match {
         case _: Config.ServerCommand.Run =>
-          EitherT.liftF[IO, String, ExitCode](Server.run(config))
+          EitherT.liftF[IO, String, ExitCode](Server.run[IO](config))
         case Config.ServerCommand.Setup(_, migration) =>
-          EitherT.liftF[IO, String, ExitCode](Server.setup(config, migration))
+          EitherT.liftF[IO, String, ExitCode](Server.setup[IO](config, migration))
       }
     } yield result
 

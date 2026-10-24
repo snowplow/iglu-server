@@ -9,7 +9,7 @@
     "interface": "0.0.0.0"
     "port": 8080
 
-    # Configure execution context used by BlazeServer for executing Futures.
+    # Configure execution context used by the HTTP server and the webhooks HTTP client.
     "threadPool": "cached" # use a CachedThreadPool
     # "threadPool": "global" # the global ExecutionContext
     # "threadpool": {
@@ -54,14 +54,8 @@
         "size": 4
       }
 
-      # Configure the thread pool used for blocking JDBC operations
-      "transactionPool": "cached"
-      
-
       # type 'nopool' is an alternative to 'hikari'. It means no upper bound on the number of connections.
       # type = "nopool"
-      # Optionally configure execution context used for blocking operations. Default is 'cached'.
-      # threadPool = "cached"
 
     }
 

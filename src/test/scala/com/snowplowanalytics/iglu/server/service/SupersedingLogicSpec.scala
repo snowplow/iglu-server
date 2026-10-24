@@ -11,6 +11,7 @@
 package com.snowplowanalytics.iglu.server.service
 
 import cats.effect.IO
+import cats.effect.unsafe.implicits.global
 import cats.implicits._
 import com.snowplowanalytics.iglu.core.{SchemaKey, SchemaVer}
 import com.snowplowanalytics.iglu.server.model.Schema.SupersedingInfo
@@ -20,18 +21,12 @@ import com.snowplowanalytics.iglu.server.SpecHelpers.SchemaKeyUri
 import io.circe._
 import io.circe.literal._
 import org.http4s.circe._
-import org.http4s.rho.swagger.syntax.io.createRhoMiddleware
-import org.http4s.{Header, Headers, Method, Request, Response}
+import org.http4s.{Headers, Method, Request, Response}
 
 trait SupersedingLogicSpecBase extends org.specs2.Specification with StorageAgnosticSpec {
   private def sendRequests(requests: List[Request[IO]]): IO[(List[Response[IO]], Unit)] =
     sendRequestsGetState(storage =>
-      SchemaService.asRoutes(patchesAllowed = true, Webhook.WebhookClient(List(), client), 20)(
-        storage,
-        None,
-        SpecHelpers.ctx,
-        createRhoMiddleware()
-      )
+      routes(SchemaService.api[IO](patchesAllowed = true, Webhook.WebhookClient(List(), client), 20)(storage), storage)
     )(_ => IO.unit)(requests)
 
   case class S(
@@ -52,11 +47,11 @@ trait SupersedingLogicSpecBase extends org.specs2.Specification with StorageAgno
     val putRequests = schemas.map {
       case (body, key) =>
         Request[IO](Method.PUT, key.uri)
-          .withHeaders(Headers.of(Header("apikey", SpecHelpers.superKey.toString)))
+          .withHeaders(Headers("apikey" -> SpecHelpers.superKey.toString))
           .withEntity(body)
     }
     val getRequests = schemas.map(_._2).distinct.map { key =>
-      Request[IO](Method.GET, key.uri).withHeaders(Headers.of(Header("apikey", SpecHelpers.superKey.toString)))
+      Request[IO](Method.GET, key.uri).withHeaders(Headers("apikey" -> SpecHelpers.superKey.toString))
     }
     val result = for {
       responses <- sendRequests(putRequests ::: getRequests)

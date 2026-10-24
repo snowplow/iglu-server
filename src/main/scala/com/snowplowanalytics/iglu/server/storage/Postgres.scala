@@ -11,103 +11,101 @@
 package com.snowplowanalytics.iglu.server
 package storage
 
+import java.sql.SQLException
 import java.util.UUID
 import io.circe.Json
-import cats.Monad
 import cats.implicits._
 import cats.data.NonEmptyList
-import cats.effect.{Bracket, Clock}
+import cats.effect.Async
 import fs2.Stream
 import doobie._
 import doobie.implicits._
-import doobie.postgres.implicits._
+import doobie.postgres.implicits.{JavaInstantMeta => _, _}
 import doobie.postgres.circe.json.implicits._
 import org.typelevel.log4cats.Logger
 import com.snowplowanalytics.iglu.core.{SchemaMap, SchemaVer}
 import com.snowplowanalytics.iglu.server.migrations.Bootstrap
 import com.snowplowanalytics.iglu.server.model.{Permission, Schema, SchemaDraft}
 import com.snowplowanalytics.iglu.server.model.SchemaDraft.DraftId
+import com.snowplowanalytics.iglu.server.model.Schema.Metadata.doobieInstantMeta
 
-class Postgres[F[_]](xa: Transactor[F], logger: Logger[F]) extends Storage[F] { self =>
+class Postgres[F[_]: Async](xa: Transactor[F], logger: Logger[F]) extends Storage[F] { self =>
 
-  def getSchema(schemaMap: SchemaMap)(implicit F: Bracket[F, Throwable]): F[Option[Schema]] =
+  def getSchema(schemaMap: SchemaMap): F[Option[Schema]] =
     logger.debug(s"getSchemas ${schemaMap.schemaKey.toSchemaUri}") *>
       Postgres.Sql.getSchema(schemaMap).option.transact(xa)
 
-  override def getSchemasByVendor(vendor: String)(implicit F: Bracket[F, Throwable]): Stream[F, Schema] =
+  override def getSchemasByVendor(vendor: String): Stream[F, Schema] =
     Stream.eval(logger.debug(s"getSchemasByVendor $vendor")) *>
       Postgres.Sql.getSchemasByVendor(vendor).stream.transact(xa)
 
-  override def getSchemasByName(vendor: String, name: String)(
-    implicit F: Bracket[F, Throwable]
-  ): Stream[F, Schema] =
+  override def getSchemasByName(vendor: String, name: String): Stream[F, Schema] =
     Stream.eval(logger.debug(s"getSchemasByName $vendor/$name")) *>
       Postgres.Sql.getSchemasByName(vendor, name).stream.transact(xa)
 
-  override def getSchemasByModel(vendor: String, name: String, model: Int)(
-    implicit F: Bracket[F, Throwable]
-  ): Stream[F, Schema] =
+  override def getSchemasByModel(vendor: String, name: String, model: Int): Stream[F, Schema] =
     Stream.eval(logger.debug(s"getSchemasByModel $vendor/$name/$model")) *>
       Postgres.Sql.getSchemasByModel(vendor, name, model).stream.transact(xa)
 
-  def deleteSchema(schemaMap: SchemaMap)(implicit F: Bracket[F, Throwable]): F[Unit] =
+  def deleteSchema(schemaMap: SchemaMap): F[Unit] =
     Postgres.Sql.deleteSchema(schemaMap).run.void.transact(xa)
 
-  def getPermission(apikey: UUID)(implicit F: Bracket[F, Throwable]): F[Option[Permission]] =
+  def getPermission(apikey: UUID): F[Option[Permission]] =
     logger.debug(s"getPermission") *>
       Postgres.Sql.getPermission(apikey).option.transact(xa)
 
-  def addSchema(schemaMap: SchemaMap, body: Json, isPublic: Boolean, supersedes: List[SchemaVer.Full])(
-    implicit C: Clock[F],
-    M: Bracket[F, Throwable]
-  ): F[Unit] =
-    logger.debug(s"addSchema ${schemaMap.schemaKey.toSchemaUri}") *>
-      (Postgres.Sql.addSchema(schemaMap, body, isPublic, supersedes).run.void *>
-        (supersedes match {
-          case head :: tail => Postgres.Sql.updateSupersedingVersion(schemaMap, NonEmptyList(head, tail)).run.void
-          case _            => doobie.free.connection.unit
-        })).transact(xa)
+  def upsertSchema(
+    schemaMap: SchemaMap,
+    body: Json,
+    isPublic: Boolean,
+    supersedes: List[SchemaVer.Full],
+    patchesAllowed: Boolean
+  ): F[Boolean] =
+    logger.debug(s"upsertSchema ${schemaMap.schemaKey.toSchemaUri}") *>
+      transactRetrying(for {
+        wasInserted <- Postgres
+          .Sql
+          .upsertSchema(schemaMap, body, isPublic, supersedes, patchesAllowed)
+          .option
+          .map(_.getOrElse(false))
+        // supersedes is only recorded for freshly inserted schemas
+        _ <- supersedes match {
+          case head :: tail if wasInserted =>
+            Postgres.Sql.updateSupersedingVersion(schemaMap, NonEmptyList(head, tail)).run.void
+          case _ => doobie.free.connection.unit
+        }
+      } yield wasInserted)
 
-  def updateSchema(schemaMap: SchemaMap, body: Json, isPublic: Boolean)(
-    implicit C: Clock[F],
-    M: Bracket[F, Throwable]
-  ): F[Unit] =
-    logger.debug(s"updateSchema ${schemaMap.schemaKey.toSchemaUri}") *>
-      Postgres.Sql.updateSchema(schemaMap, body, isPublic).run.void.transact(xa)
-
-  def getSchemas(implicit F: Bracket[F, Throwable]): F[List[Schema]] =
+  def getSchemas: F[List[Schema]] =
     logger.debug("getSchemas") *>
       Postgres.Sql.getSchemas.to[List].transact(xa)
 
-  def getSchemasKeyOnly(implicit F: Bracket[F, Throwable]): F[List[(SchemaMap, Schema.Metadata)]] =
+  def getSchemasKeyOnly: F[List[(SchemaMap, Schema.Metadata)]] =
     logger.debug("getSchemasKeyOnly") *>
       Postgres.Sql.getSchemasKeyOnly.to[List].transact(xa)
 
-  def getDraft(draftId: DraftId)(implicit B: Bracket[F, Throwable]): F[Option[SchemaDraft]] =
+  def getDraft(draftId: DraftId): F[Option[SchemaDraft]] =
     Postgres.Sql.getDraft(draftId).option.transact(xa)
 
-  def addDraft(draftId: DraftId, body: Json, isPublic: Boolean)(
-    implicit C: Clock[F],
-    M: Bracket[F, Throwable]
-  ): F[Unit] =
+  def addDraft(draftId: DraftId, body: Json, isPublic: Boolean): F[Unit] =
     Postgres.Sql.addDraft(draftId, body, isPublic).run.void.transact(xa)
 
-  def getDrafts(implicit F: Monad[F]): Stream[F, SchemaDraft] =
+  def getDrafts: Stream[F, SchemaDraft] =
     Postgres.Sql.getDrafts.stream.transact(xa)
 
-  def addPermission(uuid: UUID, permission: Permission)(implicit F: Bracket[F, Throwable]): F[Unit] =
+  def addPermission(uuid: UUID, permission: Permission): F[Unit] =
     logger.debug(s"addPermission $permission") *>
       Postgres.Sql.addPermission(uuid, permission).run.void.transact(xa)
 
-  def deletePermission(id: UUID)(implicit F: Bracket[F, Throwable]): F[Unit] =
+  def deletePermission(id: UUID): F[Unit] =
     logger.debug(s"deletePermission") *>
       Postgres.Sql.deletePermission(id).run.void.transact(xa)
 
-  def ping(implicit F: Bracket[F, Throwable]): F[Storage[F]] =
+  def ping: F[Storage[F]] =
     logger.debug(s"ping") *>
       sql"SELECT 42".query[Int].unique.transact(xa).as(self)
 
-  def drop(implicit F: Bracket[F, Throwable]): F[Unit] =
+  def drop: F[Unit] =
     logger.warn("Dropping database entities") *>
       (Postgres.Sql.dropSchemas.run.void *>
         Postgres.Sql.dropDrafts.run.void *>
@@ -116,69 +114,48 @@ class Postgres[F[_]](xa: Transactor[F], logger: Logger[F]) extends Storage[F] { 
         Postgres.Sql.dropKeyAction.run.void).transact(xa) *>
       logger.warn("Database entities were dropped")
 
-  def runAutomaticMigrations(implicit F: Bracket[F, Throwable]): F[Unit] =
+  def runAutomaticMigrations: F[Unit] =
     logger.debug(s"Running automatic migrations") *>
       (Postgres.Sql.addSupersededByColumn.run.void *>
         Postgres.Sql.addSupersedesColumn.run.void).transact(xa) *>
-      addPrimaryKey(Postgres.SchemasTableName, Postgres.Sql.addSchemasPrimaryKey, Postgres.Sql.duplicateSchemas) *>
-      addPrimaryKey(Postgres.DraftsTableName, Postgres.Sql.addDraftsPrimaryKey, Postgres.Sql.duplicateDrafts) *>
+      ensurePrimaryKey(Postgres.SchemasTableName, Postgres.Sql.addSchemasPrimaryKey) *>
+      ensurePrimaryKey(Postgres.DraftsTableName, Postgres.Sql.addDraftsPrimaryKey) *>
       logger.debug(s"Automatic migrations done")
 
   /**
-    * Best-effort creation of the primary key on an existing table.
-    *
-    * Adding the PK in-place can legitimately fail on production deployments (pre-existing duplicate
-    * rows, insufficient DDL privileges, lock contention, ...). In every such case we log as much
-    * detail as we can and carry on: the server works the same whether or not the constraint exists.
-    * If a PK is already present we skip the attempt entirely.
+    * Create the primary key on tables bootstrapped before it was part of their definition.
+    * The primary key is mandatory, so any failure to create it (e.g. duplicate rows) is fatal.
     */
-  private def addPrimaryKey(
-    table: String,
-    addPk: Update0,
-    listDuplicates: Query0[String]
-  )(implicit F: Bracket[F, Throwable]): F[Unit] = {
-    val create = Postgres.Sql.hasPrimaryKey(table).unique.transact(xa).flatMap {
+  private def ensurePrimaryKey(table: String, addPrimaryKey: Update0): F[Unit] =
+    Postgres.Sql.hasPrimaryKey(table).unique.transact(xa).flatMap {
       case true =>
-        logger.debug(s"Primary key already present on table $table, skipping creation")
+        Async[F].unit
       case false =>
-        logger.info(s"Adding primary key to table $table") *>
-          addPk.run.void.transact(xa) *>
-          logger.info(s"Primary key successfully added to table $table")
+        logger.warn(s"Table $table has no primary key, adding it") *>
+          addPrimaryKey.run.void.transact(xa).onError {
+            case e => logger.error(e)(s"Could not add the primary key to table $table")
+          } *>
+          logger.info(s"Primary key added to table $table")
     }
-    create.handleErrorWith(logPrimaryKeyError(table, listDuplicates, _))
-  }
 
-  private def logPrimaryKeyError(
-    table: String,
-    listDuplicates: Query0[String],
-    error: Throwable
-  )(implicit F: Bracket[F, Throwable]): F[Unit] = {
-    val sqlState = error match {
-      case e: java.sql.SQLException => Option(e.getSQLState)
-      case _                        => None
-    }
-    val message =
-      s"Could not add the primary key to table $table; the server will keep running without it. " +
-        s"SQLState=${sqlState.getOrElse("n/a")}, message: ${error.getMessage}"
-    logger.error(error)(message) *> {
-      // 23505 = unique_violation: pre-existing duplicate rows block the unique index backing the PK
-      if (sqlState.contains("23505"))
-        listDuplicates
-          .to[List]
-          .transact(xa)
-          .flatMap { rows =>
-            logger.error(
-              s"Found ${rows.length} duplicate row(s) in table $table that prevent the primary key creation:"
-            ) *>
-              rows.traverse_(row => logger.error(s"  $table duplicate row: $row"))
-          }
-          .handleErrorWith(e => logger.error(e)(s"Could not list duplicate rows in table $table: ${e.getMessage}"))
-      else
-        F.unit
-    }
-  }
+  def bootstrap: F[Int] = Bootstrap.initialize(xa)
 
-  def bootstrap(implicit F: Bracket[F, Throwable]): F[Int] = Bootstrap.initialize(xa)
+  /**
+    * Run a transaction, running it again if Postgres aborted it with a transient error.
+    * An aborted transaction is entirely rolled back, so it is safe to retry it as is.
+    */
+  private[storage] def transactRetrying[A](
+    transaction: ConnectionIO[A],
+    retries: Int = Postgres.TransientErrorRetries
+  ): F[A] =
+    transaction.transact(xa).handleErrorWith {
+      case Postgres.TransientError(e) if retries > 0 =>
+        logger
+          .warn(s"Transaction aborted with transient error (SQLState ${e.getSQLState}), retrying: ${e.getMessage}") *>
+          transactRetrying(transaction, retries - 1)
+      case e =>
+        Async[F].raiseError(e)
+    }
 }
 
 object Postgres {
@@ -199,7 +176,26 @@ object Postgres {
 
   val Ordering = Fragment.const("ORDER BY created_at")
 
-  def apply[F[_]](xa: Transactor[F], logger: Logger[F]): Postgres[F] = new Postgres(xa, logger)
+  def apply[F[_]: Async](xa: Transactor[F], logger: Logger[F]): Postgres[F] = new Postgres(xa, logger)
+
+  /** How many times a transaction aborted with a transient error is retried */
+  val TransientErrorRetries = 3
+
+  /** Errors after which the aborted transaction can be retried, by SQLState */
+  object TransientError {
+    val SERIALIZATION_FAILURE = "40001"
+    val DEADLOCK_DETECTED     = "40P01"
+
+    def unapply(error: Throwable): Option[SQLException] =
+      error match {
+        case e: SQLException =>
+          e.getSQLState match {
+            case SERIALIZATION_FAILURE | DEADLOCK_DETECTED => Some(e)
+            case _                                         => None
+          }
+        case _ => None
+      }
+  }
 
   def vendorFr(vendor: String): Fragment =
     fr"vendor = $vendor"
@@ -271,20 +267,38 @@ object Postgres {
     def getSchemasKeyOnly: Query0[(SchemaMap, Schema.Metadata)] =
       (fr"SELECT" ++ schemaKeyColumns ++ fr"FROM" ++ SchemasTable ++ Ordering).query[(SchemaMap, Schema.Metadata)]
 
-    def addSchema(schemaMap: SchemaMap, schema: Json, isPublic: Boolean, supersedes: List[SchemaVer.Full]): Update0 = {
+    /**
+      * Atomic insert-or-update keyed on the schemas primary key. Returns a single boolean row that is
+      * `true` when a new row was inserted and `false` when the row already existed:
+      *   - `patchesAllowed`  -> `DO UPDATE` always yields a row; `xmax = 0` distinguishes insert from update
+      *   - `!patchesAllowed` -> `DO NOTHING` yields a row only on insert; a conflict returns no row at all
+      */
+    def upsertSchema(
+      schemaMap: SchemaMap,
+      schema: Json,
+      isPublic: Boolean,
+      supersedes: List[SchemaVer.Full],
+      patchesAllowed: Boolean
+    ): Query0[Boolean] = {
       val key = schemaMap.schemaKey
       val ver = key.version
-      (fr"INSERT INTO" ++ SchemasTable ++ fr"(" ++ schemaColumns ++ fr")" ++
+      val insertFr = fr"INSERT INTO" ++ SchemasTable ++ fr"(" ++ schemaColumns ++ fr")" ++
         fr"""VALUES (
           ${key.vendor}, ${key.name}, ${key.format},
           ${ver.model}, ${ver.revision}, ${ver.addition},
           current_timestamp, current_timestamp,
-          $isPublic, $schema, null, ${supersedes.map(_.asString)})""").update
+          $isPublic, $schema, null, ${supersedes.map(_.asString)})"""
+      val conflictFr =
+        if (patchesAllowed)
+          fr"""ON CONFLICT (vendor, name, format, model, revision, addition) DO UPDATE SET
+            updated_at = current_timestamp,
+            is_public = EXCLUDED.is_public,
+            body = EXCLUDED.body
+          RETURNING (xmax = 0)"""
+        else
+          fr"ON CONFLICT (vendor, name, format, model, revision, addition) DO NOTHING RETURNING true"
+      (insertFr ++ conflictFr).query[Boolean]
     }
-
-    def updateSchema(schemaMap: SchemaMap, schema: Json, isPublic: Boolean): Update0 =
-      (fr"UPDATE" ++ SchemasTable ++ fr"SET created_at = current_timestamp, updated_at = current_timestamp, is_public = $isPublic, body = $schema"
-        ++ fr"WHERE" ++ schemaMapFr(schemaMap)).update
 
     def getDraft(draftId: DraftId): Query0[SchemaDraft] =
       (fr"SELECT" ++ draftColumns ++ fr"FROM" ++ DraftsTable ++ fr"WHERE " ++ draftFr(draftId)).query[SchemaDraft]
@@ -302,7 +316,7 @@ object Postgres {
 
     def addPermission(uuid: UUID, permission: Permission): Update0 = {
       val vendor     = permission.vendor.parts.mkString(".")
-      val keyActions = permission.key.toList.map(_.show)
+      val keyActions = permission.key.toList
       (fr"INSERT INTO" ++ PermissionsTable ++ sql"VALUES ($uuid, $vendor, ${permission.vendor.wildcard}, ${permission.schema}::schema_action, $keyActions::key_action[])").update
     }
 
@@ -348,32 +362,14 @@ object Postgres {
     def addSupersedesColumn: Update0 =
       (fr"ALTER TABLE" ++ SchemasTable ++ fr"ADD COLUMN IF NOT EXISTS supersedes VARCHAR(32) ARRAY").update
 
-    /** True if the given table already has a PRIMARY KEY constraint. */
     def hasPrimaryKey(table: String): Query0[Boolean] =
-      sql"""SELECT EXISTS (
-        SELECT 1 FROM pg_constraint WHERE conrelid = $table::regclass AND contype = 'p'
-      )""".query[Boolean]
+      sql"SELECT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = $table::regclass AND contype = 'p')"
+        .query[Boolean]
 
     def addSchemasPrimaryKey: Update0 =
       (fr"ALTER TABLE" ++ SchemasTable ++ fr"ADD PRIMARY KEY (vendor, name, format, model, revision, addition)").update
 
     def addDraftsPrimaryKey: Update0 =
       (fr"ALTER TABLE" ++ DraftsTable ++ fr"ADD PRIMARY KEY (vendor, name, format, version)").update
-
-    /**
-      * Whole rows (rendered as text) whose key tuple occurs more than once - what prevents the PK creation.
-      * Casting the row to text keeps this generic over the table's columns.
-      */
-    def duplicateSchemas: Query0[String] =
-      (fr"SELECT t::text FROM" ++ SchemasTable ++ fr"t WHERE (vendor, name, format, model, revision, addition) IN (" ++
-        fr"SELECT vendor, name, format, model, revision, addition FROM" ++ SchemasTable ++
-        fr"GROUP BY vendor, name, format, model, revision, addition HAVING COUNT(*) > 1)" ++
-        fr"ORDER BY vendor, name, format, model, revision, addition").query[String]
-
-    def duplicateDrafts: Query0[String] =
-      (fr"SELECT t::text FROM" ++ DraftsTable ++ fr"t WHERE (vendor, name, format, version) IN (" ++
-        fr"SELECT vendor, name, format, version FROM" ++ DraftsTable ++
-        fr"GROUP BY vendor, name, format, version HAVING COUNT(*) > 1)" ++
-        fr"ORDER BY vendor, name, format, version").query[String]
   }
 }

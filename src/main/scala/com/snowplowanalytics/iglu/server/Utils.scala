@@ -10,16 +10,18 @@
 
 package com.snowplowanalytics.iglu.server
 
-import io.circe.{Decoder, Encoder, Json}
+import io.circe.{Decoder, Encoder, Json, ParsingFailure}
 import io.circe.syntax._
 
 import cats.implicits._
-import cats.effect.Sync
+import cats.effect.Concurrent
 
 import fs2.{Stream, text}
 
-import org.http4s.{DecodeResult, EntityDecoder, InvalidMessageBodyFailure}
+import org.http4s.{DecodeFailure, DecodeResult, EntityDecoder, InvalidMessageBodyFailure}
 import org.http4s.circe.jsonDecoder
+
+import org.typelevel.jawn.MaxDepthExceededException
 
 import com.snowplowanalytics.iglu.core.{SchemaKey, SchemaMap, SchemaVer}
 
@@ -29,9 +31,9 @@ object Utils {
     SchemaMap(schemaKey.vendor, schemaKey.name, schemaKey.format, schemaKey.version.asInstanceOf[SchemaVer.Full])
 
   def toBytes[F[_], A: Encoder](a: A): Stream[F, Byte] =
-    Stream.emit(a.asJson.noSpaces).through(text.utf8Encode)
+    Stream.emit(a.asJson.noSpaces).through(text.utf8.encode)
 
-  def jsonOfWithDepthCheck[F[_]: Sync, A: Decoder](maxJsonDepth: Int): EntityDecoder[F, A] =
+  def jsonOfWithDepthCheck[F[_]: Concurrent, A: Decoder](maxJsonDepth: Int): EntityDecoder[F, A] =
     jsonDecoderWithDepthCheck(maxJsonDepth).flatMapR { json =>
       json
         .as[A]
@@ -44,14 +46,26 @@ object Utils {
         )
     }
 
-  def jsonDecoderWithDepthCheck[F[_]: Sync](maxJsonDepth: Int): EntityDecoder[F, Json] =
+  /**
+    * JSON nested deeper than `maxJsonDepth` is invalid (422). JSON nested deeper than the parser allows (4096 levels
+    * for jawn) is too, rather than malformed (400), as it was before jawn had a depth limit.
+    */
+  def jsonDecoderWithDepthCheck[F[_]: Concurrent](maxJsonDepth: Int): EntityDecoder[F, Json] =
     jsonDecoder[F].transform(
-      _.flatMap { json =>
-        if (checkIfExceedMaxDepth(json, maxJsonDepth))
-          InvalidMessageBodyFailure("Maximum allowed JSON depth exceeded").asLeft
+      _.leftMap(failure => if (isTooDeep(failure)) tooDeep else failure).flatMap { json =>
+        if (checkIfExceedMaxDepth(json, maxJsonDepth)) tooDeep.asLeft
         else json.asRight
       }
     )
+
+  private val tooDeep: DecodeFailure = InvalidMessageBodyFailure("Maximum allowed JSON depth exceeded")
+
+  private def isTooDeep(e: Throwable): Boolean =
+    e match {
+      case _: MaxDepthExceededException  => true
+      case ParsingFailure(_, underlying) => isTooDeep(underlying)
+      case _                             => Option(e.getCause).exists(isTooDeep)
+    }
 
   private def checkIfExceedMaxDepth(json: Json, maxJsonDepth: Int): Boolean =
     if (maxJsonDepth <= 0) true

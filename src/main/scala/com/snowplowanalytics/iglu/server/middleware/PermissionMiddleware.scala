@@ -20,10 +20,10 @@ import cats.syntax.either._
 import cats.syntax.functor._
 import cats.syntax.eq._
 
-import org.http4s.{HttpRoutes, Request, Response, Status}
+import org.http4s.{AuthedRoutes, HttpRoutes, Request, Response, Status}
 import org.http4s.server.AuthMiddleware
-import org.http4s.util.CaseInsensitiveString
-import org.http4s.rho.AuthedContext
+
+import org.typelevel.ci.CIString
 
 import com.snowplowanalytics.iglu.server.model.{IgluResponse, Permission}
 import com.snowplowanalytics.iglu.server.storage.Storage
@@ -48,17 +48,17 @@ object PermissionMiddleware {
 
   /** Extract API key from HTTP request */
   def getApiKey[F[_]](request: Request[F]): Option[Either[Throwable, UUID]] =
-    request.headers.get(CaseInsensitiveString(ApiKey)).map(header => header.value).map { apiKey =>
+    request.headers.get(CIString(ApiKey)).map(_.head.value).map { apiKey =>
       Either.catchOnly[IllegalArgumentException](UUID.fromString(apiKey))
     }
 
+  /** Authenticate every request to `service`, which gets the caller's permission */
   def wrapService[F[_]: Sync](
     db: Storage[F],
     superKey: Option[UUID],
-    ctx: AuthedContext[F, Permission],
-    service: HttpRoutes[F]
+    service: AuthedRoutes[Permission, F]
   ): HttpRoutes[F] =
-    PermissionMiddleware[F](db, superKey).apply(ctx.toService(service))
+    PermissionMiddleware[F](db, superKey).apply(service)
 
   private val ApiKeyIssue = Utils.toBytes(IgluResponse.Message("Invalid UUID for ApiKey"): IgluResponse)
 
@@ -86,6 +86,6 @@ object PermissionMiddleware {
     *
     *  The service itself handles the case when permissions are not sufficient.
     */
-  private def badRequestHandler[F[_]](implicit F: Applicative[F]): Request[F] => F[Response[F]] =
-    _ => F.pure(Response[F](Status.BadRequest, body = ApiKeyIssue))
+  private def badRequestHandler[F[_]: Applicative]: Request[F] => F[Response[F]] =
+    _ => Applicative[F].pure(Response[F](Status.BadRequest).withBodyStream(ApiKeyIssue))
 }

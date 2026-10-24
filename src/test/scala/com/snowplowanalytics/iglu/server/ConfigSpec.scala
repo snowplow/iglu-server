@@ -52,8 +52,7 @@ class ConfigSpec extends org.specs2.Specification {
         Some(1000.millis),
         Some(5),
         Some(3),
-        Config.ThreadPool.Fixed(4),
-        Config.ThreadPool.Cached
+        Config.ThreadPool.Fixed(4)
       )
     val expected = Config(
       Config
@@ -126,7 +125,7 @@ class ConfigSpec extends org.specs2.Specification {
           "sp_password",
           "org.postgresql.Driver",
           Some(5),
-          Config.StorageConfig.ConnectionPool.NoPool(Config.ThreadPool.Fixed(2)),
+          Config.StorageConfig.ConnectionPool.NoPool,
           true
         ),
       Config.Http("0.0.0.0", 8080, None, None, Config.ThreadPool.Global, noHsts, 3000),
@@ -157,11 +156,7 @@ class ConfigSpec extends org.specs2.Specification {
         "driver" : "org.postgresql.Driver",
         "maxPoolSize" : 5,
         "pool" : {
-          "type" : "NoPool",
-          "threadPool" : {
-            "size" : 2,
-            "type" : "fixed"
-          }
+          "type" : "NoPool"
         },
         "password" : "******",
         "enableStartupChecks": true
@@ -220,7 +215,7 @@ class ConfigSpec extends org.specs2.Specification {
     val config     = getClass.getResource("/valid-pg-minimal.conf").toURI
     val configPath = Paths.get(config)
     val input      = s"--config $configPath"
-    val pool       = Config.StorageConfig.ConnectionPool.NoPool(Config.ThreadPool.Cached)
+    val pool       = Config.StorageConfig.ConnectionPool.NoPool
     val expected = Config(
       Config
         .StorageConfig

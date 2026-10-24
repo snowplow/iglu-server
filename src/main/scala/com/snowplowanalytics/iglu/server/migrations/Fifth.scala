@@ -25,7 +25,7 @@ import io.circe.parser.parse
 import doobie._
 import doobie.implicits._
 import doobie.ConnectionIO
-import doobie.postgres.implicits._
+import doobie.postgres.implicits.{JavaInstantMeta => _, _}
 import doobie.postgres.circe.json.implicits._
 
 import eu.timepit.refined.types.numeric.NonNegInt
@@ -36,6 +36,7 @@ import com.snowplowanalytics.iglu.server.model.VersionCursor
 import com.snowplowanalytics.iglu.server.model.VersionCursor.Inconsistency
 
 import model.{Permission, Schema, SchemaDraft}
+import model.Schema.Metadata.doobieInstantMeta
 import storage.Postgres
 import storage.Storage.IncompatibleStorage
 
@@ -52,11 +53,8 @@ object Fifth {
       _       <- checkContent(querySchemas)
       schemas <- checkConsistency(querySchemas)
       _       <- checkContent(queryDrafts)
-      _ <- Bootstrap
-        .allStatements
-        .traverse[ConnectionIO, Int](_.updateWithLogHandler(LogHandler.jdkLogHandler).run)
-        .map(_.combineAll)
-      _ <- (migrateKeys ++ migrateSchemas(schemas) ++ migrateDrafts).compile.drain
+      _       <- Bootstrap.allStatements.traverse[ConnectionIO, Int](_.update.run).map(_.combineAll)
+      _       <- (migrateKeys ++ migrateSchemas(schemas) ++ migrateDrafts).compile.drain
     } yield ()
 
   /** Perform query and check if entities are valid against current model, throw an exception otherwise */
@@ -121,9 +119,7 @@ object Fifth {
 
   def querySchemas =
     (fr"SELECT vendor, name, format, version, schema, createdat, updatedat, ispublic FROM" ++ OldSchemasTable ++ fr"WHERE draftnumber = '0' ORDER BY createdat")
-      .queryWithLogHandler[(String, String, String, String, String, Instant, Instant, Boolean)](
-        LogHandler.jdkLogHandler
-      )
+      .query[(String, String, String, String, String, Instant, Instant, Boolean)]
       .map {
         case (vendor, name, format, version, body, createdAt, updatedAt, isPublic) =>
           val schemaMap = for {
@@ -147,16 +143,13 @@ object Fifth {
       }
 
   def migrateSchemas(schemas: List[SchemaFifth]) =
-    for {
-      row <- Stream.emits(schemas)
-      _   <- Stream.eval_(addSchema(row.map, row.schema, row.isPublic, row.createdAt, row.updatedAt).run).void
-    } yield ()
+    Stream.emits(schemas).evalMap { row =>
+      addSchema(row.map, row.schema, row.isPublic, row.createdAt, row.updatedAt).run.void
+    }
 
   def queryDrafts =
     (fr"SELECT vendor, name, format, draftnumber, schema, createdat, updatedat, ispublic FROM" ++ OldSchemasTable ++ fr"WHERE draftnumber != '0'")
-      .queryWithLogHandler[(String, String, String, String, String, Instant, Instant, Boolean)](
-        LogHandler.jdkLogHandler
-      )
+      .query[(String, String, String, String, String, Instant, Instant, Boolean)]
       .map {
         case (vendor, name, format, draftId, body, createdAt, updatedAt, isPublic) =>
           for {
@@ -169,15 +162,12 @@ object Fifth {
       }
 
   def migrateDrafts =
-    for {
-      row <- queryDrafts.stream
-      _ <- row match {
-        case Right(draft) =>
-          Stream.eval_(addDraft(draft).run).void
-        case Left(error) =>
-          Stream.raiseError[ConnectionIO](IncompatibleStorage(error))
-      }
-    } yield ()
+    queryDrafts.stream.evalMap {
+      case Right(draft) =>
+        addDraft(draft).run.void
+      case Left(error) =>
+        MonadError[ConnectionIO, Throwable].raiseError[Unit](IncompatibleStorage(error))
+    }
 
   def migrateKeys = {
     val query =
@@ -201,13 +191,12 @@ object Fifth {
     val key = schemaMap.schemaKey
     val ver = key.version
     (fr"INSERT INTO" ++ Postgres.SchemasTable ++ fr"(vendor, name, format, model, revision, addition, created_at, updated_at, is_public, body)" ++
-      fr"VALUES (${key.vendor}, ${key.name}, ${key.format}, ${ver.model}, ${ver.revision}, ${ver.addition}, $createdAt, $updatedAt, $isPublic, $schema)")
-      .updateWithLogHandler(LogHandler.jdkLogHandler)
+      fr"VALUES (${key.vendor}, ${key.name}, ${key.format}, ${ver.model}, ${ver.revision}, ${ver.addition}, $createdAt, $updatedAt, $isPublic, $schema)").update
   }
 
   def addDraft(draft: SchemaDraft) =
     (fr"INSERT INTO" ++ Postgres.DraftsTable ++ fr"(vendor, name, format, version, created_at, updated_at, is_public, body)" ++
       fr"""VALUES (${draft.schemaMap.vendor}, ${draft.schemaMap.name}, ${draft.schemaMap.format},
         ${draft.schemaMap.version.value}, ${draft.metadata.createdAt}, ${draft.metadata.updatedAt},
-        ${draft.metadata.isPublic}, ${draft.body})""").updateWithLogHandler(LogHandler.jdkLogHandler)
+        ${draft.metadata.isPublic}, ${draft.body})""").update
 }

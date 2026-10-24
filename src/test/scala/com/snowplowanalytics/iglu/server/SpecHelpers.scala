@@ -12,12 +12,11 @@ package com.snowplowanalytics.iglu.server
 
 import java.util.UUID
 import java.time.Instant
-import cats.effect.{Clock, IO}
+import cats.effect.IO
 import fs2.Stream
 import io.circe.Json
 import io.circe.literal._
 import org.http4s._
-import org.http4s.rho.AuthedContext
 import com.snowplowanalytics.iglu.core.{SchemaKey, SchemaMap, SchemaVer}
 import com.snowplowanalytics.iglu.server.model.Permission.{SchemaAction, Vendor}
 import com.snowplowanalytics.iglu.server.model.Schema.SupersedingInfo
@@ -25,10 +24,6 @@ import model.{Permission, Schema, SchemaDraft}
 import storage.InMemory
 
 object SpecHelpers {
-
-  implicit val C = Clock.create[IO]
-
-  val ctx = new AuthedContext[IO, Permission]
 
   val now             = Instant.ofEpochMilli(1537621061000L)
   val superKey        = UUID.fromString("4ed2d87a-6da5-48e8-a23b-36a26e61f974")

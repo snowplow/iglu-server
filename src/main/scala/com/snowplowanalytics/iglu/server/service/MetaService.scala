@@ -10,74 +10,22 @@
 
 package com.snowplowanalytics.iglu.server.service
 
-import java.util.UUID
-
-import cats.effect.{IO, Sync}
-import cats.instances.list._
+import cats.effect.Async
+import cats.syntax.either._
 import cats.syntax.functor._
-import cats.syntax.flatMap._
 
 import io.circe._
 import io.circe.generic.semiauto.deriveEncoder
 
-import org.http4s.{Charset, HttpRoutes, MediaType}
-import org.http4s.headers.`Content-Type`
-import org.http4s.rho.{AuthedContext, RhoMiddleware, RhoRoutes}
-import org.http4s.rho.swagger.SwaggerSyntax
-import org.http4s.rho.swagger.syntax.{io => swaggerSyntax}
+import sttp.model.StatusCode
+import sttp.tapir.{PublicEndpoint, stringBody, stringToPath}
 
-import com.snowplowanalytics.iglu.server.codecs.JsonCodecs._
 import com.snowplowanalytics.iglu.server.generated.BuildInfo
+import com.snowplowanalytics.iglu.server.http.Api
+import com.snowplowanalytics.iglu.server.http.Endpoints._
+import com.snowplowanalytics.iglu.server.http.Schemas._
 import com.snowplowanalytics.iglu.server.model.Permission
 import com.snowplowanalytics.iglu.server.storage.{InMemory, Postgres, Storage}
-import com.snowplowanalytics.iglu.server.middleware.PermissionMiddleware
-
-class MetaService[F[+_]: Sync](
-  debug: Boolean,
-  patchesAllowed: Boolean,
-  swagger: SwaggerSyntax[F],
-  ctx: AuthedContext[F, Permission],
-  db: Storage[F],
-  isHealthy: F[Boolean]
-) extends RhoRoutes[F] {
-  import swagger._
-
-  private val ok = Ok("OK").map(_.withContentType(`Content-Type`(MediaType.text.plain, Charset.`UTF-8`)))
-
-  "This route responds with OK string when the server is healthy" **
-    GET / "health" |>> isHealthy.flatMap {
-    case true => ok
-    case false =>
-      ServiceUnavailable("Service Unavailable").map(
-        _.withContentType(`Content-Type`(MediaType.text.plain, Charset.`UTF-8`))
-      )
-  }
-
-  "This route responds with OK string if database is available" **
-    GET / "health" / "db" |>> {
-    for {
-      _ <- db match {
-        case pg: Postgres[F] => pg.ping.void
-        case _               => Sync[F].unit
-      }
-      response <- ok
-    } yield response
-  }
-
-  "This route responds with info about the Iglu Server" **
-    GET / "server" >>> ctx.auth |>> { authInfo: Permission =>
-    val database = db match {
-      case _: Postgres[F] => "postgres"
-      case _: InMemory[F] => "inmemory"
-      case _              => "unknown"
-    }
-    for {
-      schemas <- db.getSchemasKeyOnly
-      count = schemas.filter(s => authInfo.canRead(s._1.schemaKey.vendor)).as(()).length
-      response <- Ok(MetaService.ServerInfo(BuildInfo.version, authInfo, database, count, debug, patchesAllowed))
-    } yield response
-  }
-}
 
 object MetaService {
   case class ServerInfo(
@@ -91,17 +39,52 @@ object MetaService {
 
   implicit val serverInfoEncoderInstance: Encoder[ServerInfo] = deriveEncoder[ServerInfo]
 
-  def asRoutes(
-    debug: Boolean,
-    patchesAllowed: Boolean,
-    isHealthy: IO[Boolean]
-  )(
-    db: Storage[IO],
-    superKey: Option[UUID],
-    ctx: AuthedContext[IO, Permission],
-    rhoMiddleware: RhoMiddleware[IO]
-  ): HttpRoutes[IO] = {
-    val service = new MetaService(debug, patchesAllowed, swaggerSyntax, ctx, db, isHealthy).toRoutes(rhoMiddleware)
-    PermissionMiddleware.wrapService(db, superKey, ctx, service)
-  }
+  private val ok = (StatusCode.Ok, "OK")
+
+  def health: PublicEndpoint[Unit, Failure, (StatusCode, String), Any] =
+    base()
+      .get
+      .in("health")
+      .out(statuses(StatusCode.Ok, StatusCode.ServiceUnavailable).and(stringBody))
+      .summary("This route responds with OK string when the server is healthy")
+
+  def healthDb: PublicEndpoint[Unit, Failure, (StatusCode, String), Any] =
+    base()
+      .get
+      .in("health" / "db")
+      .out(statuses(StatusCode.Ok).and(stringBody))
+      .summary("This route responds with OK string if database is available")
+
+  def server: PublicEndpoint[Unit, Failure, ServerInfo, Any] =
+    base().get.in("server").out(jsonOut[ServerInfo]).summary("This route responds with info about the Iglu Server")
+
+  def api[F[_]: Async](debug: Boolean, patchesAllowed: Boolean, isHealthy: F[Boolean])(db: Storage[F]): Api[F] =
+    Api(
+      List(
+        Api.withPermission(health) { _ => _ =>
+          isHealthy.map(healthy =>
+            (if (healthy) ok else (StatusCode.ServiceUnavailable, "Service Unavailable")).asRight
+          )
+        },
+        Api.withPermission(healthDb) { _ => _ =>
+          val ping = db match {
+            case pg: Postgres[F] => pg.ping.void
+            case _               => Async[F].unit
+          }
+          ping.as(ok.asRight)
+        },
+        Api.withPermission(server) { authInfo => _ =>
+          val database = db match {
+            case _: Postgres[F] => "postgres"
+            case _: InMemory[F] => "inmemory"
+            case _              => "unknown"
+          }
+          db.getSchemasKeyOnly.map { schemas =>
+            val count = schemas.count(s => authInfo.canRead(s._1.schemaKey.vendor))
+            ServerInfo(BuildInfo.version, authInfo, database, count, debug, patchesAllowed).asRight
+          }
+        }
+      )
+    )
+
 }

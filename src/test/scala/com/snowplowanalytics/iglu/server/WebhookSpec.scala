@@ -12,9 +12,11 @@ package com.snowplowanalytics.iglu.server
 
 import cats.implicits._
 import cats.effect.IO
+import cats.effect.unsafe.implicits.global
 
 import org.http4s._
 import org.http4s.client.Client
+import org.http4s.implicits._
 
 import com.snowplowanalytics.iglu.core.{SchemaKey, SchemaVer}
 import com.snowplowanalytics.iglu.server.Webhook.WebhookClient
@@ -42,13 +44,13 @@ class WebhookSpec extends org.specs2.Specification {
 
 object WebhookSpec {
   val webhooks = List(
-    Webhook.SchemaPublished(Uri.uri("https://example.com/endpoint"), None, usePost = false),
+    Webhook.SchemaPublished(uri"https://example.com/endpoint", None, usePost = false),
     Webhook.SchemaPublished(
-      Uri.uri("https://example2.com/endpoint"),
+      uri"https://example2.com/endpoint",
       Some(List("com", "org.acme", "org.snowplow")),
       usePost = false
     ),
-    Webhook.SchemaPublished(Uri.uri("https://example3.com/endpoint"), None, usePost = true)
+    Webhook.SchemaPublished(uri"https://example3.com/endpoint", None, usePost = true)
   )
 
   val client: Client[IO] = Client.fromHttpApp(HttpApp[IO](r => Response[IO]().withEntity(r.body).pure[IO]))

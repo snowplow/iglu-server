@@ -12,21 +12,19 @@ package com.snowplowanalytics.iglu.server
 package service
 
 import cats.effect.IO
+import cats.effect.unsafe.implicits.global
 import cats.implicits._
 import io.circe.Json
 import io.circe.literal._
 import fs2.Stream
-import org.http4s.{Service => _, _}
+import org.http4s._
 import org.http4s.implicits._
 import org.http4s.circe._
-import org.http4s.rho.swagger.syntax.io.createRhoMiddleware
 import SpecHelpers._
 
 class ValidationServiceSpec extends org.specs2.Specification with StorageAgnosticSpec with InMemoryStorageSpec {
   def sendRequests(requests: List[Request[IO]], maxJsonDepth: Int = 20) =
-    sendRequestsGetState(storage =>
-      ValidationService.asRoutes(maxJsonDepth)(storage, None, SpecHelpers.ctx, createRhoMiddleware())
-    )(_ => IO.unit)(
+    sendRequestsGetState(storage => routes(ValidationService.api[IO](maxJsonDepth)(storage), storage))(_ => IO.unit)(
       requests
     )
 
@@ -80,8 +78,8 @@ class ValidationServiceSpec extends org.specs2.Specification with StorageAgnosti
       ]
     }"""
 
-    val request = Request[IO](Method.POST, Uri.uri("/validate/schema/jsonschema"))
-      .withHeaders(Headers.of(Header("apikey", SpecHelpers.readKey.toString)))
+    val request = Request[IO](Method.POST, uri"/validate/schema/jsonschema")
+      .withHeaders(Headers("apikey" -> SpecHelpers.readKey.toString))
       .withContentType(headers.`Content-Type`(MediaType.application.json))
       .withBodyStream(toBytes(selfDescribingSchema))
 
@@ -108,7 +106,7 @@ class ValidationServiceSpec extends org.specs2.Specification with StorageAgnosti
       json"""{"message" : "The schema provided is a valid self-describing iglu:com.acme/nonexistent/jsonschema/1-0-0 schema"}"""
 
     val request = Request[IO](Method.POST, uri"/validate/schema/jsonschema")
-      .withHeaders(Headers.of(Header("apikey", SpecHelpers.readKey.toString)))
+      .withHeaders(Headers("apikey" -> SpecHelpers.readKey.toString))
       .withContentType(headers.`Content-Type`(MediaType.application.json))
       .withBodyStream(toBytes(selfDescribingSchema))
 
@@ -138,8 +136,8 @@ class ValidationServiceSpec extends org.specs2.Specification with StorageAgnosti
       ]
     }"""
 
-    val request = Request[IO](Method.POST, Uri.uri("/validate/schema/jsonschema"))
-      .withHeaders(Headers.of(Header("apikey", SpecHelpers.readKey.toString)))
+    val request = Request[IO](Method.POST, uri"/validate/schema/jsonschema")
+      .withHeaders(Headers("apikey" -> SpecHelpers.readKey.toString))
       .withContentType(headers.`Content-Type`(MediaType.application.json))
       .withBodyStream(toBytes(selfDescribingSchema))
 
@@ -159,8 +157,8 @@ class ValidationServiceSpec extends org.specs2.Specification with StorageAgnosti
         ]
       }"""
 
-    val request = Request[IO](Method.POST, Uri.uri("/validate/schema/jsonschema"))
-      .withHeaders(Headers.of(Header("apikey", SpecHelpers.readKey.toString)))
+    val request = Request[IO](Method.POST, uri"/validate/schema/jsonschema")
+      .withHeaders(Headers("apikey" -> SpecHelpers.readKey.toString))
       .withContentType(headers.`Content-Type`(MediaType.application.json))
       .withBodyStream(toBytes(selfDescribingSchema))
 
@@ -172,8 +170,8 @@ class ValidationServiceSpec extends org.specs2.Specification with StorageAgnosti
   def e5 = {
     val expected = "The request body was malformed."
     val request =
-      Request[IO](Method.POST, Uri.uri("/validate/schema/jsonschema"))
-        .withHeaders(Headers.of(Header("apikey", SpecHelpers.readKey.toString)))
+      Request[IO](Method.POST, uri"/validate/schema/jsonschema")
+        .withHeaders(Headers("apikey" -> SpecHelpers.readKey.toString))
         .withBodyStream(Stream.emits("non-json".getBytes))
 
     val response = sendRequestGetText(request)
@@ -196,8 +194,8 @@ class ValidationServiceSpec extends org.specs2.Specification with StorageAgnosti
         ]
       }"""
 
-    val request = Request[IO](Method.POST, Uri.uri("/validate/instance"))
-      .withHeaders(Headers.of(Header("apikey", SpecHelpers.readKey.toString)))
+    val request = Request[IO](Method.POST, uri"/validate/instance")
+      .withHeaders(Headers("apikey" -> SpecHelpers.readKey.toString))
       .withBodyStream(toBytes(instance))
     val response = sendRequest(request)
 
@@ -209,8 +207,8 @@ class ValidationServiceSpec extends org.specs2.Specification with StorageAgnosti
       json"""{"schema" : "iglu:com.acme/event/jsonschema/1-0-0", "data" : {"one": null} } """
     val expected = json"""{"message" : "Instance is valid iglu:com.acme/event/jsonschema/1-0-0"}"""
 
-    val request = Request[IO](Method.POST, Uri.uri("/validate/instance"))
-      .withHeaders(Headers.of(Header("apikey", SpecHelpers.readKey.toString)))
+    val request = Request[IO](Method.POST, uri"/validate/instance")
+      .withHeaders(Headers("apikey" -> SpecHelpers.readKey.toString))
       .withBodyStream(toBytes(instance))
     val response = sendRequest(request)
 
@@ -223,8 +221,8 @@ class ValidationServiceSpec extends org.specs2.Specification with StorageAgnosti
     val expected =
       json"""{"message" : "The schema is not found"}"""
 
-    val request = Request[IO](Method.POST, Uri.uri("/validate/instance"))
-      .withHeaders(Headers.of(Header("apikey", SpecHelpers.readKey.toString)))
+    val request = Request[IO](Method.POST, uri"/validate/instance")
+      .withHeaders(Headers("apikey" -> SpecHelpers.readKey.toString))
       .withBodyStream(toBytes(instance))
 
     val (responses, _) = sendRequests(List(request)).unsafeRunSync()
@@ -238,8 +236,8 @@ class ValidationServiceSpec extends org.specs2.Specification with StorageAgnosti
   def e9 = {
     val instance =
       json"""{"schema" : "iglu:com.acme/secret/jsonschema/1-0-0", "data" : {} } """
-    val request = Request[IO](Method.POST, Uri.uri("/validate/instance"))
-      .withHeaders(Headers.of(Header("apikey", SpecHelpers.readKey.toString)))
+    val request = Request[IO](Method.POST, uri"/validate/instance")
+      .withHeaders(Headers("apikey" -> SpecHelpers.readKey.toString))
       .withBodyStream(toBytes(instance))
     val response = sendRequestGetText(request)
 
@@ -251,8 +249,8 @@ class ValidationServiceSpec extends org.specs2.Specification with StorageAgnosti
       json"""{"schema" : "iglu:com.acme/secret/jsonschema/1-0-0", "data" : {} } """
     val expected =
       json"""{"message" : "The schema is not found"}"""
-    val request = Request[IO](Method.POST, Uri.uri("/validate/instance"))
-      .withHeaders(Headers.of(Header("apikey", SpecHelpers.readKeyAcme2.toString)))
+    val request = Request[IO](Method.POST, uri"/validate/instance")
+      .withHeaders(Headers("apikey" -> SpecHelpers.readKeyAcme2.toString))
       .withBodyStream(toBytes(instance))
 
     val (responses, _) = sendRequests(List(request)).unsafeRunSync()
@@ -287,7 +285,7 @@ class ValidationServiceSpec extends org.specs2.Specification with StorageAgnosti
       "message" : "The schema does not conform to a JSON Schema v4 specification",
       "report" : [
         {
-          "message" : "$$.properties.inner.misplacedProperty: is not defined in the schema and the schema does not allow additional properties",
+          "message" : "$$.properties.inner: property 'misplacedProperty' is not defined in the schema and the schema does not allow additional properties",
           "level" : "WARNING",
           "pointer" : "/properties/inner"
         }
@@ -295,7 +293,7 @@ class ValidationServiceSpec extends org.specs2.Specification with StorageAgnosti
     }"""
 
     val request = Request[IO](Method.POST, uri"/validate/schema/jsonschema")
-      .withHeaders(Headers.of(Header("apikey", SpecHelpers.readKey.toString)))
+      .withHeaders(Headers("apikey" -> SpecHelpers.readKey.toString))
       .withContentType(headers.`Content-Type`(MediaType.application.json))
       .withBodyStream(toBytes(selfDescribingSchema))
 
@@ -331,7 +329,7 @@ class ValidationServiceSpec extends org.specs2.Specification with StorageAgnosti
     }"""
 
     val request = Request[IO](Method.POST, uri"/validate/schema/jsonschema")
-      .withHeaders(Headers.of(Header("apikey", SpecHelpers.readKey.toString)))
+      .withHeaders(Headers("apikey" -> SpecHelpers.readKey.toString))
       .withContentType(headers.`Content-Type`(MediaType.application.json))
       .withBodyStream(toBytes(selfDescribingSchema))
 
@@ -362,7 +360,7 @@ class ValidationServiceSpec extends org.specs2.Specification with StorageAgnosti
 
     val requests = List(
       request,
-      request.withHeaders(Headers.of(Header("apikey", SpecHelpers.nonExistentKey.toString)))
+      request.withHeaders(Headers("apikey" -> SpecHelpers.nonExistentKey.toString))
     )
 
     val responses = sendRequests(requests).map { case (responses, _) => responses.map(_.status.code) }.unsafeRunSync()
@@ -386,15 +384,15 @@ class ValidationServiceSpec extends org.specs2.Specification with StorageAgnosti
         }"""
 
     val request = Request[IO](Method.POST, uri"/validate/schema/jsonschema")
-      .withHeaders(Headers.of(Header("apikey", SpecHelpers.superKey.toString)))
+      .withHeaders(Headers("apikey" -> SpecHelpers.superKey.toString))
       .withContentType(headers.`Content-Type`(MediaType.application.json))
       .withBodyStream(toBytes(selfDescribingSchema))
 
     val requests = List(
-      request.withHeaders(Headers.of(Header("apikey", SpecHelpers.superKey.toString))),
-      request.withHeaders(Headers.of(Header("apikey", SpecHelpers.readKey.toString))),
-      request.withHeaders(Headers.of(Header("apikey", SpecHelpers.readKeyAcme.toString))),
-      request.withHeaders(Headers.of(Header("apikey", SpecHelpers.readKeyAcme2.toString)))
+      request.withHeaders(Headers("apikey" -> SpecHelpers.superKey.toString)),
+      request.withHeaders(Headers("apikey" -> SpecHelpers.readKey.toString)),
+      request.withHeaders(Headers("apikey" -> SpecHelpers.readKeyAcme.toString)),
+      request.withHeaders(Headers("apikey" -> SpecHelpers.readKeyAcme2.toString))
     )
 
     val responses = sendRequests(requests).map { case (responses, _) => responses.map(_.status.code) }.unsafeRunSync()
@@ -407,8 +405,8 @@ class ValidationServiceSpec extends org.specs2.Specification with StorageAgnosti
       json"""{"schema" : "iglu:com.acme/secret/jsonschema/1-0-0", "data" : {} } """
     val expected =
       json"""{"message" : "The schema is not found"}"""
-    val request = Request[IO](Method.POST, Uri.uri("/validate/instance"))
-      .withHeaders(Headers.of(Header("apikey", SpecHelpers.nonExistentKey.toString)))
+    val request = Request[IO](Method.POST, uri"/validate/instance")
+      .withHeaders(Headers("apikey" -> SpecHelpers.nonExistentKey.toString))
       .withBodyStream(toBytes(instance))
 
     val (responses, _) = sendRequests(List(request)).unsafeRunSync()
@@ -420,14 +418,19 @@ class ValidationServiceSpec extends org.specs2.Specification with StorageAgnosti
   }
 
   def e17 = {
-    val deepJsonSchema = createDeepJsonSchema(100000)
-    val deepJsonArray  = createDeepJsonArray(1000000)
-    val deepSDJ        = createDeepSDJ(100000)
-    val expected       = List((422, "The request body was invalid."))
+    // Deeper than maxJsonDepth: rejected by the depth check
+    val deepJsonSchema = createDeepJsonSchema(1000)
+    val deepJsonArray  = createDeepJsonArray(1000)
+    val deepSDJ        = createDeepSDJ(1000)
+    val invalid        = List((422, "The request body was invalid."))
+    // Deeper than jawn.parser.maxDepth (4096): rejected by the JSON parser, as invalid too
+    val veryDeepJsonSchema = createDeepJsonSchema(100000)
+    val veryDeepJsonArray  = createDeepJsonArray(1000000)
+    val veryDeepSDJ        = createDeepSDJ(100000)
 
-    def executeTest(uri: Uri, body: String) = {
+    def executeTest(uri: Uri, body: String, expected: List[(Int, String)]) = {
       val request = Request[IO](Method.POST, uri)
-        .withHeaders(Headers.of(Header("apikey", SpecHelpers.readKey.toString)))
+        .withHeaders(Headers("apikey" -> SpecHelpers.readKey.toString))
         .withContentType(headers.`Content-Type`(MediaType.application.json))
         .withBodyStream(toBytes(body))
       val response = sendRequests(List(request), 40)
@@ -439,9 +442,13 @@ class ValidationServiceSpec extends org.specs2.Specification with StorageAgnosti
       response must beEqualTo(expected)
     }
 
-    executeTest(uri"/validate/schema/jsonschema", deepJsonSchema)
-      .and(executeTest(uri"/validate/schema/jsonschema", deepJsonArray))
-      .and(executeTest(uri"/validate/instance", deepSDJ))
-      .and(executeTest(uri"/validate/instance", deepJsonArray))
+    executeTest(uri"/validate/schema/jsonschema", deepJsonSchema, invalid)
+      .and(executeTest(uri"/validate/schema/jsonschema", deepJsonArray, invalid))
+      .and(executeTest(uri"/validate/instance", deepSDJ, invalid))
+      .and(executeTest(uri"/validate/instance", deepJsonArray, invalid))
+      .and(executeTest(uri"/validate/schema/jsonschema", veryDeepJsonSchema, invalid))
+      .and(executeTest(uri"/validate/schema/jsonschema", veryDeepJsonArray, invalid))
+      .and(executeTest(uri"/validate/instance", veryDeepSDJ, invalid))
+      .and(executeTest(uri"/validate/instance", veryDeepJsonArray, invalid))
   }
 }

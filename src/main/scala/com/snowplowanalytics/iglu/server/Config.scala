@@ -15,7 +15,6 @@ import java.util.UUID
 import cats.implicits._
 import com.monovore.decline._
 import io.circe.{Encoder, Json, JsonObject}
-import io.circe.syntax._
 import io.circe.generic.semiauto._
 import pureconfig._
 import pureconfig.generic.ProductHint
@@ -114,7 +113,8 @@ object Config {
     sealed trait ConnectionPool extends Product with Serializable
 
     object ConnectionPool {
-      case class NoPool(threadPool: ThreadPool) extends ConnectionPool
+
+      case object NoPool extends ConnectionPool
 
       case class Hikari(
         connectionTimeout: Option[FiniteDuration],
@@ -122,24 +122,17 @@ object Config {
         minimumIdle: Option[Int],
         maximumPoolSize: Option[Int],
         // Provided by doobie
-        connectionPool: ThreadPool,
-        transactionPool: ThreadPool
+        connectionPool: ThreadPool
       ) extends ConnectionPool
 
       implicit val circePoolEncoder: Encoder[ConnectionPool] =
         Encoder.instance {
-          case NoPool(threadPool) =>
-            Json.fromFields(
-              List(
-                ("type", Json.fromString("NoPool")),
-                ("threadPool", threadPool.asJson(ThreadPool.threadPoolCirceEncoder))
-              )
-            )
+          case NoPool =>
+            Json.fromFields(List(("type", Json.fromString("NoPool"))))
           case h: Hikari =>
             deriveEncoder[Hikari].apply(h)
         }
 
-      implicit val noPoolReader = deriveReader[NoPool]
       implicit val hikariReader = deriveReader[Hikari]
 
       implicit val poolRead: ConfigReader[ConnectionPool] =
@@ -152,7 +145,7 @@ object Config {
               case "hikari" =>
                 ConfigReader[Hikari].from(cur)
               case "nopool" =>
-                ConfigReader[NoPool].from(cur)
+                Right(NoPool)
             }
           } yield pool
         }
@@ -180,7 +173,7 @@ object Config {
 
       /** Backward-compatibility */
       val maximumPoolSize: Int = pool match {
-        case ConnectionPool.NoPool(_) => 0
+        case ConnectionPool.NoPool    => 0
         case h: ConnectionPool.Hikari => h.maximumPoolSize.orElse(maxPoolSize).getOrElse(5)
       }
     }

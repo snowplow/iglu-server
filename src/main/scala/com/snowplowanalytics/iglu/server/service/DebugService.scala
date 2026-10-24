@@ -10,33 +10,36 @@
 
 package com.snowplowanalytics.iglu.server.service
 
-import cats.effect.{IO, Sync}
+import cats.effect.Async
 import cats.implicits._
 
-import org.http4s.rho.{RhoMiddleware, RhoRoutes}
-import org.http4s.rho.swagger.SwaggerSyntax
-import org.http4s.rho.swagger.syntax.{io => swaggerSyntax}
+import sttp.model.StatusCode
+import sttp.tapir.{PublicEndpoint, endpoint, stringBody}
 
+import com.snowplowanalytics.iglu.server.http.Api
+import com.snowplowanalytics.iglu.server.http.Endpoints._
 import com.snowplowanalytics.iglu.server.storage.{InMemory, Storage}
 
 /** Service showing whole in-memory state. Use for development only */
-class DebugService[F[_]: Sync](swagger: SwaggerSyntax[F], db: Storage[F]) extends RhoRoutes[F] {
-  import swagger._
-
-  "Show internal state" **
-    GET |>> {
-    db match {
-      case InMemory(ref) =>
-        for {
-          db       <- ref.get
-          response <- Ok(db.toString)
-        } yield response
-      case other => NotImplemented(s"Cannot show $other")
-    }
-  }
-}
-
 object DebugService {
-  def asRoutes(db: Storage[IO], rhoMiddleware: RhoMiddleware[IO]) =
-    new DebugService(swaggerSyntax, db).toRoutes(rhoMiddleware)
+
+  def stateEndpoint: PublicEndpoint[Unit, Failure, String, Any] =
+    endpoint
+      .get
+      .in(root)
+      .errorOut(failureOutput(StatusCode.NotImplemented))
+      .out(stringBody)
+      .summary("Show internal state")
+
+  def api[F[_]: Async](db: Storage[F]): Api[F] =
+    Api(
+      List(
+        Api.withPermission(stateEndpoint) { _ => _ =>
+          db match {
+            case InMemory(ref) => ref.get.map(_.toString.asRight[Failure])
+            case other         => Async[F].pure(Failure.text(StatusCode.NotImplemented, s"Cannot show $other").asLeft)
+          }
+        }
+      )
+    )
 }

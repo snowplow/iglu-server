@@ -10,7 +10,7 @@
 
 package com.snowplowanalytics.iglu.server.model
 
-import java.time.Instant
+import java.time.{Instant, OffsetDateTime, ZoneOffset}
 
 import cats.implicits._
 
@@ -20,13 +20,16 @@ import io.circe.{Decoder, Encoder, Json}
 import io.circe.generic.semiauto._
 
 import doobie._
+import doobie.generic.auto._
 import doobie.postgres.circe.json.implicits._
-import doobie.postgres.implicits._
+import doobie.postgres.implicits.{JavaInstantMeta => _, _}
+import doobie.enumerated.JdbcType
 
 import com.snowplowanalytics.iglu.core.{SchemaKey, SchemaMap, SchemaVer, SelfDescribingSchema}
 import com.snowplowanalytics.iglu.core.circe.implicits._
 
 import Schema.Metadata
+import Schema.Metadata.doobieInstantMeta
 
 case class Schema(
   schemaMap: SchemaMap,
@@ -63,6 +66,15 @@ object Schema {
     implicit val metadataDecoder: Decoder[Metadata] =
       deriveDecoder[Metadata]
 
+    /**
+      * The `TIMESTAMP` columns, as UTC instants, which doobie maps to `TIMESTAMPTZ`.
+      * Import it instead of `doobie.postgres.implicits.JavaInstantMeta`, that it replaces.
+      */
+    implicit val doobieInstantMeta: Meta[Instant] =
+      Meta
+        .Basic
+        .oneObject(JdbcType.Timestamp, Some("timestamp"), classOf[OffsetDateTime])
+        .timap(_.toInstant)(_.atOffset(ZoneOffset.UTC))
   }
 
   /** Encoding of a schema */

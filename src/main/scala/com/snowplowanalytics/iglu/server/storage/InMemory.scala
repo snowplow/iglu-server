@@ -11,13 +11,10 @@
 package com.snowplowanalytics.iglu.server.storage
 
 import java.util.UUID
-import java.util.concurrent.TimeUnit
 import java.time.Instant
 import fs2.Stream
-import cats.Monad
 import cats.implicits._
-import cats.effect.{Bracket, Clock, Sync}
-import cats.effect.concurrent.Ref
+import cats.effect.{Clock, Ref, Sync}
 import io.circe.Json
 import com.snowplowanalytics.iglu.core.{SchemaMap, SchemaVer}
 import com.snowplowanalytics.iglu.server.model.Schema.SupersedingInfo
@@ -25,43 +22,50 @@ import com.snowplowanalytics.iglu.server.model.{Permission, Schema, SchemaDraft}
 import com.snowplowanalytics.iglu.server.model.SchemaDraft.DraftId
 
 /** Ephemeral storage that will be lost after server shut down */
-case class InMemory[F[_]](ref: Ref[F, InMemory.State]) extends Storage[F] {
-  def getSchema(schemaMap: SchemaMap)(implicit F: Bracket[F, Throwable]): F[Option[Schema]] =
+case class InMemory[F[_]: Sync](ref: Ref[F, InMemory.State]) extends Storage[F] {
+  def getSchema(schemaMap: SchemaMap): F[Option[Schema]] =
     for { db <- ref.get } yield db.schemas.get(schemaMap).map(addSupersedingInfo(db))
 
-  def getPermission(apikey: UUID)(implicit F: Bracket[F, Throwable]): F[Option[Permission]] =
+  def getPermission(apikey: UUID): F[Option[Permission]] =
     for { db <- ref.get } yield db.permission.get(apikey)
 
-  def deleteSchema(schemaMap: SchemaMap)(implicit F: Bracket[F, Throwable]): F[Unit] =
+  def deleteSchema(schemaMap: SchemaMap): F[Unit] =
     for {
       db <- ref.get
       newState = db.copy(schemas = db.schemas - schemaMap)
       _ <- ref.set(newState)
     } yield ()
 
-  def addSchema(schemaMap: SchemaMap, body: Json, isPublic: Boolean, supersedes: List[SchemaVer.Full])(
-    implicit C: Clock[F],
-    M: Bracket[F, Throwable]
-  ): F[Unit] =
+  def upsertSchema(
+    schemaMap: SchemaMap,
+    body: Json,
+    isPublic: Boolean,
+    supersedes: List[SchemaVer.Full],
+    patchesAllowed: Boolean
+  ): F[Boolean] =
     for {
-      db            <- ref.get
-      addedAtMillis <- C.realTime(TimeUnit.MILLISECONDS)
+      addedAtMillis <- Clock[F].realTime.map(_.toMillis)
       addedAt = Instant.ofEpochMilli(addedAtMillis)
-      meta    = Schema.Metadata(addedAt, addedAt, isPublic)
-      // supersededBy is not stored here, but in db.superseding
-      // hence setting it to None
-      schema = Schema(schemaMap, meta, body, SupersedingInfo(None, supersedes))
-      _ <- ref.update(_.copy(schemas = db.schemas.updated(schemaMap, schema)))
-      _ <- updateSupersedingVersion(schemaMap, supersedes.toSet)
-    } yield ()
+      // `Ref.modify` gives us the same atomic conflict resolution the Postgres UPSERT gets from the PK
+      wasInserted <- ref.modify { db =>
+        db.schemas.get(schemaMap) match {
+          case Some(_) if !patchesAllowed =>
+            (db, false)
+          case Some(existing) =>
+            // preserve the original createdAt on update, like the SQL row that keeps its inserted timestamp
+            val meta   = Schema.Metadata(existing.metadata.createdAt, addedAt, isPublic)
+            val schema = Schema(schemaMap, meta, body, SupersedingInfo(None, List.empty))
+            (db.copy(schemas = db.schemas.updated(schemaMap, schema)), false)
+          case None =>
+            val meta   = Schema.Metadata(addedAt, addedAt, isPublic)
+            val schema = Schema(schemaMap, meta, body, SupersedingInfo(None, supersedes))
+            (db.copy(schemas = db.schemas.updated(schemaMap, schema)), true)
+        }
+      }
+      _ <- if (wasInserted) updateSupersedingVersion(schemaMap, supersedes.toSet) else Sync[F].unit
+    } yield wasInserted
 
-  def updateSchema(schemaMap: SchemaMap, body: Json, isPublic: Boolean)(
-    implicit C: Clock[F],
-    M: Bracket[F, Throwable]
-  ): F[Unit] =
-    addSchema(schemaMap, body, isPublic, List.empty)
-
-  def getSchemas(implicit F: Bracket[F, Throwable]): F[List[Schema]] =
+  def getSchemas: F[List[Schema]] =
     ref
       .get
       .map(state =>
@@ -73,45 +77,42 @@ case class InMemory[F[_]](ref: Ref[F, InMemory.State]) extends Storage[F] {
           .map(addSupersedingInfo(state))
       )
 
-  def getSchemasKeyOnly(implicit F: Bracket[F, Throwable]): F[List[(SchemaMap, Schema.Metadata)]] =
+  def getSchemasKeyOnly: F[List[(SchemaMap, Schema.Metadata)]] =
     ref.get.map(state => state.schemas.values.toList.sortBy(_.metadata.createdAt).map(s => (s.schemaMap, s.metadata)))
 
-  def getDraft(draftId: DraftId)(implicit B: Bracket[F, Throwable]): F[Option[SchemaDraft]] =
+  def getDraft(draftId: DraftId): F[Option[SchemaDraft]] =
     for { db <- ref.get } yield db.drafts.get(draftId)
 
-  def addDraft(draftId: DraftId, body: Json, isPublic: Boolean)(
-    implicit C: Clock[F],
-    M: Bracket[F, Throwable]
-  ): F[Unit] =
+  def addDraft(draftId: DraftId, body: Json, isPublic: Boolean): F[Unit] =
     for {
       db            <- ref.get
-      addedAtMillis <- C.realTime(TimeUnit.MILLISECONDS)
+      addedAtMillis <- Clock[F].realTime.map(_.toMillis)
       addedAt = Instant.ofEpochMilli(addedAtMillis)
       meta    = Schema.Metadata(addedAt, addedAt, isPublic)
       schema  = SchemaDraft(draftId, meta, body)
       _ <- ref.update(_.copy(drafts = db.drafts.updated(draftId, schema)))
     } yield ()
 
-  def getDrafts(implicit F: Monad[F]): Stream[F, SchemaDraft] = {
+  def getDrafts: Stream[F, SchemaDraft] = {
     val drafts =
       ref.get.map(state => Stream.emits[F, SchemaDraft](state.drafts.values.toList.sortBy(_.metadata.createdAt)))
     Stream.eval(drafts).flatten
   }
 
-  def addPermission(apikey: UUID, permission: Permission)(implicit F: Bracket[F, Throwable]): F[Unit] =
+  def addPermission(apikey: UUID, permission: Permission): F[Unit] =
     for {
       db <- ref.get
       _  <- ref.update(_.copy(permission = db.permission.updated(apikey, permission)))
     } yield ()
 
-  def deletePermission(apikey: UUID)(implicit F: Bracket[F, Throwable]): F[Unit] =
+  def deletePermission(apikey: UUID): F[Unit] =
     for {
       db <- ref.get
       _  <- ref.update(_.copy(permission = db.permission - apikey))
     } yield ()
 
-  def runAutomaticMigrations(implicit F: Bracket[F, Throwable]): F[Unit] =
-    Bracket[F, Throwable].unit
+  def runAutomaticMigrations: F[Unit] =
+    Sync[F].unit
 
   def addSupersedingInfo(db: InMemory.State)(schema: Schema): Schema =
     db.superseding.get(schema.schemaMap).fold(schema) { version =>
@@ -121,7 +122,7 @@ case class InMemory[F[_]](ref: Ref[F, InMemory.State]) extends Storage[F] {
   def updateSupersedingVersion(
     schemaMap: SchemaMap,
     supersedes: Set[SchemaVer.Full]
-  )(implicit F: Bracket[F, Throwable]): F[Unit] =
+  ): F[Unit] =
     for {
       db <- ref.get
       transitive = db
@@ -169,12 +170,12 @@ object InMemory {
   }
 
   def get[F[_]: Sync](fixture: State): F[Storage[F]] =
-    for { db <- Ref.of(fixture) } yield InMemory[F](db)
+    for { db <- Ref.of[F, InMemory.State](fixture) } yield InMemory[F](db)
 
   def empty[F[_]: Sync]: F[Storage[F]] =
-    for { db <- Ref.of(State.withSuperKey) } yield InMemory[F](db)
+    for { db <- Ref.of[F, InMemory.State](State.withSuperKey) } yield InMemory[F](db)
 
   /** Equal to `get`, but doesn't lose the precise return type */
   def getInMemory[F[_]: Sync](fixture: State): F[InMemory[F]] =
-    for { db <- Ref.of(fixture) } yield InMemory[F](db)
+    for { db <- Ref.of[F, InMemory.State](fixture) } yield InMemory[F](db)
 }

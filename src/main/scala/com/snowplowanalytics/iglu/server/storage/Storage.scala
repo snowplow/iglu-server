@@ -14,10 +14,10 @@ package storage
 import java.util.UUID
 import fs2.Stream
 import cats.Monad
-import cats.effect.{Blocker, Bracket, BracketThrow, Clock, ContextShift, Effect, Resource, Sync}
+import cats.effect.{Async, Resource, Sync}
 import cats.implicits._
 import io.circe.Json
-import doobie.hikari._
+import doobie.hikari.HikariTransactor
 import doobie.util.transactor.Transactor
 import org.typelevel.log4cats.slf4j.Slf4jLogger
 import org.typelevel.log4cats.Logger
@@ -30,47 +30,54 @@ import com.snowplowanalytics.iglu.server.model.SchemaDraft.DraftId
   * Common interface for supported backend storages
   * Up to implementation to sort schemas by creation date
   */
-trait Storage[F[_]] {
+abstract class Storage[F[_]: Sync] {
 
-  def getSchema(schemaMap: SchemaMap)(implicit F: Bracket[F, Throwable]): F[Option[Schema]]
-  def getSchemasByVendor(vendor: String)(implicit F: Bracket[F, Throwable]): Stream[F, Schema] =
+  def getSchema(schemaMap: SchemaMap): F[Option[Schema]]
+  def getSchemasByVendor(vendor: String): Stream[F, Schema] =
     Stream.eval(getSchemas).flatMap(list => Stream.emits(list)).filter(_.schemaMap.schemaKey.vendor === vendor)
-  def deleteSchema(schemaMap: SchemaMap)(implicit F: Bracket[F, Throwable]): F[Unit]
-  def getSchemasByName(vendor: String, name: String)(implicit F: Bracket[F, Throwable]): Stream[F, Schema] =
+  def deleteSchema(schemaMap: SchemaMap): F[Unit]
+  def getSchemasByName(vendor: String, name: String): Stream[F, Schema] =
     getSchemasByVendor(vendor).filter(_.schemaMap.schemaKey.name === name)
-  def getSchemasByModel(vendor: String, name: String, model: Int)(
-    implicit F: Bracket[F, Throwable]
-  ): Stream[F, Schema] =
+  def getSchemasByModel(vendor: String, name: String, model: Int): Stream[F, Schema] =
     getSchemasByName(vendor, name).filter(_.schemaMap.schemaKey.version.model === model)
-  def getSchemas(implicit F: Bracket[F, Throwable]): F[List[Schema]]
+  def getSchemas: F[List[Schema]]
 
   /** Optimization for `getSchemas` */
-  def getSchemasKeyOnly(implicit F: Bracket[F, Throwable]): F[List[(SchemaMap, Schema.Metadata)]]
-  def getSchemaBody(schemaMap: SchemaMap)(implicit F: Bracket[F, Throwable]): F[Option[Json]] =
+  def getSchemasKeyOnly: F[List[(SchemaMap, Schema.Metadata)]]
+  def getSchemaBody(schemaMap: SchemaMap): F[Option[Json]] =
     getSchema(schemaMap).nested.map(_.body).value
-  def addSchema(schemaMap: SchemaMap, body: Json, isPublic: Boolean, supersedes: List[SchemaVer.Full])(
-    implicit C: Clock[F],
-    M: Bracket[F, Throwable]
-  ): F[Unit]
-  def updateSchema(schemaMap: SchemaMap, body: Json, isPublic: Boolean)(
-    implicit C: Clock[F],
-    M: Bracket[F, Throwable]
-  ): F[Unit]
 
-  def addDraft(draftId: DraftId, body: Json, isPublic: Boolean)(implicit C: Clock[F], M: Bracket[F, Throwable]): F[Unit]
-  def getDraft(draftId: DraftId)(implicit B: Bracket[F, Throwable]): F[Option[SchemaDraft]]
-  def getDrafts(implicit F: Monad[F]): Stream[F, SchemaDraft]
+  /**
+    * Atomically insert a schema or, on primary-key conflict, either update it (when `patchesAllowed`)
+    * or leave the existing row untouched (when not). This is the single write path for schemas: it
+    * replaces the racy check-then-act sequence of `getSchema` + insert/update with one statement, so
+    * concurrent uploads of the same version cannot bypass `patchesAllowed`, create duplicates, or deadlock.
+    *
+    * @return `true` if a new row was inserted, `false` if the row already existed (updated when
+    *         `patchesAllowed`, or left untouched otherwise)
+    */
+  def upsertSchema(
+    schemaMap: SchemaMap,
+    body: Json,
+    isPublic: Boolean,
+    supersedes: List[SchemaVer.Full],
+    patchesAllowed: Boolean
+  ): F[Boolean]
 
-  def getPermission(apikey: UUID)(implicit F: Bracket[F, Throwable]): F[Option[Permission]]
-  def addPermission(uuid: UUID, permission: Permission)(implicit F: Bracket[F, Throwable]): F[Unit]
-  def addKeyPair(keyPair: Permission.KeyPair, vendor: Permission.Vendor)(implicit F: Bracket[F, Throwable]): F[Unit] =
+  def addDraft(draftId: DraftId, body: Json, isPublic: Boolean): F[Unit]
+  def getDraft(draftId: DraftId): F[Option[SchemaDraft]]
+  def getDrafts: Stream[F, SchemaDraft]
+
+  def getPermission(apikey: UUID): F[Option[Permission]]
+  def addPermission(uuid: UUID, permission: Permission): F[Unit]
+  def addKeyPair(keyPair: Permission.KeyPair, vendor: Permission.Vendor): F[Unit] =
     for {
       _ <- addPermission(keyPair.read, Permission.ReadOnlyAny.copy(vendor = vendor))
       _ <- addPermission(keyPair.write, Permission.Write.copy(vendor = vendor))
     } yield ()
-  def deletePermission(id: UUID)(implicit F: Bracket[F, Throwable]): F[Unit]
+  def deletePermission(id: UUID): F[Unit]
 
-  def runAutomaticMigrations(implicit F: Bracket[F, Throwable]): F[Unit]
+  def runAutomaticMigrations: F[Unit]
 }
 
 object Storage {
@@ -80,7 +87,7 @@ object Storage {
     override def getMessage: String = message
   }
 
-  def initialize[F[_]: Effect: ContextShift](config: StorageConfig): Resource[F, Storage[F]] = {
+  def initialize[F[_]: Async](config: StorageConfig): Resource[F, Storage[F]] = {
     val logger = Slf4jLogger.getLoggerFromName("Storage")
     config match {
       case StorageConfig.Dummy =>
@@ -93,18 +100,15 @@ object Storage {
           password,
           driver,
           _,
-          Config.StorageConfig.ConnectionPool.NoPool(ec),
+          Config.StorageConfig.ConnectionPool.NoPool,
           enableStartupChecks
           ) =>
         val url = s"jdbc:postgresql://$host:$port/$name"
-        for {
-          blocker <- Server.createThreadPool(ec).map(Blocker.liftExecutionContext)
-          storage <- buildAndCheckPostgres(
-            Transactor.fromDriverManager[F](driver, url, username, password, blocker),
-            logger,
-            enableStartupChecks
-          )
-        } yield storage
+        buildAndCheckPostgres(
+          Transactor.fromDriverManager[F](driver, url, username, password, None),
+          logger,
+          enableStartupChecks
+        )
       case p @ StorageConfig.Postgres(
             host,
             port,
@@ -118,9 +122,8 @@ object Storage {
           ) =>
         val url = s"jdbc:postgresql://$host:$port/$name"
         for {
-          connectEC  <- Server.createThreadPool(pool.connectionPool)
-          transactEC <- Server.createThreadPool(pool.transactionPool).map(Blocker.liftExecutionContext)
-          xa         <- HikariTransactor.newHikariTransactor[F](driver, url, username, password, connectEC, transactEC)
+          connectEC <- Server.createThreadPool(pool.connectionPool)
+          xa        <- HikariTransactor.newHikariTransactor[F](driver, url, username, password, connectEC)
           _ <- Resource.eval {
             xa.configure { ds =>
               Sync[F].delay {
@@ -138,7 +141,7 @@ object Storage {
     }
   }
 
-  private def buildAndCheckPostgres[F[_]: BracketThrow](
+  private def buildAndCheckPostgres[F[_]: Async](
     xa: Transactor[F],
     logger: Logger[F],
     enableChecks: Boolean

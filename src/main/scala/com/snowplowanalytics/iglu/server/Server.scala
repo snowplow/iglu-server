@@ -16,95 +16,91 @@ import scala.concurrent.duration._
 import scala.concurrent.ExecutionContext
 import cats.data.Kleisli
 import cats.syntax.all._
-import cats.effect.{Blocker, ContextShift, ExitCode, IO, Resource, Sync, Timer}
-import cats.effect.concurrent.Ref
+import cats.effect.{Async, ExitCode, Ref, Resource, Sync}
+import cats.effect.std.Dispatcher
 import io.circe.syntax._
+import org.typelevel.log4cats.Logger
 import org.typelevel.log4cats.slf4j.Slf4jLogger
 import fs2.Stream
 import fs2.concurrent.{Signal, SignallingRef}
-import org.http4s.{Headers, HttpApp, HttpRoutes, MediaType, Method, Request, Response, Status}
+import org.http4s.{AuthedRequest, Headers, HttpApp, HttpRoutes, MediaType, Method, Request, Response, Status}
 import org.http4s.headers.{`Content-Type`, `Strict-Transport-Security`}
-import org.http4s.client.blaze.BlazeClientBuilder
-import org.http4s.server.Router
-import org.http4s.server.blaze.BlazeServerBuilder
-import org.http4s.server.middleware.{AutoSlash, CORS, EntityLimiter, HSTS, Logger}
-import org.http4s.syntax.string._
+import org.http4s.blaze.client.BlazeClientBuilder
+import org.http4s.blaze.server.BlazeServerBuilder
+import org.http4s.server.{DefaultServiceErrorHandler, Router, ServiceErrorHandler}
+import org.http4s.server.middleware.{AutoSlash, CORS, EntityLimiter, HSTS, Logger => RequestLogger}
 import org.http4s.server.{defaults => Http4sDefaults}
-import org.http4s.util.{CaseInsensitiveString => CIString}
-import org.http4s.rho.{AuthedContext, RhoMiddleware}
-import org.http4s.rho.bits.PathAST.{PathMatch, TypedPath}
-import org.http4s.rho.swagger.syntax.{io => ioSwagger}
-import org.http4s.rho.swagger.models.{ApiKeyAuthDefinition, In, Info, SecurityRequirement}
-import org.http4s.rho.swagger.SwaggerMetadata
+import org.typelevel.ci.CIString
 import doobie.implicits._
+import doobie.util.log.{ExecFailure, LogEvent, LogHandler, ProcessingFailure, Success}
 import doobie.util.transactor.Transactor
 import sun.misc.{Signal => JvmSignal, SignalHandler}
 import com.snowplowanalytics.iglu.server.migrations.{Bootstrap, MigrateFrom}
-import com.snowplowanalytics.iglu.server.codecs.Swagger
-import com.snowplowanalytics.iglu.server.middleware.{BadRequestHandler, CachingMiddleware}
+import com.snowplowanalytics.iglu.server.middleware.{BadRequestHandler, CachingMiddleware, PermissionMiddleware}
 import com.snowplowanalytics.iglu.server.model.{IgluResponse, Permission}
-import com.snowplowanalytics.iglu.server.storage.Storage
+import com.snowplowanalytics.iglu.server.storage.{Postgres, Storage}
 import com.snowplowanalytics.iglu.server.service._
-import generated.BuildInfo.version
 
 object Server {
 
-  private val logger = Slf4jLogger.getLogger[IO]
-
-  type RoutesConstructor =
-    (Storage[IO], Option[UUID], AuthedContext[IO, Permission], RhoMiddleware[IO]) => HttpRoutes[IO]
-
-  val PermissionContext: AuthedContext[IO, Permission] =
-    new AuthedContext[IO, Permission]
+  private def logger[F[_]: Sync]: Logger[F] = Slf4jLogger.getLogger[F]
 
   /** TTL for all non-404 responses, cached in memory */
   val CacheTtl = 60.seconds
 
   /** Default server's response if endpoint was not found */
-  val NotFound: Response[IO] =
-    Response[IO]()
+  def NotFound[F[_]]: Response[F] =
+    Response[F]()
       .withStatus(Status.NotFound)
       .withBodyStream(Utils.toBytes(IgluResponse.EndpointNotFound: IgluResponse))
       .withContentType(`Content-Type`(MediaType.application.json))
 
-  val PayloadTooLarge: Response[IO] =
-    Response[IO]()
+  def PayloadTooLarge[F[_]]: Response[F] =
+    Response[F]()
       .withStatus(Status.PayloadTooLarge)
       .withBodyStream(Utils.toBytes(IgluResponse.PayloadTooLarge: IgluResponse))
       .withContentType(`Content-Type`(MediaType.application.json))
 
-  def addSwagger(storage: Storage[IO], superKey: Option[UUID], config: Config.Swagger)(
-    service: (String, RoutesConstructor)
-  ) = {
-    val (base, constructor) = service
-    val swagger = ioSwagger.createRhoMiddleware(
-      jsonApiPath = TypedPath(PathMatch("swagger.json")),
-      swaggerMetadata = SwaggerMetadata(
-        apiInfo = Info(title = "Iglu Server API", version = version),
-        basePath = Some(config.baseUrl.stripSuffix("/") ++ base),
-        securityDefinitions = Map("Iglu API key" -> ApiKeyAuthDefinition("apikey", In.HEADER)),
-        security = List(SecurityRequirement("Iglu API key", Nil))
-      ),
-      swaggerFormats = Swagger.Formats
-    )
+  def ServiceUnavailable[F[_]]: Response[F] =
+    Response[F]()
+      .withStatus(Status.ServiceUnavailable)
+      .withBodyStream(Utils.toBytes(IgluResponse.Message("Transient database error, please retry"): IgluResponse))
+      .withContentType(`Content-Type`(MediaType.application.json))
 
-    base -> constructor(storage, superKey, PermissionContext, swagger)
+  /**
+    * 503 for transient database errors that persisted despite the retries, as the client can retry
+    * the request. Default handler (500) for any other error.
+    */
+  def serviceErrorHandler[F[_]: Sync]: ServiceErrorHandler[F] = {
+    val log = logger[F]
+    request => {
+      val transientError: PartialFunction[Throwable, F[Response[F]]] = {
+        case Postgres.TransientError(e) =>
+          log
+            .error(e)(s"Transient database error servicing request: ${request.method} ${request.pathInfo}")
+            .as(ServiceUnavailable[F])
+      }
+      transientError.orElse(DefaultServiceErrorHandler[F].apply(request))
+    }
   }
 
-  def httpApp(
-    storage: Storage[IO],
+  /** Server URL of the routes mounted at `prefix`, in their OpenAPI documentation */
+  def docsBasePath(config: Config.Swagger, prefix: String): String =
+    config.baseUrl.stripSuffix("/") ++ prefix
+
+  def httpApp[F[_]: Async](
+    storage: Storage[F],
     superKey: Option[UUID],
     debug: Boolean,
     patchesAllowed: Boolean,
-    webhook: Webhook.WebhookClient[IO],
-    cache: CachingMiddleware.ResponseCache[IO],
+    webhook: Webhook.WebhookClient[F],
+    cache: CachingMiddleware.ResponseCache[F],
     swaggerConfig: Config.Swagger,
-    blocker: Blocker,
-    isHealthy: IO[Boolean],
+    isHealthy: F[Boolean],
     hsts: Config.Hsts,
     maxPayloadSize: Long,
     maxJsonDepth: Int
-  )(implicit cs: ContextShift[IO]): HttpApp[IO] = {
+  ): HttpApp[F] = {
     val serverRoutes =
       httpRoutes(
         storage,
@@ -114,61 +110,67 @@ object Server {
         webhook,
         cache,
         swaggerConfig,
-        blocker,
         isHealthy,
         maxJsonDepth
       )
-    val server = Kleisli[IO, Request[IO], Response[IO]](req => Router(serverRoutes: _*).run(req).getOrElse(NotFound))
-    entityLimiter(maxPayloadSize)(hstsMiddleware(hsts)(server))
+    val server = Kleisli[F, Request[F], Response[F]](req => Router(serverRoutes: _*).run(req).getOrElse(NotFound[F]))
+    entityLimiter[F](maxPayloadSize).apply(hstsMiddleware[F](hsts).apply(server))
   }
 
-  def hstsMiddleware(hsts: Config.Hsts): HttpApp[IO] => HttpApp[IO] =
+  def hstsMiddleware[F[_]: Sync](hsts: Config.Hsts): HttpApp[F] => HttpApp[F] =
     if (hsts.enable)
       HSTS(_, `Strict-Transport-Security`.unsafeFromDuration(hsts.maxAge))
     else identity
 
-  def entityLimiter(maxPayloadSize: Long): HttpApp[IO] => HttpApp[IO] =
+  def entityLimiter[F[_]: Sync](maxPayloadSize: Long): HttpApp[F] => HttpApp[F] =
     EntityLimiter(_, maxPayloadSize).recover {
-      case _: EntityLimiter.EntityTooLarge => PayloadTooLarge
+      case _: EntityLimiter.EntityTooLarge => PayloadTooLarge[F]
     }
 
-  def httpRoutes(
-    storage: Storage[IO],
+  def httpRoutes[F[_]: Async](
+    storage: Storage[F],
     superKey: Option[UUID],
     debug: Boolean,
     patchesAllowed: Boolean,
-    webhook: Webhook.WebhookClient[IO],
-    cache: CachingMiddleware.ResponseCache[IO],
+    webhook: Webhook.WebhookClient[F],
+    cache: CachingMiddleware.ResponseCache[F],
     swaggerConfig: Config.Swagger,
-    blocker: Blocker,
-    isHealthy: IO[Boolean],
+    isHealthy: F[Boolean],
     maxJsonDepth: Int
-  )(implicit cs: ContextShift[IO]): List[(String, HttpRoutes[IO])] = {
-    val services: List[(String, RoutesConstructor)] = List(
-      "/api/meta"       -> MetaService.asRoutes(debug, patchesAllowed, isHealthy),
-      "/api/schemas"    -> SchemaService.asRoutes(patchesAllowed, webhook, maxJsonDepth),
-      "/api/auth"       -> AuthService.asRoutes(maxJsonDepth),
-      "/api/validation" -> ValidationService.asRoutes(maxJsonDepth),
-      "/api/drafts"     -> DraftService.asRoutes(maxJsonDepth)
+  ): List[(String, HttpRoutes[F])] = {
+    val services = List(
+      "/api/meta"       -> MetaService.api(debug, patchesAllowed, isHealthy)(storage),
+      "/api/schemas"    -> SchemaService.api(patchesAllowed, webhook, maxJsonDepth)(storage),
+      "/api/auth"       -> AuthService.api(maxJsonDepth)(storage),
+      "/api/validation" -> ValidationService.api(maxJsonDepth)(storage),
+      "/api/drafts"     -> DraftService.api(maxJsonDepth)(storage)
     )
 
-    val debugRoute  = "/api/debug" -> DebugService.asRoutes(storage, ioSwagger.createRhoMiddleware())
-    val staticRoute = "/static" -> StaticService.routes(blocker)
-    val routes      = staticRoute :: services.map(addSwagger(storage, superKey, swaggerConfig))
+    // Not authenticated
+    val debugRoute = "/api/debug" -> DebugService
+      .api(storage)
+      .routes(docsBasePath(swaggerConfig, "/api/debug"))
+      .local[Request[F]](AuthedRequest(Permission.Noop, _))
+    val staticRoute = "/static" -> StaticService.routes[F]
+    val routes = staticRoute :: services.map {
+      case (prefix, api) =>
+        prefix -> PermissionMiddleware.wrapService(storage, superKey, api.routes(docsBasePath(swaggerConfig, prefix)))
+    }
     val corsPolicy = CORS
       .policy
       .withAllowOriginHostCi(_ => true)
       .withAllowCredentials(false)
       .withAllowMethodsIn(Set(Method.GET, Method.POST, Method.PUT, Method.OPTIONS, Method.DELETE))
-      .withAllowHeadersIn(Set(CIString("content-type"), CIString("apikey")))
+      .withAllowHeadersIn(Set(CIString("content-type"), CIString(PermissionMiddleware.ApiKey)))
       .withMaxAge(1.day)
 
+    val log = logger[F]
     (if (debug) debugRoute :: routes else routes).map {
       case (endpoint, route) =>
         // Apply middleware
         val httpRoutes        = CachingMiddleware(cache)(BadRequestHandler(corsPolicy(AutoSlash(route))))
-        val redactHeadersWhen = (Headers.SensitiveHeaders + "apikey".ci).contains _
-        (endpoint, Logger.httpRoutes[IO](true, true, redactHeadersWhen, Some(logger.debug(_)))(httpRoutes))
+        val redactHeadersWhen = (Headers.SensitiveHeaders + CIString(PermissionMiddleware.ApiKey)).contains _
+        (endpoint, RequestLogger.httpRoutes[F](true, true, redactHeadersWhen, Some(log.debug(_)))(httpRoutes))
     }
   }
 
@@ -186,20 +188,20 @@ object Server {
         Resource.make(alloc)(free).map(ExecutionContext.fromExecutor)
     }
 
-  def buildServer(
+  def buildServer[F[_]: Async](
     config: Config,
-    isHealthy: IO[Boolean]
-  )(implicit cs: ContextShift[IO], timer: Timer[IO]): Resource[IO, BlazeServerBuilder[IO]] =
+    isHealthy: F[Boolean]
+  ): Resource[F, BlazeServerBuilder[F]] =
     for {
-      _        <- Resource.eval(logger.info(s"Initializing server with following configuration: ${config.asJson.noSpaces}"))
-      httpPool <- createThreadPool[IO](config.repoServer.threadPool)
-      client   <- BlazeClientBuilder[IO](httpPool).resource
+      _        <- Resource.eval(logger[F].info(s"Initializing server with following configuration: ${config.asJson.noSpaces}"))
+      httpPool <- createThreadPool[F](config.repoServer.threadPool)
+      client   <- BlazeClientBuilder[F].withExecutionContext(httpPool).resource
       webhookClient = Webhook.WebhookClient(config.webhooks, client)
-      storage <- Storage.initialize[IO](config.database)
+      storage <- Storage.initialize[F](config.database)
       _       <- Resource.eval(storage.runAutomaticMigrations)
-      cache   <- CachingMiddleware.initResponseCache[IO](1000, CacheTtl)
-      blocker <- Blocker[IO],
-    } yield BlazeServerBuilder[IO](httpPool)
+      cache   <- CachingMiddleware.initResponseCache[F](1000, CacheTtl)
+    } yield BlazeServerBuilder[F]
+      .withExecutionContext(httpPool)
       .bindHttp(config.repoServer.port, config.repoServer.interface)
       .withHttpApp(
         httpApp(
@@ -210,84 +212,109 @@ object Server {
           webhookClient,
           cache,
           config.swagger,
-          blocker,
           isHealthy,
           config.repoServer.hsts,
           config.repoServer.maxPayloadSize,
           config.maxJsonDepth
         )
       )
+      .withServiceErrorHandler(serviceErrorHandler[F])
       .withIdleTimeout(config.repoServer.idleTimeout.getOrElse(Http4sDefaults.IdleTimeout))
       .withMaxConnections(config.repoServer.maxConnections.getOrElse(Http4sDefaults.MaxConnections))
 
-  def run(config: Config)(implicit cs: ContextShift[IO], timer: Timer[IO]): IO[ExitCode] =
-    runStream(config).compile.lastOrError
+  def run[F[_]: Async](config: Config): F[ExitCode] =
+    runStream[F](config).compile.lastOrError
 
-  def runStream(config: Config)(implicit cs: ContextShift[IO], timer: Timer[IO]): Stream[IO, ExitCode] =
+  def runStream[F[_]: Async](config: Config): Stream[F, ExitCode] =
     for {
-      sigToExit   <- Stream.eval(SignallingRef[IO, Boolean](false))
-      sigToPause  <- Stream.eval(SignallingRef[IO, Boolean](false))
-      refExitCode <- Stream.eval(Ref[IO].of(ExitCode.Success))
-      _           <- Stream.eval(addShutdownHook(sigToPause))
+      sigToExit   <- Stream.eval(SignallingRef[F, Boolean](false))
+      sigToPause  <- Stream.eval(SignallingRef[F, Boolean](false))
+      refExitCode <- Stream.eval(Ref[F].of(ExitCode.Success))
+      dispatcher  <- Stream.resource(Dispatcher.sequential[F])
+      _           <- Stream.resource(addShutdownHook(sigToPause, dispatcher))
       builder     <- Stream.resource(buildServer(config, getIsHealthy(config, sigToPause)))
       exitCode    <- builder.serveWhile(sigToExit, refExitCode).concurrently(handleSigTerm(config, sigToPause, sigToExit))
     } yield exitCode
 
-  def handleSigTerm(config: Config, sigToPause: Signal[IO, Boolean], sigToExit: Ref[IO, Boolean])(
-    implicit timer: Timer[IO]
-  ): Stream[IO, Unit] =
+  def handleSigTerm[F[_]: Async](
+    config: Config,
+    sigToPause: Signal[F, Boolean],
+    sigToExit: Ref[F, Boolean]
+  ): Stream[F, Unit] =
     sigToPause.discrete.evalMap {
       case true =>
         // We got a SIGTERM
         for {
-          _ <- logger.warn(
+          _ <- logger[F].warn(
             s"Initiating server shutdown. Sleeping for ${config.preTerminationPeriod} as part of graceful shutdown."
           )
-          _ <- IO.sleep(config.preTerminationPeriod)
-          _ <- logger.warn("Terminating the server")
+          _ <- Async[F].sleep(config.preTerminationPeriod)
+          _ <- logger[F].warn("Terminating the server")
           _ <- sigToExit.set(true)
         } yield ()
       case false =>
-        IO.unit
+        Async[F].unit
     }
 
-  def getIsHealthy(config: Config, sigToPause: Ref[IO, Boolean]): IO[Boolean] =
+  def getIsHealthy[F[_]: Sync](config: Config, sigToPause: Ref[F, Boolean]): F[Boolean] =
     if (config.preTerminationUnhealthy)
       sigToPause.get.map { isTerminating =>
         // healthy if not terminating
         !isTerminating
       }
-    else IO.pure(true)
+    else Sync[F].pure(true)
 
-  def addShutdownHook(received: Ref[IO, Boolean]): IO[Unit] =
-    IO.delay {
-      val handler = new SignalHandler {
-        override def handle(signal: JvmSignal): Unit =
-          received.set(true).unsafeRunSync()
-      }
-      JvmSignal.handle(new JvmSignal("TERM"), handler)
-      ()
+  def addShutdownHook[F[_]: Sync](received: Ref[F, Boolean], dispatcher: Dispatcher[F]): Resource[F, Unit] = {
+    val term = new JvmSignal("TERM")
+    val handler = new SignalHandler {
+      override def handle(signal: JvmSignal): Unit =
+        dispatcher.unsafeRunAndForget(received.set(true))
     }
+    Resource
+      .make(Sync[F].delay(JvmSignal.handle(term, handler)))(previous =>
+        Sync[F].delay(JvmSignal.handle(term, previous)).void
+      )
+      .void
+  }
 
-  def setup(config: Config, migrate: Option[MigrateFrom])(implicit cs: ContextShift[IO]): IO[ExitCode] =
+  def setup[F[_]: Async](config: Config, migrate: Option[MigrateFrom]): F[ExitCode] =
     config.database match {
       case pg: Config.StorageConfig.Postgres =>
-        val xa = getTransactor(pg)
+        val xa = getTransactor[F](pg)
         val action = migrate match {
           case Some(migration) =>
             migration.perform.transact(xa) *>
-              logger.warn(s"All tables were migrated in ${pg.dbname} from $migration")
+              logger[F].warn(s"All tables were migrated in ${pg.dbname} from $migration")
           case None =>
-            Bootstrap.initialize[IO](xa) *>
-              logger.warn(s"Tables were initialized in ${pg.dbname}")
+            Bootstrap.initialize[F](xa) *>
+              logger[F].warn(s"Tables were initialized in ${pg.dbname}")
         }
         action.as(ExitCode.Success)
       case Config.StorageConfig.Dummy =>
-        logger.error(s"Nothing to setup with dummy storage").as(ExitCode.Error)
+        logger[F].error(s"Nothing to setup with dummy storage").as(ExitCode.Error)
     }
 
-  def getTransactor(config: Config.StorageConfig.Postgres)(implicit cs: ContextShift[IO]): Transactor[IO] = {
+  /** The statements run by `setup` are logged */
+  def getTransactor[F[_]: Async](config: Config.StorageConfig.Postgres): Transactor[F] = {
     val url = s"jdbc:postgresql://${config.host}:${config.port}/${config.dbname}"
-    Transactor.fromDriverManager[IO](config.driver, url, config.username, config.password)
+    Transactor.fromDriverManager[F](config.driver, url, config.username, config.password, Some(statementLogHandler[F]))
+  }
+
+  /** Log the statements, but not their parameters, which can be API keys (e.g. when migrating permissions) */
+  def statementLogHandler[F[_]: Sync]: LogHandler[F] = {
+    val log = logger[F]
+    new LogHandler[F] {
+      def run(event: LogEvent): F[Unit] = {
+        val sql = event.sql.linesIterator.map(_.trim).filter(_.nonEmpty).mkString(" ")
+        event match {
+          case e: Success =>
+            log.info(s"Successful statement execution (${e.exec.toMillis} ms): $sql")
+          case e: ExecFailure =>
+            log.error(e.failure)(s"Failed statement execution (${e.exec.toMillis} ms): $sql")
+          case e: ProcessingFailure =>
+            log.error(e.failure)(s"Failed result set processing (${e.exec.toMillis} ms): $sql")
+        }
+      }
+    }
   }
 }

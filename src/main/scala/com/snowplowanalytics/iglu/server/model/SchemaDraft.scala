@@ -12,8 +12,8 @@ package com.snowplowanalytics.iglu.server
 package model
 
 import doobie._
+import doobie.generic.auto._
 import doobie.postgres.circe.json.implicits._
-import doobie.postgres.implicits._
 
 import io.circe.{Encoder, Json}
 import io.circe.generic.semiauto.deriveEncoder
@@ -25,6 +25,7 @@ import com.snowplowanalytics.iglu.server.model.SchemaDraft.DraftId
 import storage.Storage.IncompatibleStorage
 
 import Schema.Metadata
+import Schema.Metadata.doobieInstantMeta
 
 case class SchemaDraft(schemaMap: DraftId, metadata: Metadata, body: Json)
 

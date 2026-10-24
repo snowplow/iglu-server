@@ -10,8 +10,11 @@
 
 package com.snowplowanalytics.iglu.server
 
+import java.sql.SQLException
+
 import cats.implicits._
-import cats.effect.{ContextShift, IO, Resource, Timer}
+import cats.effect.{IO, Resource}
+import cats.effect.unsafe.implicits.global
 
 import io.circe.Json
 import io.circe.parser.{parse => parseJson}
@@ -20,7 +23,7 @@ import io.circe.literal._
 import org.http4s._
 import org.http4s.implicits._
 import org.http4s.circe._
-import org.http4s.client.blaze.BlazeClientBuilder
+import org.http4s.blaze.client.BlazeClientBuilder
 import org.http4s.headers.`Strict-Transport-Security`
 
 import org.specs2.Specification
@@ -47,6 +50,8 @@ class ServerSpec extends Specification {
   Return an HSTS header when configured to do so $e5
   Return 413 when size of the schema that is sent to /schemas exceeds the max payload size $e6
   Return 413 when size of the schema that is sent to /validation exceeds the max payload size $e7
+  Return 503 for transient database errors $e8
+  Return 500 for other errors $e9
   ${action(System.clearProperty("org.slf4j.simpleLogger.defaultLogLevel"))}
   """
   import ServerSpec._
@@ -79,10 +84,10 @@ class ServerSpec extends Specification {
     val reqs = List(
       Request[IO](Method.PUT, uri"/com.acme/first/jsonschema/1-0-0")
         .withEntity(json"""{"properties": {}}""")
-        .withHeaders(Header("apikey", InMemory.DummySuperKey.toString)),
-      Request[IO](Method.GET, uri"/").withHeaders(Header("apikey", InMemory.DummySuperKey.toString)),
+        .withHeaders("apikey"                              -> InMemory.DummySuperKey.toString),
+      Request[IO](Method.GET, uri"/").withHeaders("apikey" -> InMemory.DummySuperKey.toString),
       Request[IO](Method.GET, uri"/com.acme/first/jsonschema/1-0-0")
-        .withHeaders(Header("apikey", InMemory.DummySuperKey.toString)),
+        .withHeaders("apikey" -> InMemory.DummySuperKey.toString),
       Request[IO](Method.GET, uri"/com.acme/first/jsonschema/1-0-0")
     )
 
@@ -119,9 +124,9 @@ class ServerSpec extends Specification {
     val reqs = List(
       Request[IO](Method.POST, uri"/".withQueryParam("isPublic", "true"))
         .withEntity(schema)
-        .withHeaders(Header("apikey", InMemory.DummySuperKey.toString)),
+        .withHeaders("apikey" -> InMemory.DummySuperKey.toString),
       Request[IO](Method.DELETE, uri"/com.acme/first/jsonschema/1-0-0")
-        .withHeaders(Header("apikey", InMemory.DummySuperKey.toString)),
+        .withHeaders("apikey" -> InMemory.DummySuperKey.toString),
       Request[IO](Method.GET, uri"/")
     )
 
@@ -151,9 +156,9 @@ class ServerSpec extends Specification {
     val reqs = List(
       Request[IO](Method.POST, uri"/".withQueryParam("isPublic", "true"))
         .withEntity(schema)
-        .withHeaders(Header("apikey", InMemory.DummySuperKey.toString)),
+        .withHeaders("apikey" -> InMemory.DummySuperKey.toString),
       Request[IO](Method.DELETE, uri"/com.acme/first/jsonschema/1-0-0")
-        .withHeaders(Header("apikey", InMemory.DummySuperKey.toString)),
+        .withHeaders("apikey" -> InMemory.DummySuperKey.toString),
       Request[IO](Method.GET, uri"/"),
       Request[IO](Method.GET, uri"/nonExistingEndpoint")
     )
@@ -170,7 +175,7 @@ class ServerSpec extends Specification {
     def action(hsts: Config.Hsts) =
       for {
         responses <- ServerSpec.executeRequests(reqs, hsts)
-        results = responses.traverse(res => res.headers.get(`Strict-Transport-Security`))
+        results = responses.traverse(res => res.headers.get[`Strict-Transport-Security`])
       } yield results
 
     val hstsOn  = Config.Hsts(enable = true, 180.days)
@@ -191,7 +196,7 @@ class ServerSpec extends Specification {
     val reqs = List(
       Request[IO](Method.POST, uri"/".withQueryParam("isPublic", "true"))
         .withEntity(schema)
-        .withHeaders(Header("apikey", InMemory.DummySuperKey.toString))
+        .withHeaders("apikey" -> InMemory.DummySuperKey.toString)
     )
 
     val expected = List(
@@ -227,17 +232,27 @@ class ServerSpec extends Specification {
 
     execute(action) must beEqualTo(expected)
   }
+
+  def e8 = {
+    val error    = new SQLException("deadlock detected", Postgres.TransientError.DEADLOCK_DETECTED)
+    val expected = TestResponse(503, IgluResponse.Message("Transient database error, please retry"))
+
+    val action = Server.serviceErrorHandler[IO].apply(Request[IO]())(error).flatMap(TestResponse.build[IgluResponse])
+
+    action.unsafeRunSync() must beEqualTo(expected)
+  }
+
+  def e9 = {
+    val error = new SQLException("duplicate key value violates unique constraint", "23505")
+
+    Server.serviceErrorHandler[IO].apply(Request[IO]())(error).unsafeRunSync().status must beEqualTo(
+      Status.InternalServerError
+    )
+  }
 }
 
 object ServerSpec {
-  import scala.concurrent.ExecutionContext.global
-  implicit val cs: ContextShift[IO] = IO.contextShift(global)
-  implicit val timer: Timer[IO]     = IO.timer(global)
-
-  val dbPoolConfig = Config
-    .StorageConfig
-    .ConnectionPool
-    .Hikari(None, None, None, None, Config.ThreadPool.Cached, Config.ThreadPool.Cached)
+  val dbPoolConfig                  = Config.StorageConfig.ConnectionPool.Hikari(None, None, None, None, Config.ThreadPool.Cached)
   def httpConfig(hsts: Config.Hsts) = Config.Http("0.0.0.0", 8080, None, None, Config.ThreadPool.Cached, hsts, 10000)
   val storageConfig =
     Config
@@ -269,7 +284,7 @@ object ServerSpec {
     )
 
   private def runServer(hsts: Config.Hsts) = Server.buildServer(config(hsts), IO.pure(true)).flatMap(_.resource)
-  private val client                       = BlazeClientBuilder[IO](global).resource
+  private val client                       = BlazeClientBuilder[IO].resource
   private def env(hsts: Config.Hsts)       = client <* runServer(hsts)
 
   /** Execute requests against fresh server (only one execution per test is allowed) */
@@ -279,7 +294,7 @@ object ServerSpec {
   ): IO[List[Response[IO]]] = {
     val r = requests.map { r =>
       if (r.uri.host.isDefined) r
-      else r.withUri(uri"http://localhost:8080/api/schemas".addPath(r.uri.path))
+      else r.withUri(Uri.unsafeFromString(s"http://localhost:8080/api/schemas${r.uri.path.renderString}"))
     }
     env(hsts).use(client => r.traverse(client.run(_).use(IO.pure)))
   }
@@ -287,7 +302,7 @@ object ServerSpec {
   def specification(hsts: Config.Hsts) =
     Resource.make {
       Storage.initialize[IO](storageConfig).use(s => s.asInstanceOf[Postgres[IO]].drop) *>
-        Server.setup(ServerSpec.config(hsts), None).void *>
+        Server.setup[IO](ServerSpec.config(hsts), None).void *>
         Storage.initialize[IO](storageConfig).use(_.addPermission(InMemory.DummySuperKey, Permission.Super))
     }(_ => Storage.initialize[IO](storageConfig).use(s => s.asInstanceOf[Postgres[IO]].drop))
 

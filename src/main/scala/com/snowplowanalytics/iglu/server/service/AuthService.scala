@@ -14,62 +14,20 @@ package service
 import java.util.UUID
 
 import cats.implicits._
-import cats.effect.{IO, Sync}
+import cats.effect.{Async, Sync}
 
 import io.circe._
-import io.circe.syntax._
 import io.circe.generic.semiauto._
 
-import org.http4s._
-import org.http4s.circe._
-import org.http4s.rho.{RhoMiddleware, RhoRoutes}
-import org.http4s.rho.swagger.SwaggerSyntax
-import org.http4s.rho.AuthedContext
-import org.http4s.rho.swagger.syntax.{io => swaggerSyntax}
+import sttp.model.StatusCode
+import sttp.tapir.{PublicEndpoint, stringToPath}
 
-import com.snowplowanalytics.iglu.server.middleware.PermissionMiddleware
-import com.snowplowanalytics.iglu.server.codecs.JsonCodecs._
+import com.snowplowanalytics.iglu.server.http.Api
+import com.snowplowanalytics.iglu.server.http.Endpoints._
+import com.snowplowanalytics.iglu.server.http.Schemas.{generateKeySchema, igluResponseSchema, keyPairSchema}
 import com.snowplowanalytics.iglu.server.model.Permission
 import com.snowplowanalytics.iglu.server.model.IgluResponse
 import com.snowplowanalytics.iglu.server.storage.Storage
-
-class AuthService[F[+_]: Sync](
-  swagger: SwaggerSyntax[F],
-  ctx: AuthedContext[F, Permission],
-  db: Storage[F],
-  maxJsonDepth: Int
-) extends RhoRoutes[F] {
-  import swagger._
-  import AuthService._
-
-  val apikey = paramD[UUID]("key", "UUID apikey to delete")
-
-  val jsonGenerateKey = Utils.jsonOfWithDepthCheck[F, GenerateKey](maxJsonDepth)
-
-  "Route to delete api key" **
-    DELETE / "keygen" +? apikey >>> ctx.auth |>> deleteKey _
-
-  "Route to generate new keys" **
-    POST / "keygen" >>> ctx.auth ^ jsonGenerateKey |>> { (authInfo: Permission, gk: GenerateKey) =>
-    if (authInfo.key.contains(Permission.KeyAction.Create)) {
-      val vendorPrefix = Permission.Vendor.parse(gk.vendorPrefix, true)
-      if (authInfo.canCreatePermission(vendorPrefix.asString)) {
-        for {
-          keyPair    <- Permission.KeyPair.generate[F]
-          _          <- db.addKeyPair(keyPair, vendorPrefix)
-          okResponse <- Ok(keyPair.asJson)
-        } yield okResponse
-      } else {
-        Forbidden(IgluResponse.Message(s"Cannot create ${vendorPrefix.show} using your permissions"): IgluResponse)
-      }
-    } else Forbidden(IgluResponse.Message("Not sufficient privileges to create keys"): IgluResponse)
-  }
-
-  def deleteKey(key: UUID, permission: Permission) =
-    if (permission.key.contains(Permission.KeyAction.Delete)) {
-      db.deletePermission(key) *> Ok(IgluResponse.Message(s"Keys have been deleted"): IgluResponse)
-    } else Forbidden("Not sufficient privileges to delete key")
-}
 
 object AuthService {
 
@@ -77,13 +35,64 @@ object AuthService {
 
   implicit val schemaGenerateReq: Decoder[GenerateKey] = deriveDecoder[GenerateKey]
 
-  def asRoutes(maxJsonDepth: Int)(
-    db: Storage[IO],
-    superKey: Option[UUID],
-    ctx: AuthedContext[IO, Permission],
-    rhoMiddleware: RhoMiddleware[IO]
-  ): HttpRoutes[IO] = {
-    val service = new AuthService(swaggerSyntax, ctx, db, maxJsonDepth).toRoutes(rhoMiddleware)
-    PermissionMiddleware.wrapService(db, superKey, ctx, service)
+  def deleteKeyEndpoint: PublicEndpoint[UUID, Failure, IgluResponse, Any] =
+    base(StatusCode.Forbidden)
+      .delete
+      .in("keygen")
+      .in(queryParam[UUID]("key", None)(uuidCodec).description("UUID apikey to delete"))
+      .out(jsonOut[IgluResponse])
+      .summary("Route to delete api key")
+
+  def generateKeyEndpoint: PublicEndpoint[String, Failure, Permission.KeyPair, Any] =
+    base(StatusCode.Forbidden)
+      .post
+      .in("keygen")
+      .in(jsonIn[GenerateKey])
+      .out(jsonOut[Permission.KeyPair])
+      .summary("Route to generate new keys")
+
+  def api[F[_]: Async](maxJsonDepth: Int)(db: Storage[F]): Api[F] = {
+    val jsonGenerateKey = Utils.jsonOfWithDepthCheck[F, GenerateKey](maxJsonDepth)
+
+    Api(
+      List(
+        Api.withPermission(deleteKeyEndpoint) { permission => key =>
+          if (permission.key.contains(Permission.KeyAction.Delete))
+            db.deletePermission(key)
+              .as((IgluResponse.Message(s"Keys have been deleted"): IgluResponse).asRight[Failure])
+          else
+            Async[F].pure(Failure.text(StatusCode.Forbidden, "Not sufficient privileges to delete key").asLeft)
+        },
+        Api.withPermission(generateKeyEndpoint) { permission => body =>
+          withBody(body, jsonGenerateKey)(generateKey(db, permission, _))
+        }
+      )
+    )
   }
+
+  private def generateKey[F[_]: Sync](
+    db: Storage[F],
+    authInfo: Permission,
+    gk: GenerateKey
+  ): F[Either[Failure, Permission.KeyPair]] =
+    if (authInfo.key.contains(Permission.KeyAction.Create)) {
+      val vendorPrefix = Permission.Vendor.parse(gk.vendorPrefix, true)
+      if (authInfo.canCreatePermission(vendorPrefix.asString))
+        for {
+          keyPair <- Permission.KeyPair.generate[F]
+          _       <- db.addKeyPair(keyPair, vendorPrefix)
+        } yield keyPair.asRight
+      else
+        Sync[F].pure(
+          Failure
+            .json(
+              StatusCode.Forbidden,
+              IgluResponse.Message(s"Cannot create ${vendorPrefix.show} using your permissions")
+            )
+            .asLeft
+        )
+    } else
+      Sync[F].pure(
+        Failure.json(StatusCode.Forbidden, IgluResponse.Message("Not sufficient privileges to create keys")).asLeft
+      )
 }
