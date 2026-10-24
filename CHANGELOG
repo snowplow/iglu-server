@@ -1,3 +1,7 @@
+Version 0.15.1 (2026-10-20)
+---------------------------
+Trigger build to use the latest base image with updated libexpat1
+
 Version 0.15.0 (2026-10-16)
 ---------------------------
 Bump postgresql to 42.7.14 and jackson to 2.21.7 to fix CVEs (#43)
