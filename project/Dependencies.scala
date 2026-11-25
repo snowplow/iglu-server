@@ -46,7 +46,7 @@ object Dependencies {
     val Slf4j = "2.0.20"
 
     // Overrides of transitive versions, to address security vulnerabilities
-    val Jackson = "2.21.7"
+    val Jackson = "2.21.8"
 
     // Test only
     val Specs2            = "4.23.0" // Aligned with cats-effect-testing-specs2 and doobie-specs2

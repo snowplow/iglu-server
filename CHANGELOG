@@ -1,3 +1,10 @@
+Version 0.15.3 (2026-11-19)
+---------------------------
+Gate final releases on environment `release` (#51)
+Persist checkout credentials so Claude mentions can fetch (#48)
+Bump jackson to 2.21.8 (#50)
+Harden claude.yml workflow against prompt injection
+
 Version 0.15.2 (2026-10-24)
 ---------------------------
 Trigger build to use the latest base image
